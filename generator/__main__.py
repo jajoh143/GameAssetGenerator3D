@@ -16,6 +16,12 @@ ASSET_SCRIPTS = {
     "humanoid": os.path.join(
         os.path.dirname(__file__), "..", "scripts", "generate_humanoid.py"
     ),
+    "wall": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_wall.py"
+    ),
+    "floor": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_floor.py"
+    ),
 }
 
 
@@ -63,6 +69,14 @@ def cmd_generate(args):
 
     if args.format:
         cmd.extend(["--format", args.format])
+    if args.variation:
+        cmd.extend(["--variation", args.variation])
+    if args.theme:
+        cmd.extend(["--theme", args.theme])
+    if args.material:
+        cmd.extend(["--material", args.material])
+    if args.wear is not None:
+        cmd.extend(["--wear", str(args.wear)])
 
     print(f"Generating {asset_type} -> {output}")
     print(f"Running: {' '.join(cmd)}")
@@ -92,6 +106,14 @@ def main():
                             help="Output file path (default: assets/output.glb)")
     gen_parser.add_argument("-f", "--format", choices=["glb", "gltf", "fbx", "obj"],
                             help="Export format (default: inferred from extension)")
+    gen_parser.add_argument("--variation", default=None,
+                            help="Asset variation (e.g., brick, concrete, corrugated)")
+    gen_parser.add_argument("--theme", default=None,
+                            help="Style theme (modern, fantasy, industrial, medieval)")
+    gen_parser.add_argument("--material", default=None,
+                            help="Material type (brick, concrete, metal, wood, stone, tile)")
+    gen_parser.add_argument("--wear", type=float, default=None,
+                            help="Wear/damage level 0.0-1.0")
     gen_parser.set_defaults(func=cmd_generate)
 
     # list
