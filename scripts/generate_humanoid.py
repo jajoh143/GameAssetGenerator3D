@@ -4,9 +4,11 @@ Usage:
     blender --background --python scripts/generate_humanoid.py -- [options]
 
 Options:
-    --output PATH    Output file (default: assets/humanoid.glb)
-    --format FORMAT  Export format: glb, gltf, fbx, obj (default: from extension)
-    --height FLOAT   Character height in meters (default: 1.8)
+    --output PATH         Output file (default: assets/humanoid.glb)
+    --format FORMAT       Export format: glb, gltf, fbx, obj (default: from extension)
+    --height FLOAT        Character height in meters (default: 1.8)
+    --animations NAMES    Comma-separated animation list or "all" (default: all)
+                          Available: idle, walk, run, jump, attack
 """
 
 import sys
@@ -37,15 +39,24 @@ def parse_args():
                         help="Export format (glb, gltf, fbx, obj)")
     parser.add_argument("--height", type=float, default=1.8,
                         help="Character height in meters")
+    parser.add_argument("--animations", default="all",
+                        help="Comma-separated list of animations or 'all' "
+                             "(available: idle, walk, run, jump, attack)")
     return parser.parse_args(argv)
 
 
 def main():
     args = parse_args()
 
-    config = {"height": args.height}
+    # Parse animation selection
+    if args.animations == "all":
+        anims = "all"
+    else:
+        anims = [a.strip() for a in args.animations.split(",")]
 
-    print(f"Generating humanoid (height={args.height}m)...")
+    config = {"height": args.height, "animations": anims}
+
+    print(f"Generating humanoid (height={args.height}m, animations={anims})...")
     armature = generate(config)
     print("Generation complete. Exporting...")
 

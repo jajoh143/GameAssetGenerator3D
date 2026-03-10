@@ -77,6 +77,8 @@ def cmd_generate(args):
         cmd.extend(["--material", args.material])
     if args.wear is not None:
         cmd.extend(["--wear", str(args.wear)])
+    if args.animations:
+        cmd.extend(["--animations", args.animations])
 
     print(f"Generating {asset_type} -> {output}")
     print(f"Running: {' '.join(cmd)}")
@@ -114,6 +116,9 @@ def main():
                             help="Material type (brick, concrete, metal, wood, stone, tile)")
     gen_parser.add_argument("--wear", type=float, default=None,
                             help="Wear/damage level 0.0-1.0")
+    gen_parser.add_argument("--animations", default=None,
+                            help="Comma-separated animation list or 'all' "
+                                 "(humanoid: idle,walk,run,jump,attack)")
     gen_parser.set_defaults(func=cmd_generate)
 
     # list
