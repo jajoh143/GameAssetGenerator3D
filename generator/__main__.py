@@ -79,6 +79,34 @@ def cmd_generate(args):
         cmd.extend(["--wear", str(args.wear)])
     if args.animations:
         cmd.extend(["--animations", args.animations])
+    if args.preset:
+        cmd.extend(["--preset", args.preset])
+    if args.build:
+        cmd.extend(["--build", args.build])
+    if args.skin_tone:
+        cmd.extend(["--skin-tone", args.skin_tone])
+    if args.height is not None:
+        cmd.extend(["--height", str(args.height)])
+    if args.shoulder_width is not None:
+        cmd.extend(["--shoulder-width", str(args.shoulder_width)])
+    if args.hip_width is not None:
+        cmd.extend(["--hip-width", str(args.hip_width)])
+    if args.head_size is not None:
+        cmd.extend(["--head-size", str(args.head_size)])
+    if args.arm_length is not None:
+        cmd.extend(["--arm-length", str(args.arm_length)])
+    if args.leg_length is not None:
+        cmd.extend(["--leg-length", str(args.leg_length)])
+    if args.torso_length is not None:
+        cmd.extend(["--torso-length", str(args.torso_length)])
+    if args.limb_thickness is not None:
+        cmd.extend(["--limb-thickness", str(args.limb_thickness)])
+    if args.torso_depth is not None:
+        cmd.extend(["--torso-depth", str(args.torso_depth)])
+    if args.randomize:
+        cmd.append("--randomize")
+    if args.seed is not None:
+        cmd.extend(["--seed", str(args.seed)])
 
     print(f"Generating {asset_type} -> {output}")
     print(f"Running: {' '.join(cmd)}")
@@ -119,6 +147,27 @@ def main():
     gen_parser.add_argument("--animations", default=None,
                             help="Comma-separated animation list or 'all' "
                                  "(humanoid: idle,walk,run,jump,attack)")
+    # Character variation (humanoid)
+    gen_parser.add_argument("--preset", default=None,
+                            help="Character preset (average, tall, short, child, brute, slender)")
+    gen_parser.add_argument("--build", default=None,
+                            help="Body build (lean, average, stocky, heavy)")
+    gen_parser.add_argument("--skin-tone", default=None,
+                            help="Skin tone name or R,G,B,A values")
+    gen_parser.add_argument("--height", type=float, default=None,
+                            help="Character height override in meters")
+    gen_parser.add_argument("--shoulder-width", type=float, default=None)
+    gen_parser.add_argument("--hip-width", type=float, default=None)
+    gen_parser.add_argument("--head-size", type=float, default=None)
+    gen_parser.add_argument("--arm-length", type=float, default=None)
+    gen_parser.add_argument("--leg-length", type=float, default=None)
+    gen_parser.add_argument("--torso-length", type=float, default=None)
+    gen_parser.add_argument("--limb-thickness", type=float, default=None)
+    gen_parser.add_argument("--torso-depth", type=float, default=None)
+    gen_parser.add_argument("--randomize", action="store_true", default=False,
+                            help="Add random variation to proportions")
+    gen_parser.add_argument("--seed", type=int, default=None,
+                            help="Random seed for reproducible variation")
     gen_parser.set_defaults(func=cmd_generate)
 
     # list

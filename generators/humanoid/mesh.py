@@ -73,13 +73,14 @@ def _smooth_normals(obj):
     mod.split_angle = math.radians(30)
 
 
-def _apply_material(obj):
-    """Apply a simple base material so the mesh isn't flat grey."""
+def _apply_material(obj, skin_tone=None):
+    """Apply a base material with configurable skin tone."""
     mat = bpy.data.materials.new(name="Humanoid_Base")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.65, 0.55, 0.45, 1.0)
+        color = skin_tone if skin_tone else (0.65, 0.55, 0.45, 1.0)
+        bsdf.inputs["Base Color"].default_value = color
         bsdf.inputs["Roughness"].default_value = 0.8
     obj.data.materials.append(mat)
 
@@ -109,6 +110,11 @@ def create_body(cfg):
     foot_len = cfg["foot_length"]
     foot_w = cfg["foot_width"]
 
+    # Body variation parameters (with backwards-compatible defaults)
+    lt = cfg.get("limb_thickness", 1.0)   # multiplier for limb radii
+    td = cfg.get("torso_depth", 0.20)     # front-to-back torso size
+    skin_tone = cfg.get("skin_tone", None)
+
     # Vertical layout (bottom-up)
     foot_top = 0.06
     knee_z = foot_top + leg_len * 0.48
@@ -125,13 +131,14 @@ def create_body(cfg):
     parts.append(head)
 
     # --- Neck ---
-    neck = _create_cylinder("Neck", 0.05, neck_len, (0, 0, chest_z + neck_len / 2), segments=8)
+    neck_r = 0.05 * lt
+    neck = _create_cylinder("Neck", neck_r, neck_len, (0, 0, chest_z + neck_len / 2), segments=8)
     parts.append(neck)
 
     # --- Torso (upper chest) ---
     chest = _create_box(
         "Chest",
-        size=(sw * 2, 0.22, torso_len * 0.55),
+        size=(sw * 2, td * 1.1, torso_len * 0.55),
         location=(0, 0, chest_z - torso_len * 0.55 / 2),
     )
     parts.append(chest)
@@ -139,7 +146,7 @@ def create_body(cfg):
     # --- Torso (lower / waist) ---
     waist = _create_box(
         "Waist",
-        size=(hw * 2 + 0.06, 0.18, torso_len * 0.45),
+        size=(hw * 2 + 0.06, td * 0.9, torso_len * 0.45),
         location=(0, 0, hip_z + torso_len * 0.45 / 2),
     )
     parts.append(waist)
@@ -147,19 +154,21 @@ def create_body(cfg):
     # --- Pelvis ---
     pelvis = _create_box(
         "Pelvis",
-        size=(hw * 2 + 0.04, 0.18, 0.12),
+        size=(hw * 2 + 0.04, td * 0.9, 0.12),
         location=(0, 0, hip_z - 0.02),
     )
     parts.append(pelvis)
 
     # --- Legs ---
+    upper_leg_r = 0.065 * lt
+    lower_leg_r = 0.055 * lt
     for side, x_sign in [("L", 1), ("R", -1)]:
         x = x_sign * hw
 
         # Upper leg
         upper_leg_len = knee_z - hip_z
         upper_leg = _create_cylinder(
-            f"UpperLeg.{side}", 0.065, abs(upper_leg_len),
+            f"UpperLeg.{side}", upper_leg_r, abs(upper_leg_len),
             (x, 0, (hip_z + knee_z) / 2), segments=8,
         )
         parts.append(upper_leg)
@@ -167,7 +176,7 @@ def create_body(cfg):
         # Lower leg
         lower_leg_len = knee_z - foot_top
         lower_leg = _create_cylinder(
-            f"LowerLeg.{side}", 0.055, lower_leg_len,
+            f"LowerLeg.{side}", lower_leg_r, lower_leg_len,
             (x, 0, (foot_top + knee_z) / 2), segments=8,
         )
         parts.append(lower_leg)
@@ -181,6 +190,8 @@ def create_body(cfg):
         parts.append(foot)
 
     # --- Arms ---
+    upper_arm_r = 0.05 * lt
+    lower_arm_r = 0.04 * lt
     for side, x_sign in [("L", 1), ("R", -1)]:
         shoulder_x = x_sign * (sw + 0.04)
         elbow_x = x_sign * (sw + 0.04 + arm_len * 0.48)
@@ -193,7 +204,7 @@ def create_body(cfg):
         upper_arm_len = arm_len * 0.48
         ua_cx = (shoulder_x + elbow_x) / 2
         upper_arm = _create_cylinder(
-            f"UpperArm.{side}", 0.05, upper_arm_len,
+            f"UpperArm.{side}", upper_arm_r, upper_arm_len,
             (ua_cx, arm_y, arm_z), segments=8,
         )
         upper_arm.rotation_euler = (0, math.radians(90), 0)
@@ -204,7 +215,7 @@ def create_body(cfg):
         lower_arm_len = arm_len * 0.52
         la_cx = (elbow_x + wrist_x) / 2
         lower_arm = _create_cylinder(
-            f"LowerArm.{side}", 0.04, lower_arm_len,
+            f"LowerArm.{side}", lower_arm_r, lower_arm_len,
             (la_cx, arm_y, arm_z), segments=8,
         )
         lower_arm.rotation_euler = (0, math.radians(90), 0)
@@ -226,6 +237,6 @@ def create_body(cfg):
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
     _smooth_normals(body)
-    _apply_material(body)
+    _apply_material(body, skin_tone)
 
     return body

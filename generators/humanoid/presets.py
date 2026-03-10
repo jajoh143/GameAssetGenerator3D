@@ -1,0 +1,259 @@
+"""Character presets and body configuration.
+
+Provides named presets (archetypes) that set proportions for common character
+types, plus a build system that scales proportions relative to a base.
+
+Presets define the full body config dict. Users can pick a preset and then
+override individual values for fine-tuning.
+
+Body build adjusts proportions multiplicatively:
+    - "lean":    narrower shoulders/hips, thinner limbs
+    - "average": no adjustment (1.0x)
+    - "stocky":  wider shoulders/hips, thicker limbs, shorter
+    - "heavy":   widest proportions, thickest limbs
+
+Skin tones are named palettes mapping to RGBA base colors.
+"""
+
+import random
+
+
+# ─── Named presets ──────────────────────────────────────────────────────────
+
+PRESETS = {
+    "average": {
+        "height": 1.75,
+        "shoulder_width": 0.40,
+        "hip_width": 0.27,
+        "head_size": 0.21,
+        "arm_length": 0.68,
+        "leg_length": 0.88,
+        "torso_length": 0.54,
+        "neck_length": 0.08,
+        "hand_size": 0.08,
+        "foot_length": 0.24,
+        "foot_width": 0.10,
+        "limb_thickness": 1.0,
+        "torso_depth": 0.20,
+    },
+    "tall": {
+        "height": 2.0,
+        "shoulder_width": 0.42,
+        "hip_width": 0.26,
+        "head_size": 0.22,
+        "arm_length": 0.78,
+        "leg_length": 1.02,
+        "torso_length": 0.60,
+        "neck_length": 0.10,
+        "hand_size": 0.09,
+        "foot_length": 0.27,
+        "foot_width": 0.10,
+        "limb_thickness": 0.95,
+        "torso_depth": 0.20,
+    },
+    "short": {
+        "height": 1.50,
+        "shoulder_width": 0.36,
+        "hip_width": 0.26,
+        "head_size": 0.22,
+        "arm_length": 0.55,
+        "leg_length": 0.72,
+        "torso_length": 0.46,
+        "neck_length": 0.06,
+        "hand_size": 0.07,
+        "foot_length": 0.20,
+        "foot_width": 0.09,
+        "limb_thickness": 1.05,
+        "torso_depth": 0.20,
+    },
+    "child": {
+        "height": 1.20,
+        "shoulder_width": 0.26,
+        "hip_width": 0.22,
+        "head_size": 0.24,       # proportionally larger head
+        "arm_length": 0.42,
+        "leg_length": 0.52,
+        "torso_length": 0.38,
+        "neck_length": 0.05,
+        "hand_size": 0.06,
+        "foot_length": 0.16,
+        "foot_width": 0.08,
+        "limb_thickness": 0.85,
+        "torso_depth": 0.16,
+    },
+    "brute": {
+        "height": 2.10,
+        "shoulder_width": 0.56,
+        "hip_width": 0.34,
+        "head_size": 0.22,
+        "arm_length": 0.82,
+        "leg_length": 1.00,
+        "torso_length": 0.65,
+        "neck_length": 0.06,     # thick, short neck
+        "hand_size": 0.12,
+        "foot_length": 0.30,
+        "foot_width": 0.14,
+        "limb_thickness": 1.4,
+        "torso_depth": 0.28,
+    },
+    "slender": {
+        "height": 1.85,
+        "shoulder_width": 0.34,
+        "hip_width": 0.22,
+        "head_size": 0.20,
+        "arm_length": 0.75,
+        "leg_length": 0.98,
+        "torso_length": 0.52,
+        "neck_length": 0.10,
+        "hand_size": 0.07,
+        "foot_length": 0.23,
+        "foot_width": 0.08,
+        "limb_thickness": 0.75,
+        "torso_depth": 0.16,
+    },
+}
+
+
+# ─── Body builds (multiplier profiles) ─────────────────────────────────────
+
+BUILDS = {
+    "lean": {
+        "shoulder_width": 0.90,
+        "hip_width": 0.90,
+        "limb_thickness": 0.80,
+        "torso_depth": 0.85,
+        "hand_size": 0.90,
+        "foot_width": 0.90,
+    },
+    "average": {},  # no modifications
+    "stocky": {
+        "height": 0.95,
+        "shoulder_width": 1.15,
+        "hip_width": 1.15,
+        "limb_thickness": 1.25,
+        "torso_depth": 1.20,
+        "hand_size": 1.10,
+        "foot_width": 1.15,
+        "neck_length": 0.75,
+    },
+    "heavy": {
+        "height": 0.97,
+        "shoulder_width": 1.30,
+        "hip_width": 1.35,
+        "limb_thickness": 1.50,
+        "torso_depth": 1.45,
+        "hand_size": 1.20,
+        "foot_width": 1.25,
+        "neck_length": 0.60,
+        "torso_length": 1.10,
+    },
+}
+
+
+# ─── Skin tones ─────────────────────────────────────────────────────────────
+
+SKIN_TONES = {
+    "light":    (0.85, 0.72, 0.60, 1.0),
+    "fair":     (0.76, 0.61, 0.48, 1.0),
+    "medium":   (0.65, 0.50, 0.38, 1.0),
+    "olive":    (0.58, 0.45, 0.30, 1.0),
+    "tan":      (0.50, 0.38, 0.25, 1.0),
+    "brown":    (0.40, 0.28, 0.18, 1.0),
+    "dark":     (0.28, 0.18, 0.12, 1.0),
+    # Game-specific tones
+    "zombie":   (0.45, 0.55, 0.35, 1.0),
+    "orc":      (0.30, 0.50, 0.25, 1.0),
+    "frost":    (0.70, 0.78, 0.85, 1.0),
+    "ember":    (0.65, 0.30, 0.18, 1.0),
+    "shadow":   (0.20, 0.18, 0.22, 1.0),
+}
+
+
+# ─── Public API ─────────────────────────────────────────────────────────────
+
+def get_preset_names():
+    """Return sorted list of available preset names."""
+    return sorted(PRESETS.keys())
+
+
+def get_build_names():
+    """Return sorted list of available build names."""
+    return sorted(BUILDS.keys())
+
+
+def get_skin_tone_names():
+    """Return sorted list of available skin tone names."""
+    return sorted(SKIN_TONES.keys())
+
+
+def resolve_config(preset="average", build="average", skin_tone="medium",
+                   overrides=None, randomize=False, seed=None):
+    """Build a complete character config from preset + build + overrides.
+
+    Args:
+        preset: Name of the base preset (e.g., "tall", "brute").
+        build: Body build modifier ("lean", "average", "stocky", "heavy").
+        skin_tone: Named skin tone or custom (R,G,B,A) tuple.
+        overrides: Dict of individual config values to override.
+        randomize: If True, add slight random variation to proportions.
+        seed: Random seed for reproducible randomization.
+
+    Returns:
+        Complete config dict ready for generate().
+    """
+    if preset not in PRESETS:
+        raise ValueError(f"Unknown preset '{preset}'. Available: {get_preset_names()}")
+    if build not in BUILDS:
+        raise ValueError(f"Unknown build '{build}'. Available: {get_build_names()}")
+
+    # Start from preset
+    cfg = dict(PRESETS[preset])
+
+    # Apply build multipliers
+    build_mults = BUILDS[build]
+    for key, mult in build_mults.items():
+        if key in cfg:
+            cfg[key] = cfg[key] * mult
+
+    # Resolve skin tone
+    if isinstance(skin_tone, str):
+        if skin_tone not in SKIN_TONES:
+            raise ValueError(f"Unknown skin tone '{skin_tone}'. Available: {get_skin_tone_names()}")
+        cfg["skin_tone"] = SKIN_TONES[skin_tone]
+    else:
+        cfg["skin_tone"] = tuple(skin_tone)
+
+    # Add randomization for crowd variety
+    if randomize:
+        rng = random.Random(seed)
+        _randomize_config(cfg, rng)
+
+    # Apply user overrides last (highest priority)
+    if overrides:
+        cfg.update(overrides)
+
+    return cfg
+
+
+def _randomize_config(cfg, rng):
+    """Add slight random variation to body proportions."""
+    # ±5% on most dimensions, ±3% on height
+    variance_map = {
+        "height": 0.03,
+        "shoulder_width": 0.05,
+        "hip_width": 0.05,
+        "head_size": 0.04,
+        "arm_length": 0.04,
+        "leg_length": 0.04,
+        "torso_length": 0.04,
+        "neck_length": 0.08,
+        "hand_size": 0.06,
+        "foot_length": 0.05,
+        "foot_width": 0.05,
+        "limb_thickness": 0.06,
+        "torso_depth": 0.05,
+    }
+    for key, pct in variance_map.items():
+        if key in cfg:
+            factor = 1.0 + rng.uniform(-pct, pct)
+            cfg[key] = cfg[key] * factor
