@@ -111,6 +111,8 @@ def cmd_generate(args):
         cmd.append("--randomize")
     if args.seed is not None:
         cmd.extend(["--seed", str(args.seed)])
+    if args.draco:
+        cmd.append("--draco")
 
     print(f"Generating {asset_type} -> {output}")
     print(f"Running: {' '.join(cmd)}")
@@ -176,6 +178,8 @@ def main():
                             help="Add random variation to proportions")
     gen_parser.add_argument("--seed", type=int, default=None,
                             help="Random seed for reproducible variation")
+    gen_parser.add_argument("--draco", action="store_true", default=False,
+                            help="Enable Draco mesh compression for glTF/GLB")
     gen_parser.set_defaults(func=cmd_generate)
 
     # list

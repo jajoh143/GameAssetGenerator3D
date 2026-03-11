@@ -73,6 +73,10 @@ def parse_args():
     parser.add_argument("--animations", default="all",
                         help="Comma-separated list or 'all'")
 
+    # Export options
+    parser.add_argument("--draco", action="store_true",
+                        help="Enable Draco mesh compression for glTF/GLB")
+
     return parser.parse_args(argv)
 
 
@@ -130,7 +134,7 @@ def main():
     print("Generation complete. Exporting...")
 
     output = os.path.abspath(args.output)
-    export(output, args.format)
+    export(output, args.format, draco=args.draco)
     print(f"Done! Asset saved to: {output}")
 
 
