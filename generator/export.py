@@ -54,6 +54,11 @@ def export(filepath, fmt=None):
             export_animations=True,
             export_skins=True,
             export_apply=True,
+            export_draco_mesh_compression=True,
+            export_draco_compression_level=6,
+            export_draco_position_quantization=14,
+            export_draco_normal_quantization=10,
+            export_draco_texcoord_quantization=12,
         )
     elif fmt == "fbx":
         bpy.ops.export_scene.fbx(
