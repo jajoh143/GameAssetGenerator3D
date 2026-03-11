@@ -40,7 +40,19 @@ def _set_loc(pose_bone, frame, axis, value):
 
 def _make_cyclic(action):
     """Add cyclic F-curve modifiers for seamless looping."""
-    for fcurve in action.fcurves:
+    # Blender 4.x layered actions may not expose fcurves directly;
+    # fall back to iterating via action.layers/strips if needed.
+    fcurves = getattr(action, 'fcurves', None)
+    if fcurves is None or len(fcurves) == 0:
+        # Try the Blender 4.x layered-action API
+        for layer in getattr(action, 'layers', []):
+            for strip in getattr(layer, 'strips', []):
+                for fcurve in getattr(strip, 'channels', []):
+                    mod = fcurve.modifiers.new(type='CYCLES')
+                    mod.mode_before = 'REPEAT'
+                    mod.mode_after = 'REPEAT'
+        return
+    for fcurve in fcurves:
         mod = fcurve.modifiers.new(type='CYCLES')
         mod.mode_before = 'REPEAT'
         mod.mode_after = 'REPEAT'
