@@ -38,19 +38,41 @@ def _set_loc(pose_bone, frame, axis, value):
     pose_bone.keyframe_insert(data_path="location", index=idx, frame=frame)
 
 
-def _make_cyclic(action):
-    """Add cyclic F-curve modifiers for seamless looping."""
-    # Blender 4.x layered actions may not expose fcurves directly;
-    # fall back to iterating via action.layers/strips if needed.
-    fcurves = getattr(action, 'fcurves', None)
-    if fcurves is None or len(fcurves) == 0:
-        # Try the Blender 4.x layered-action API
-        for layer in getattr(action, 'layers', []):
-            for strip in getattr(layer, 'strips', []):
-                for fcurve in getattr(strip, 'channels', []):
-                    mod = fcurve.modifiers.new(type='CYCLES')
-                    mod.mode_before = 'REPEAT'
-                    mod.mode_after = 'REPEAT'
+def _get_fcurves(armature_obj):
+    """Get all F-Curves from the active action, supporting both legacy and 5.0+ API."""
+    anim_data = armature_obj.animation_data
+    if not anim_data or not anim_data.action:
+        return []
+    action = anim_data.action
+    # Legacy Blender (< 5.0): action.fcurves exists directly
+    if hasattr(action, 'fcurves'):
+        return action.fcurves
+    # Blender 5.0+: F-Curves live in channelbags accessed via action slots
+    from bpy_extras import anim_utils
+    slot = anim_data.action_slot
+    if slot is None:
+        return []
+    channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
+    if channelbag is None:
+        return []
+    return channelbag.fcurves
+
+
+def _make_cyclic(action_or_armature):
+    """Add cyclic F-curve modifiers for seamless looping.
+
+    In Blender 5.0+ the armature_obj must be passed so we can resolve the
+    channelbag.  For legacy Blender the action itself is sufficient.
+    """
+    import bpy
+    # Determine the list of fcurves depending on API version
+    if hasattr(action_or_armature, 'fcurves'):
+        # Legacy path – called with an Action that has .fcurves
+        fcurves = action_or_armature.fcurves
+    elif hasattr(action_or_armature, 'animation_data'):
+        # Blender 5.0+ path – called with the armature object
+        fcurves = _get_fcurves(action_or_armature)
+    else:
         return
     for fcurve in fcurves:
         mod = fcurve.modifiers.new(type='CYCLES')
@@ -223,7 +245,7 @@ def create_idle(armature_obj, cfg):
             ]:
                 _set_rot(ua, frame, 'Z', angle)
 
-    _make_cyclic(action)
+    _make_cyclic(armature_obj)
     _exit_pose()
     return action
 
@@ -314,7 +336,7 @@ def create_walk_cycle(armature_obj, cfg):
         ]:
             _set_rot(spine_bone, frame, 'Z', twist)
 
-    _make_cyclic(action)
+    _make_cyclic(armature_obj)
     _exit_pose()
     return action
 
@@ -413,7 +435,7 @@ def create_run_cycle(armature_obj, cfg):
             _set_loc(hips, frame, 'Z', b)
             _set_rot(hips, frame, 'Z', s)
 
-    _make_cyclic(action)
+    _make_cyclic(armature_obj)
     _exit_pose()
     return action
 
