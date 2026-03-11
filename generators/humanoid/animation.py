@@ -80,6 +80,36 @@ def _make_cyclic(action_or_armature):
         mod.mode_after = 'REPEAT'
 
 
+def _equalize_keyframes(armature_obj):
+    """Ensure all F-Curves in the active action have keyframes at the same frames.
+
+    The glTF exporter warns and falls back to baking when channel tracks have
+    different keyframe counts.  This helper collects every unique frame across
+    all F-Curves, then inserts evaluated (interpolated) keyframes wherever a
+    curve is missing one, so all curves share the same frame set.
+    """
+    fcurves = _get_fcurves(armature_obj)
+    if not fcurves:
+        return
+
+    # Collect the union of all keyed frames
+    all_frames = set()
+    for fc in fcurves:
+        for kp in fc.keyframe_points:
+            all_frames.add(kp.co[0])
+    all_frames = sorted(all_frames)
+
+    for fc in fcurves:
+        existing = {kp.co[0] for kp in fc.keyframe_points}
+        missing = [f for f in all_frames if f not in existing]
+        if not missing:
+            continue
+        for frame in missing:
+            value = fc.evaluate(frame)
+            fc.keyframe_points.insert(frame, value, options={'FAST'})
+        fc.update()
+
+
 def _new_action(armature_obj, name):
     """Create a new Action, link it to the armature, and return it."""
     import bpy
@@ -246,6 +276,7 @@ def create_idle(armature_obj, cfg):
                 _set_rot(ua, frame, 'Z', angle)
 
     _make_cyclic(armature_obj)
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -337,6 +368,7 @@ def create_walk_cycle(armature_obj, cfg):
             _set_rot(spine_bone, frame, 'Z', twist)
 
     _make_cyclic(armature_obj)
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -436,6 +468,7 @@ def create_run_cycle(armature_obj, cfg):
             _set_rot(hips, frame, 'Z', s)
 
     _make_cyclic(armature_obj)
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -604,6 +637,7 @@ def create_jump(armature_obj, cfg):
         _set_loc(hips, f_total, 'Z', 0)
 
     # Jump does NOT loop
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -724,6 +758,7 @@ def create_attack(armature_obj, cfg):
                 _set_rot(b, f_total, 'X', 0)
 
     # Attack does NOT loop
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
