@@ -85,6 +85,10 @@ def cmd_generate(args):
         cmd.extend(["--build", args.build])
     if args.skin_tone:
         cmd.extend(["--skin-tone", args.skin_tone])
+    if args.hair_style:
+        cmd.extend(["--hair-style", args.hair_style])
+    if args.hair_color:
+        cmd.extend(["--hair-color", args.hair_color])
     if args.height is not None:
         cmd.extend(["--height", str(args.height)])
     if args.shoulder_width is not None:
@@ -154,6 +158,10 @@ def main():
                             help="Body build (lean, average, stocky, heavy)")
     gen_parser.add_argument("--skin-tone", default=None,
                             help="Skin tone name or R,G,B,A values")
+    gen_parser.add_argument("--hair-style", default=None,
+                            help="Hair style (none, buzzed, short, spiky, long, mohawk)")
+    gen_parser.add_argument("--hair-color", default=None,
+                            help="Hair color name or R,G,B,A values")
     gen_parser.add_argument("--height", type=float, default=None,
                             help="Character height override in meters")
     gen_parser.add_argument("--shoulder-width", type=float, default=None)

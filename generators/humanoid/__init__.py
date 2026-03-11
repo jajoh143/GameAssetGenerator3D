@@ -5,6 +5,10 @@ from .presets import (
     get_preset_names, get_build_names, get_skin_tone_names,
     resolve_config,
 )
+from .hair import (
+    HAIR_STYLES, HAIR_COLORS,
+    get_hair_style_names, get_hair_color_names,
+)
 
 # Available animations (importable without bpy)
 AVAILABLE_ANIMATIONS = ("idle", "walk", "run", "jump", "attack")
@@ -35,6 +39,8 @@ def generate(config=None):
     preset = config.pop("preset", "average")
     build = config.pop("build", "average")
     skin_tone = config.pop("skin_tone", "medium")
+    hair_style = config.pop("hair_style", "none")
+    hair_color = config.pop("hair_color", "dark_brown")
     anim_selection = config.pop("animations", "all")
     randomize = config.pop("randomize", False)
     seed = config.pop("seed", None)
@@ -44,6 +50,8 @@ def generate(config=None):
         preset=preset,
         build=build,
         skin_tone=skin_tone,
+        hair_style=hair_style,
+        hair_color=hair_color,
         overrides=config if config else None,
         randomize=randomize,
         seed=seed,

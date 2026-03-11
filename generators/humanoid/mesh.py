@@ -229,6 +229,14 @@ def create_body(cfg):
         )
         parts.append(hand)
 
+    # --- Hair ---
+    hair_style = cfg.get("hair_style", "none")
+    hair_color = cfg.get("hair_color", None)
+    if hair_style and hair_style != "none":
+        from . import hair as hair_module
+        hair_parts = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
+        parts.extend(hair_parts)
+
     # --- Join everything ---
     body = _join_objects(parts)
 

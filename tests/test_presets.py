@@ -11,6 +11,10 @@ from generators.humanoid.presets import (
     get_preset_names, get_build_names, get_skin_tone_names,
     resolve_config,
 )
+from generators.humanoid.hair import (
+    HAIR_STYLES, HAIR_COLORS, HAIR_BUILDERS,
+    get_hair_style_names, get_hair_color_names,
+)
 
 
 class TestPresets(unittest.TestCase):
@@ -157,6 +161,91 @@ class TestResolveConfig(unittest.TestCase):
         self.assertGreater(cfg["torso_depth"], 0)
 
 
+class TestHairStyles(unittest.TestCase):
+
+    def test_style_count(self):
+        # 5 styles + "none"
+        self.assertEqual(len(HAIR_STYLES), 6)
+
+    def test_all_non_none_styles_have_builders(self):
+        for style in HAIR_STYLES:
+            if style != "none":
+                self.assertIn(style, HAIR_BUILDERS, f"No builder for '{style}'")
+
+    def test_expected_styles_exist(self):
+        for style in ("buzzed", "short", "spiky", "long", "mohawk"):
+            self.assertIn(style, HAIR_STYLES)
+
+    def test_none_not_in_builders(self):
+        self.assertNotIn("none", HAIR_BUILDERS)
+
+    def test_style_names_list(self):
+        names = get_hair_style_names()
+        self.assertIn("none", names)
+        self.assertIn("mohawk", names)
+
+    def test_builders_are_callable(self):
+        for name, builder in HAIR_BUILDERS.items():
+            self.assertTrue(callable(builder), f"Builder '{name}' not callable")
+
+
+class TestHairColors(unittest.TestCase):
+
+    def test_all_colors_are_rgba(self):
+        for name, color in HAIR_COLORS.items():
+            self.assertEqual(len(color), 4, f"{name} not RGBA")
+            self.assertTrue(all(0 <= c <= 1 for c in color),
+                            f"{name} has out-of-range channel")
+
+    def test_natural_colors_exist(self):
+        for name in ("black", "brown", "blonde", "red", "white", "grey"):
+            self.assertIn(name, HAIR_COLORS)
+
+    def test_fantasy_colors_exist(self):
+        for name in ("blue", "green", "purple", "pink"):
+            self.assertIn(name, HAIR_COLORS)
+
+    def test_color_names_sorted(self):
+        names = get_hair_color_names()
+        self.assertEqual(names, sorted(names))
+
+    def test_color_count(self):
+        self.assertEqual(len(HAIR_COLORS), 13)
+
+
+class TestResolveConfigHair(unittest.TestCase):
+
+    def test_default_hair_style_is_none(self):
+        cfg = resolve_config()
+        self.assertEqual(cfg["hair_style"], "none")
+
+    def test_hair_style_set(self):
+        cfg = resolve_config(hair_style="mohawk")
+        self.assertEqual(cfg["hair_style"], "mohawk")
+
+    def test_hair_color_set_by_name(self):
+        cfg = resolve_config(hair_color="blonde")
+        self.assertEqual(cfg["hair_color"], "blonde")
+
+    def test_hair_color_custom_tuple(self):
+        custom = (1.0, 0.0, 0.5, 1.0)
+        cfg = resolve_config(hair_color=custom)
+        self.assertEqual(cfg["hair_color"], custom)
+
+    def test_invalid_hair_style_raises(self):
+        with self.assertRaises(ValueError):
+            resolve_config(hair_style="afro")
+
+    def test_invalid_hair_color_raises(self):
+        with self.assertRaises(ValueError):
+            resolve_config(hair_color="neon_yellow")
+
+    def test_hair_override_via_overrides(self):
+        cfg = resolve_config(hair_style="short",
+                             overrides={"hair_style": "spiky"})
+        self.assertEqual(cfg["hair_style"], "spiky")
+
+
 class TestHumanoidInitPresets(unittest.TestCase):
     """Test that humanoid __init__ exports preset info without bpy."""
 
@@ -177,6 +266,18 @@ class TestHumanoidInitPresets(unittest.TestCase):
         names = get_skin_tone_names()
         self.assertIn("medium", names)
         self.assertIn("zombie", names)
+
+    def test_exports_hair_style_names(self):
+        from generators.humanoid import get_hair_style_names
+        names = get_hair_style_names()
+        self.assertIn("none", names)
+        self.assertIn("spiky", names)
+
+    def test_exports_hair_color_names(self):
+        from generators.humanoid import get_hair_color_names
+        names = get_hair_color_names()
+        self.assertIn("black", names)
+        self.assertIn("blonde", names)
 
 
 if __name__ == "__main__":

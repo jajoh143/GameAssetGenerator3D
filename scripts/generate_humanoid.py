@@ -46,6 +46,12 @@ def parse_args():
     parser.add_argument("--skin-tone", default="medium",
                         help="Skin tone name or R,G,B,A (e.g., 'tan' or '0.5,0.4,0.3,1.0')")
 
+    # Hair
+    parser.add_argument("--hair-style", default="none",
+                        help="Hair style (none, buzzed, short, spiky, long, mohawk)")
+    parser.add_argument("--hair-color", default="dark_brown",
+                        help="Hair color name or R,G,B,A values")
+
     # Direct proportion overrides
     parser.add_argument("--height", type=float, default=None)
     parser.add_argument("--shoulder-width", type=float, default=None)
@@ -70,8 +76,8 @@ def parse_args():
     return parser.parse_args(argv)
 
 
-def _parse_skin_tone(value):
-    """Parse skin tone — either a name or comma-separated RGBA."""
+def _parse_color_value(value):
+    """Parse a color value — either a name or comma-separated RGBA."""
     if "," in value:
         parts = [float(x.strip()) for x in value.split(",")]
         if len(parts) == 3:
@@ -87,7 +93,9 @@ def main():
     config = {
         "preset": args.preset,
         "build": args.build,
-        "skin_tone": _parse_skin_tone(args.skin_tone),
+        "skin_tone": _parse_color_value(args.skin_tone),
+        "hair_style": args.hair_style,
+        "hair_color": _parse_color_value(args.hair_color),
         "randomize": args.randomize,
     }
 
@@ -117,7 +125,7 @@ def main():
             config[key] = val
 
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
-          f"skin={args.skin_tone}")
+          f"skin={args.skin_tone}, hair={args.hair_style}/{args.hair_color}")
     armature = generate(config)
     print("Generation complete. Exporting...")
 

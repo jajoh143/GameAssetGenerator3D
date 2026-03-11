@@ -13,9 +13,13 @@ Body build adjusts proportions multiplicatively:
     - "heavy":   widest proportions, thickest limbs
 
 Skin tones are named palettes mapping to RGBA base colors.
+
+Hair styles and colors are also configurable per-character.
 """
 
 import random
+
+from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color_names
 
 
 # ─── Named presets ──────────────────────────────────────────────────────────
@@ -187,6 +191,7 @@ def get_skin_tone_names():
 
 
 def resolve_config(preset="average", build="average", skin_tone="medium",
+                   hair_style="none", hair_color="dark_brown",
                    overrides=None, randomize=False, seed=None):
     """Build a complete character config from preset + build + overrides.
 
@@ -194,6 +199,8 @@ def resolve_config(preset="average", build="average", skin_tone="medium",
         preset: Name of the base preset (e.g., "tall", "brute").
         build: Body build modifier ("lean", "average", "stocky", "heavy").
         skin_tone: Named skin tone or custom (R,G,B,A) tuple.
+        hair_style: Hair style name ("none", "buzzed", "short", etc.).
+        hair_color: Named hair color or custom (R,G,B,A) tuple.
         overrides: Dict of individual config values to override.
         randomize: If True, add slight random variation to proportions.
         seed: Random seed for reproducible randomization.
@@ -222,6 +229,18 @@ def resolve_config(preset="average", build="average", skin_tone="medium",
         cfg["skin_tone"] = SKIN_TONES[skin_tone]
     else:
         cfg["skin_tone"] = tuple(skin_tone)
+
+    # Resolve hair
+    if isinstance(hair_style, str) and hair_style not in HAIR_STYLES:
+        raise ValueError(f"Unknown hair style '{hair_style}'. Available: {list(HAIR_STYLES)}")
+    cfg["hair_style"] = hair_style
+
+    if isinstance(hair_color, str):
+        if hair_color not in HAIR_COLORS:
+            raise ValueError(f"Unknown hair color '{hair_color}'. Available: {get_hair_color_names()}")
+        cfg["hair_color"] = hair_color
+    else:
+        cfg["hair_color"] = tuple(hair_color)
 
     # Add randomization for crowd variety
     if randomize:
