@@ -189,43 +189,35 @@ def create_body(cfg):
         )
         parts.append(foot)
 
-    # --- Arms ---
+    # --- Arms (hanging down at sides) ---
     upper_arm_r = 0.05 * lt
     lower_arm_r = 0.04 * lt
     for side, x_sign in [("L", 1), ("R", -1)]:
         shoulder_x = x_sign * (sw + 0.04)
-        elbow_x = x_sign * (sw + 0.04 + arm_len * 0.48)
-        wrist_x = x_sign * (sw + 0.04 + arm_len)
+        arm_top_z = chest_z - 0.06  # shoulder attachment point
 
-        arm_y = 0
-        arm_z = chest_z - 0.06
-
-        # Upper arm
+        # Upper arm (vertical, hanging down)
         upper_arm_len = arm_len * 0.48
-        ua_cx = (shoulder_x + elbow_x) / 2
+        elbow_z = arm_top_z - upper_arm_len
         upper_arm = _create_cylinder(
             f"UpperArm.{side}", upper_arm_r, upper_arm_len,
-            (ua_cx, arm_y, arm_z), segments=8,
+            (shoulder_x, 0, (arm_top_z + elbow_z) / 2), segments=8,
         )
-        upper_arm.rotation_euler = (0, math.radians(90), 0)
-        bpy.ops.object.transform_apply(rotation=True)
         parts.append(upper_arm)
 
-        # Lower arm
+        # Lower arm (vertical, continuing down)
         lower_arm_len = arm_len * 0.52
-        la_cx = (elbow_x + wrist_x) / 2
+        wrist_z = elbow_z - lower_arm_len
         lower_arm = _create_cylinder(
             f"LowerArm.{side}", lower_arm_r, lower_arm_len,
-            (la_cx, arm_y, arm_z), segments=8,
+            (shoulder_x, 0, (elbow_z + wrist_z) / 2), segments=8,
         )
-        lower_arm.rotation_euler = (0, math.radians(90), 0)
-        bpy.ops.object.transform_apply(rotation=True)
         parts.append(lower_arm)
 
         # Hand
         hand = _create_sphere(
             f"Hand.{side}", hand_size,
-            (wrist_x, arm_y, arm_z), segments=6, rings=4,
+            (shoulder_x, 0, wrist_z - hand_size * 0.5), segments=6, rings=4,
         )
         parts.append(hand)
 

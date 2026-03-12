@@ -149,11 +149,12 @@ ANIM_PARAMS = {
     "idle": {
         "cycle_frames": 48,
         "fps": 24,
-        "breath_chest": 2,       # chest expansion rotation (degrees)
-        "breath_spine": 1.5,
-        "head_look": 3,          # subtle head turn
-        "hip_shift": 1.5,        # weight shift side-to-side
-        "arm_drift": 3,          # arms hang, slight sway
+        "breath_chest": 1.5,     # chest expansion rotation (degrees)
+        "breath_spine": 1.0,
+        "head_look": 2,          # subtle head turn
+        "hip_shift": 1.0,        # weight shift side-to-side
+        "arm_breath": 0.8,       # subtle arm shift from breathing
+        "shoulder_breath": 0.5,  # slight shoulder rise on inhale
     },
     "walk": {
         "cycle_frames": 24,
@@ -164,6 +165,7 @@ ANIM_PARAMS = {
         "upper_arm_swing": 20,
         "lower_arm_bend": 25,
         "spine_twist": 3,
+        "spine_lean": 4,         # forward/backward torso sway
         "hip_bob": 0.02,
         "hip_sway": 2,
     },
@@ -222,7 +224,12 @@ ANIM_PARAMS = {
 # ───────────────────────────────────────────────────────────────────────────
 
 def create_idle(armature_obj, cfg):
-    """Idle: subtle breathing, weight-shift, and head turn. Loops."""
+    """Idle: arms at sides, subtle breathing shake, gentle weight-shift. Loops.
+
+    Arms hang naturally in the rest pose. Breathing causes slight chest
+    expansion and a tiny outward drift of the upper arms, mimicking the
+    ribcage pushing the shoulders out on inhale.
+    """
     _enter_pose(armature_obj)
     _reset_pose(armature_obj)
 
@@ -243,7 +250,7 @@ def create_idle(armature_obj, cfg):
             (q * 3, p["breath_chest"] * 0.7, p["breath_spine"] * 0.7),
             (f,     0,                    0),
         ]:
-            _set_rot(chest, frame, 'X', -chest_angle)  # lean back slightly = breathing in
+            _set_rot(chest, frame, 'X', -chest_angle)
             _set_rot(spine, frame, 'X', -spine_angle)
 
     # Subtle head look left/right
@@ -264,16 +271,26 @@ def create_idle(armature_obj, cfg):
         ]:
             _set_rot(hips, frame, 'Z', sway)
 
-    # Arms hang with gentle sway (opposite to hip shift)
-    for side_mult, side in [(1, "L"), (-1, "R")]:
+    # Arms at sides — subtle breathing shake only.
+    # With arms-down rest pose, a small X rotation gives a gentle
+    # forward/back drift synced with the breathing rhythm.
+    ab = p["arm_breath"]
+    sb = p["shoulder_breath"]
+    for side in ["L", "R"]:
         ua = pb.get(f"UpperArm.{side}")
+        sh = pb.get(f"Shoulder.{side}")
         if ua:
-            ad = p["arm_drift"]
             for frame, angle in [
-                (0, 0), (q, -ad * side_mult), (q * 2, 0),
-                (q * 3, ad * side_mult), (f, 0),
+                (0, 0), (q, ab), (q * 2, 0),
+                (q * 3, ab * 0.7), (f, 0),
             ]:
-                _set_rot(ua, frame, 'Z', angle)
+                _set_rot(ua, frame, 'X', angle)
+        if sh:
+            for frame, angle in [
+                (0, 0), (q, -sb), (q * 2, 0),
+                (q * 3, -sb * 0.7), (f, 0),
+            ]:
+                _set_rot(sh, frame, 'X', angle)
 
     _make_cyclic(armature_obj)
     _equalize_keyframes(armature_obj)
@@ -361,11 +378,14 @@ def create_walk_cycle(armature_obj, cfg):
     spine_bone = pb.get("Spine")
     if spine_bone:
         st = wp["spine_twist"]
-        for frame, twist in [
-            (0, st), (half // 2, 0), (half, -st),
-            (half + half // 2, 0), (frames, st),
+        sl = wp.get("spine_lean", 0)
+        for frame, twist, lean in [
+            (0, st, sl), (half // 2, 0, -sl * 0.5),
+            (half, -st, sl), (half + half // 2, 0, -sl * 0.5),
+            (frames, st, sl),
         ]:
             _set_rot(spine_bone, frame, 'Z', twist)
+            _set_rot(spine_bone, frame, 'X', lean)
 
     _make_cyclic(armature_obj)
     _equalize_keyframes(armature_obj)

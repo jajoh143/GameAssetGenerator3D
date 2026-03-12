@@ -98,29 +98,29 @@ def create_rig(cfg, body_obj):
         foot = _create_bone(edit_bones, f"Foot.{side}",
                             (x, 0, foot_top), (x, 0.18, foot_top), lower_leg)
 
-    # ---- Arms ----
+    # ---- Arms (hanging down at sides) ----
     for side, x_sign in [("L", 1), ("R", -1)]:
-        shoulder_x = x_sign * sw
-        elbow_x = x_sign * (sw + 0.04 + arm_len * 0.48)
-        wrist_x = x_sign * (sw + 0.04 + arm_len)
-        hand_end_x = x_sign * (sw + 0.04 + arm_len + 0.1)
+        shoulder_x = x_sign * (sw + 0.04)
         arm_z = chest_z - 0.06
+        elbow_z = arm_z - arm_len * 0.48
+        wrist_z = elbow_z - arm_len * 0.52
+        hand_end_z = wrist_z - 0.1
 
         shoulder = _create_bone(edit_bones, f"Shoulder.{side}",
                                 (0, 0, chest_z - 0.02),
                                 (shoulder_x, 0, arm_z), chest, connect=False)
 
         upper_arm = _create_bone(edit_bones, f"UpperArm.{side}",
-                                 (shoulder_x + x_sign * 0.04, 0, arm_z),
-                                 (elbow_x, 0, arm_z), shoulder)
+                                 (shoulder_x, 0, arm_z),
+                                 (shoulder_x, 0, elbow_z), shoulder)
 
         lower_arm = _create_bone(edit_bones, f"LowerArm.{side}",
-                                 (elbow_x, 0, arm_z),
-                                 (wrist_x, 0, arm_z), upper_arm)
+                                 (shoulder_x, 0, elbow_z),
+                                 (shoulder_x, 0, wrist_z), upper_arm)
 
         hand_bone = _create_bone(edit_bones, f"Hand.{side}",
-                                 (wrist_x, 0, arm_z),
-                                 (hand_end_x, 0, arm_z), lower_arm)
+                                 (shoulder_x, 0, wrist_z),
+                                 (shoulder_x, 0, hand_end_z), lower_arm)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
