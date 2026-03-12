@@ -221,6 +221,38 @@ def create_body(cfg):
         )
         parts.append(hand)
 
+    # --- Face (eyes + nose) ---
+    eye_r = head_r * 0.06
+    eye_spacing = head_r * 0.32
+    eye_y = head_r * 0.88       # front of head
+    eye_z = head_z + head_r * 0.1
+
+    # Eye material (dark)
+    eye_mat = bpy.data.materials.new(name="Eye_Material")
+    eye_mat.use_nodes = True
+    eye_bsdf = eye_mat.node_tree.nodes.get("Principled BSDF")
+    if eye_bsdf:
+        eye_bsdf.inputs["Base Color"].default_value = (0.05, 0.05, 0.08, 1.0)
+        eye_bsdf.inputs["Roughness"].default_value = 0.3
+
+    for side, x_sign in [("L", 1), ("R", -1)]:
+        eye = _create_sphere(
+            f"Eye.{side}", eye_r,
+            (x_sign * eye_spacing, eye_y, eye_z),
+            segments=6, rings=4,
+        )
+        eye.data.materials.append(eye_mat)
+        parts.append(eye)
+
+    # Nose (small sphere protruding from front of face)
+    nose_r = head_r * 0.07
+    nose = _create_sphere(
+        "Nose", nose_r,
+        (0, head_r * 0.93, head_z - head_r * 0.08),
+        segments=6, rings=4,
+    )
+    parts.append(nose)
+
     # --- Hair ---
     hair_style = cfg.get("hair_style", "none")
     hair_color = cfg.get("hair_color", None)
