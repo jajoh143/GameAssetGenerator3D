@@ -9,6 +9,7 @@ from .hair import (
     HAIR_STYLES, HAIR_COLORS,
     get_hair_style_names, get_hair_color_names,
 )
+from .clothing import CLOTHING_TYPES, get_clothing_type_names
 
 # Available animations (importable without bpy)
 AVAILABLE_ANIMATIONS = ("idle", "walk", "run", "jump", "attack")
@@ -41,6 +42,8 @@ def generate(config=None):
     skin_tone = config.pop("skin_tone", "medium")
     hair_style = config.pop("hair_style", "none")
     hair_color = config.pop("hair_color", "dark_brown")
+    clothing = config.pop("clothing", "none")
+    clothing_color = config.pop("clothing_color", None)
     anim_selection = config.pop("animations", "all")
     randomize = config.pop("randomize", False)
     seed = config.pop("seed", None)
@@ -57,8 +60,12 @@ def generate(config=None):
         seed=seed,
     )
 
-    body = mesh.create_body(cfg)
-    armature = rig.create_rig(cfg, body)
+    # Store clothing in resolved config so mesh.py can use it
+    cfg["clothing"] = clothing
+    cfg["clothing_color"] = clothing_color
+
+    body, hair_obj, clothing_objs = mesh.create_body(cfg)
+    armature = rig.create_rig(cfg, body, hair_obj, clothing_objs)
 
     if anim_selection == "all":
         animation.create_all_animations(armature, cfg)

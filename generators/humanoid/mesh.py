@@ -253,15 +253,7 @@ def create_body(cfg):
     )
     parts.append(nose)
 
-    # --- Hair ---
-    hair_style = cfg.get("hair_style", "none")
-    hair_color = cfg.get("hair_color", None)
-    if hair_style and hair_style != "none":
-        from . import hair as hair_module
-        hair_parts = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
-        parts.extend(hair_parts)
-
-    # --- Join everything ---
+    # --- Join body parts ---
     body = _join_objects(parts)
 
     # Set origin to base of feet
@@ -271,4 +263,20 @@ def create_body(cfg):
     _smooth_normals(body)
     _apply_material(body, skin_tone)
 
-    return body
+    # --- Hair (separate object, will be parented to Head bone) ---
+    hair_obj = None
+    hair_style = cfg.get("hair_style", "none")
+    hair_color = cfg.get("hair_color", None)
+    if hair_style and hair_style != "none":
+        from . import hair as hair_module
+        hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
+
+    # --- Clothing (separate objects, parented to appropriate bones) ---
+    clothing_objs = []
+    clothing_type = cfg.get("clothing", "none")
+    if clothing_type and clothing_type != "none":
+        from . import clothing as clothing_module
+        clothing_color = cfg.get("clothing_color", None)
+        clothing_objs = clothing_module.create_clothing(cfg, clothing_type, clothing_color)
+
+    return body, hair_obj, clothing_objs

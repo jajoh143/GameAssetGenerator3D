@@ -89,6 +89,10 @@ def cmd_generate(args):
         cmd.extend(["--hair-style", args.hair_style])
     if args.hair_color:
         cmd.extend(["--hair-color", args.hair_color])
+    if args.clothing:
+        cmd.extend(["--clothing", args.clothing])
+    if args.clothing_color:
+        cmd.extend(["--clothing-color", args.clothing_color])
     if args.height is not None:
         cmd.extend(["--height", str(args.height)])
     if args.shoulder_width is not None:
@@ -164,6 +168,11 @@ def main():
                             help="Hair style (none, buzzed, short, spiky, long, mohawk)")
     gen_parser.add_argument("--hair-color", default=None,
                             help="Hair color name or R,G,B,A values")
+    gen_parser.add_argument("--clothing", default=None,
+                            help="Clothing type or comma-separated list "
+                                 "(tshirt, jacket, pants, shorts, armor, robe)")
+    gen_parser.add_argument("--clothing-color", default=None,
+                            help="Clothing color name or R,G,B,A values")
     gen_parser.add_argument("--height", type=float, default=None,
                             help="Character height override in meters")
     gen_parser.add_argument("--shoulder-width", type=float, default=None)

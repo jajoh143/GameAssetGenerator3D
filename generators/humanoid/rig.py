@@ -25,12 +25,24 @@ def _create_bone(edit_bones, name, head, tail, parent=None, connect=True):
     return bone
 
 
-def create_rig(cfg, body_obj):
+def _parent_to_bone(armature_obj, obj, bone_name):
+    """Parent an object to a specific bone on the armature."""
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    armature_obj.select_set(True)
+    bpy.context.view_layer.objects.active = armature_obj
+    armature_obj.data.bones.active = armature_obj.data.bones[bone_name]
+    bpy.ops.object.parent_set(type='BONE')
+
+
+def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
     """Build the armature, parent the mesh, and apply automatic weights.
 
     Args:
         cfg: dict with body proportion values.
         body_obj: the mesh object to skin.
+        hair_obj: optional hair mesh to parent to Head bone.
+        clothing_objs: optional list of (obj, bone_name) tuples for clothing.
 
     Returns:
         The armature object.
@@ -132,5 +144,18 @@ def create_rig(cfg, body_obj):
     armature_obj.select_set(True)
     bpy.context.view_layer.objects.active = armature_obj
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+    # ------------------------------------------------------------------ #
+    # Parent hair to Head bone so it moves with the head
+    # ------------------------------------------------------------------ #
+    if hair_obj is not None:
+        _parent_to_bone(armature_obj, hair_obj, "Head")
+
+    # ------------------------------------------------------------------ #
+    # Parent clothing to appropriate bones
+    # ------------------------------------------------------------------ #
+    if clothing_objs:
+        for obj, bone_name in clothing_objs:
+            _parent_to_bone(armature_obj, obj, bone_name)
 
     return armature_obj

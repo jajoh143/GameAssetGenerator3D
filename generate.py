@@ -44,6 +44,12 @@ HUMANOID_HAIR_COLORS = [
     "platinum", "white", "grey", "blue", "green", "purple", "pink",
 ]
 HUMANOID_ANIMATIONS = ["idle", "walk", "run", "jump", "attack"]
+HUMANOID_CLOTHING_TYPES = ["none", "tshirt", "jacket", "pants", "shorts", "armor", "robe"]
+HUMANOID_CLOTHING_COLORS = [
+    "white", "black", "grey", "red", "blue", "green", "brown",
+    "tan", "navy", "purple", "orange", "yellow",
+    "steel", "gold", "bronze",
+]
 
 # ─── Wall / Floor options ─────────────────────────────────────────────────────
 
@@ -172,6 +178,15 @@ def prompt_humanoid():
     if hair_style != "none":
         hair_color = prompt_choice("Hair color:", HUMANOID_HAIR_COLORS, default="dark_brown")
         args.extend(["--hair-color", hair_color])
+
+    print("\n── Clothing ──")
+    clothing = prompt_multi("What clothing? (pick multiple for combos, e.g. tshirt + pants):",
+                            HUMANOID_CLOTHING_TYPES[1:],  # exclude "none"
+                            default_all=False)
+    if clothing:
+        args.extend(["--clothing", ",".join(clothing)])
+        clothing_color = prompt_choice("Clothing color:", HUMANOID_CLOTHING_COLORS, default="grey")
+        args.extend(["--clothing-color", clothing_color])
 
     print("\n── Animations ──")
     anims = prompt_multi("Which animations to include?", HUMANOID_ANIMATIONS, default_all=True)
