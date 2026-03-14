@@ -25,14 +25,17 @@ def _create_bone(edit_bones, name, head, tail, parent=None, connect=True):
     return bone
 
 
-def _parent_to_bone(armature_obj, obj, bone_name):
-    """Parent an object to a specific bone on the armature."""
+def _skin_to_armature(armature_obj, obj):
+    """Parent an object to the armature with automatic weights.
+
+    This makes the object deform with the skeleton — vertices near arm bones
+    follow the arms, vertices near leg bones follow the legs, etc.
+    """
     bpy.ops.object.select_all(action='DESELECT')
     obj.select_set(True)
     armature_obj.select_set(True)
     bpy.context.view_layer.objects.active = armature_obj
-    armature_obj.data.bones.active = armature_obj.data.bones[bone_name]
-    bpy.ops.object.parent_set(type='BONE')
+    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
 
 
 def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
@@ -146,16 +149,22 @@ def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
 
     # ------------------------------------------------------------------ #
-    # Parent hair to Head bone so it moves with the head
+    # Parent hair to Head bone (rigid — moves as one piece with the head)
     # ------------------------------------------------------------------ #
     if hair_obj is not None:
-        _parent_to_bone(armature_obj, hair_obj, "Head")
+        bpy.ops.object.select_all(action='DESELECT')
+        hair_obj.select_set(True)
+        armature_obj.select_set(True)
+        bpy.context.view_layer.objects.active = armature_obj
+        armature_obj.data.bones.active = armature_obj.data.bones["Head"]
+        bpy.ops.object.parent_set(type='BONE')
 
     # ------------------------------------------------------------------ #
-    # Parent clothing to appropriate bones
+    # Skin clothing to armature with automatic weights so sleeves follow
+    # arms, pant legs follow legs, etc.
     # ------------------------------------------------------------------ #
     if clothing_objs:
-        for obj, bone_name in clothing_objs:
-            _parent_to_bone(armature_obj, obj, bone_name)
+        for obj, _bone_name in clothing_objs:
+            _skin_to_armature(armature_obj, obj)
 
     return armature_obj
