@@ -34,6 +34,7 @@ ASSETS = {
 
 HUMANOID_PRESETS = ["average", "tall", "short", "child", "brute", "slender"]
 HUMANOID_BUILDS = ["lean", "average", "stocky", "heavy"]
+HUMANOID_GENDERS = ["neutral", "male", "female"]
 HUMANOID_SKIN_TONES = [
     "light", "fair", "medium", "olive", "tan", "brown", "dark",
     "zombie", "orc", "frost", "ember", "shadow",
@@ -167,6 +168,9 @@ def prompt_humanoid():
 
     build = prompt_choice("Build:", HUMANOID_BUILDS, default="average")
     args.extend(["--build", build])
+
+    gender = prompt_choice("Gender:", HUMANOID_GENDERS, default="neutral")
+    args.extend(["--gender", gender])
 
     print("\n── Appearance ──")
     skin = prompt_choice("Skin tone:", HUMANOID_SKIN_TONES, default="medium")

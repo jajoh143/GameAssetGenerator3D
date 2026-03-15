@@ -154,6 +154,31 @@ BUILDS = {
 }
 
 
+# ─── Gender profiles (multiplier adjustments) ─────────────────────────────
+
+GENDERS = {
+    "neutral": {},  # no modifications — current default proportions
+    "male": {
+        "shoulder_width": 1.12,     # broader shoulders
+        "hip_width": 0.92,          # narrower hips relative to shoulders
+        "limb_thickness": 1.15,     # thicker arms and legs
+        "torso_depth": 1.10,        # deeper chest front-to-back
+        "neck_length": 0.85,        # shorter, thicker-looking neck
+        "hand_size": 1.08,          # slightly larger hands
+        "foot_width": 1.06,         # slightly wider feet
+    },
+    "female": {
+        "shoulder_width": 0.92,     # narrower shoulders
+        "hip_width": 1.12,          # wider hips
+        "limb_thickness": 0.88,     # slimmer limbs
+        "torso_depth": 0.92,        # narrower front-to-back
+        "hand_size": 0.90,          # smaller hands
+        "foot_length": 0.92,        # smaller feet
+        "foot_width": 0.90,
+    },
+}
+
+
 # ─── Skin tones ─────────────────────────────────────────────────────────────
 
 SKIN_TONES = {
@@ -190,14 +215,21 @@ def get_skin_tone_names():
     return sorted(SKIN_TONES.keys())
 
 
-def resolve_config(preset="average", build="average", skin_tone="medium",
+def get_gender_names():
+    """Return list of available gender names."""
+    return sorted(GENDERS.keys())
+
+
+def resolve_config(preset="average", build="average", gender="neutral",
+                   skin_tone="medium",
                    hair_style="none", hair_color="dark_brown",
                    overrides=None, randomize=False, seed=None):
-    """Build a complete character config from preset + build + overrides.
+    """Build a complete character config from preset + build + gender + overrides.
 
     Args:
         preset: Name of the base preset (e.g., "tall", "brute").
         build: Body build modifier ("lean", "average", "stocky", "heavy").
+        gender: Body gender ("neutral", "male", "female").
         skin_tone: Named skin tone or custom (R,G,B,A) tuple.
         hair_style: Hair style name ("none", "buzzed", "short", etc.).
         hair_color: Named hair color or custom (R,G,B,A) tuple.
@@ -212,6 +244,8 @@ def resolve_config(preset="average", build="average", skin_tone="medium",
         raise ValueError(f"Unknown preset '{preset}'. Available: {get_preset_names()}")
     if build not in BUILDS:
         raise ValueError(f"Unknown build '{build}'. Available: {get_build_names()}")
+    if gender not in GENDERS:
+        raise ValueError(f"Unknown gender '{gender}'. Available: {get_gender_names()}")
 
     # Start from preset
     cfg = dict(PRESETS[preset])
@@ -221,6 +255,15 @@ def resolve_config(preset="average", build="average", skin_tone="medium",
     for key, mult in build_mults.items():
         if key in cfg:
             cfg[key] = cfg[key] * mult
+
+    # Apply gender multipliers
+    gender_mults = GENDERS[gender]
+    for key, mult in gender_mults.items():
+        if key in cfg:
+            cfg[key] = cfg[key] * mult
+
+    # Store gender in config for mesh.py to use for radii adjustments
+    cfg["gender"] = gender
 
     # Resolve skin tone
     if isinstance(skin_tone, str):

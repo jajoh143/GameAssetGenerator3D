@@ -43,6 +43,8 @@ def parse_args():
                         help="Character archetype (average, tall, short, child, brute, slender)")
     parser.add_argument("--build", default="average",
                         help="Body build (lean, average, stocky, heavy)")
+    parser.add_argument("--gender", default="neutral",
+                        help="Body gender (neutral, male, female)")
     parser.add_argument("--skin-tone", default="medium",
                         help="Skin tone name or R,G,B,A (e.g., 'tan' or '0.5,0.4,0.3,1.0')")
 
@@ -105,6 +107,7 @@ def main():
     config = {
         "preset": args.preset,
         "build": args.build,
+        "gender": args.gender,
         "skin_tone": _parse_color_value(args.skin_tone),
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
@@ -139,7 +142,8 @@ def main():
             config[key] = val
 
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
-          f"skin={args.skin_tone}, hair={args.hair_style}/{args.hair_color}")
+          f"gender={args.gender}, skin={args.skin_tone}, "
+          f"hair={args.hair_style}/{args.hair_color}")
     armature = generate(config)
     print("Generation complete. Exporting...")
 

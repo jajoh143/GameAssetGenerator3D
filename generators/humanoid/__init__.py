@@ -39,6 +39,7 @@ def generate(config=None):
     # Extract control keys before resolving
     preset = config.pop("preset", "average")
     build = config.pop("build", "average")
+    gender = config.pop("gender", "neutral")
     skin_tone = config.pop("skin_tone", "medium")
     hair_style = config.pop("hair_style", "short")
     hair_color = config.pop("hair_color", "brown")
@@ -52,6 +53,7 @@ def generate(config=None):
     cfg = resolve_config(
         preset=preset,
         build=build,
+        gender=gender,
         skin_tone=skin_tone,
         hair_style=hair_style,
         hair_color=hair_color,

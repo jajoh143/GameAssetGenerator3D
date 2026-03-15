@@ -150,6 +150,7 @@ def build_body_skeleton(cfg):
     neck_len = cfg["neck_length"]
     lt = cfg.get("limb_thickness", 1.0)
     td = cfg.get("torso_depth", 0.20)
+    gender = cfg.get("gender", "neutral")
 
     # Vertical layout (bottom-up)
     foot_top = 0.06
@@ -180,6 +181,49 @@ def build_body_skeleton(cfg):
 
     waist_half_w = min(sw, hw) * 0.72
 
+    # --- Gender-specific adjustments ---
+    # These modify the radii to create distinct male/female silhouettes.
+    # Male: trapezius rise, pectoral protrusion, larger arms/legs, build-scaled
+    # Female: hourglass emphasis, wider/rounder glutes, different chest shape
+    # Both: enhanced gluteal area compared to neutral
+
+    # Trapezius rise: male inner shoulder is positioned higher
+    trap_z_offset = 0.0
+    # Pectoral depth multiplier (ry on chest vertices)
+    pec_depth = 1.0
+    # Neck thickness multiplier
+    neck_thick = 1.0
+    # Arm muscle multiplier (applied on top of lt)
+    arm_muscle = 1.0
+    # Leg muscle multiplier
+    leg_muscle = 1.0
+    # Glute enhancement (pelvis/hip ry multiplier)
+    glute_depth = 1.0
+    # Hip width radius boost
+    hip_rx_mult = 1.0
+    # Waist narrowing (lower = narrower)
+    waist_mult = 1.0
+    # Chest width multiplier
+    chest_rx_mult = 1.0
+
+    if gender == "male":
+        trap_z_offset = 0.025         # inner shoulder sits higher → trapezius rise
+        pec_depth = 1.25              # pectorals protrude forward
+        neck_thick = 1.20             # thicker neck
+        arm_muscle = 1.25             # much larger arms
+        leg_muscle = 1.30             # legs even larger than arms
+        glute_depth = 1.15            # enhanced butt area
+        chest_rx_mult = 1.08          # wider chest
+    elif gender == "female":
+        pec_depth = 1.15              # moderate chest protrusion
+        neck_thick = 0.88             # slimmer neck
+        arm_muscle = 0.88             # slimmer arms
+        leg_muscle = 0.95             # slightly slimmer legs
+        glute_depth = 1.30            # pronounced butt/hip area
+        hip_rx_mult = 1.12            # wider hips
+        waist_mult = 0.88             # narrower waist for hourglass
+        chest_rx_mult = 0.95          # narrower chest width
+
     # --- Vertices (31 total) ---
     verts = [
         # Spine (0-6)
@@ -191,8 +235,8 @@ def build_body_skeleton(cfg):
         (0, 0, chest_z),               # 5: Chest top
         (0, 0, neck_z),                # 6: Neck top
 
-        # Left arm (7-13)
-        (shoulder_x * 0.4, 0, chest_z - 0.01),   # 7: L inner shoulder
+        # Left arm (7-13) — inner shoulder raised for male trapezius
+        (shoulder_x * 0.4, 0, chest_z - 0.01 + trap_z_offset),  # 7: L inner shoulder
         (shoulder_x, 0, arm_top_z),               # 8: L shoulder tip
         (shoulder_x, 0, deltoid_z),               # 9: L deltoid
         (shoulder_x, 0, bicep_z),                 # 10: L bicep peak
@@ -200,8 +244,8 @@ def build_body_skeleton(cfg):
         (shoulder_x, 0, forearm_z),               # 12: L forearm
         (shoulder_x, 0, wrist_z),                 # 13: L wrist
 
-        # Right arm (14-20)
-        (-shoulder_x * 0.4, 0, chest_z - 0.01),  # 14: R inner shoulder
+        # Right arm (14-20) — mirror
+        (-shoulder_x * 0.4, 0, chest_z - 0.01 + trap_z_offset),  # 14: R inner shoulder
         (-shoulder_x, 0, arm_top_z),              # 15: R shoulder tip
         (-shoulder_x, 0, deltoid_z),              # 16: R deltoid
         (-shoulder_x, 0, bicep_z),                # 17: R bicep peak
@@ -239,48 +283,48 @@ def build_body_skeleton(cfg):
     ]
 
     # --- Per-vertex radii (rx, ry) ---
-    # Hourglass silhouette: wide chest/shoulders → narrow waist → wide hips
+    # Base hourglass silhouette with gender-specific modifications
     radii = {
-        # Spine — strong hourglass with rib flare
-        0:  (hw + 0.04, td * 0.48),            # Pelvis base (wide)
-        1:  (hw + 0.05, td * 0.52),            # Hip center (WIDE flare)
-        2:  (hw * 0.8, td * 0.44),             # Lower waist (narrowing)
-        3:  (waist_half_w, td * 0.40),         # Waist (NARROWEST pinch)
-        4:  (sw * 0.90, td * 0.54),            # Lower chest (rib flare out)
-        5:  (sw * 1.05, td * 0.58),            # Chest top (WIDE, broader than sw)
-        6:  (0.055 * lt, 0.055 * lt),          # Neck top
+        # Spine — hourglass with gender shaping
+        0:  (hw * hip_rx_mult + 0.04, td * 0.48 * glute_depth),    # Pelvis base
+        1:  (hw * hip_rx_mult + 0.05, td * 0.52 * glute_depth),    # Hip center
+        2:  (hw * 0.8, td * 0.44),                                  # Lower waist
+        3:  (waist_half_w * waist_mult, td * 0.40),                 # Waist (narrowest)
+        4:  (sw * 0.90 * chest_rx_mult, td * 0.54 * pec_depth),    # Lower chest
+        5:  (sw * 1.05 * chest_rx_mult, td * 0.58 * pec_depth),    # Chest top
+        6:  (0.055 * lt * neck_thick, 0.055 * lt * neck_thick),     # Neck
 
-        # Left arm — thicker overall with deltoid, bicep, forearm bulges
-        7:  (sw * 0.40, td * 0.45),            # L inner shoulder (wider)
-        8:  (0.068 * lt, 0.060 * lt),          # L shoulder tip (bigger)
-        9:  (0.072 * lt, 0.064 * lt),          # L deltoid (WIDEST arm point)
-        10: (0.062 * lt, 0.058 * lt),          # L bicep peak
-        11: (0.046 * lt, 0.046 * lt),          # L elbow (narrow joint)
-        12: (0.052 * lt, 0.048 * lt),          # L forearm (wider than elbow)
-        13: (0.038 * lt, 0.034 * lt),          # L wrist (taper)
+        # Left arm — gender-scaled muscle
+        7:  (sw * 0.40, td * 0.45 * arm_muscle),            # L inner shoulder
+        8:  (0.068 * lt * arm_muscle, 0.060 * lt * arm_muscle),  # L shoulder tip
+        9:  (0.072 * lt * arm_muscle, 0.064 * lt * arm_muscle),  # L deltoid
+        10: (0.062 * lt * arm_muscle, 0.058 * lt * arm_muscle),  # L bicep peak
+        11: (0.046 * lt * arm_muscle, 0.046 * lt * arm_muscle),  # L elbow
+        12: (0.052 * lt * arm_muscle, 0.048 * lt * arm_muscle),  # L forearm
+        13: (0.038 * lt * arm_muscle, 0.034 * lt * arm_muscle),  # L wrist
 
-        # Right arm — mirror of left
-        14: (sw * 0.40, td * 0.45),            # R inner shoulder (wider)
-        15: (0.068 * lt, 0.060 * lt),          # R shoulder tip (bigger)
-        16: (0.072 * lt, 0.064 * lt),          # R deltoid (WIDEST arm point)
-        17: (0.062 * lt, 0.058 * lt),          # R bicep peak
-        18: (0.046 * lt, 0.046 * lt),          # R elbow (narrow joint)
-        19: (0.052 * lt, 0.048 * lt),          # R forearm (wider than elbow)
-        20: (0.038 * lt, 0.034 * lt),          # R wrist (taper)
+        # Right arm — mirror
+        14: (sw * 0.40, td * 0.45 * arm_muscle),            # R inner shoulder
+        15: (0.068 * lt * arm_muscle, 0.060 * lt * arm_muscle),  # R shoulder tip
+        16: (0.072 * lt * arm_muscle, 0.064 * lt * arm_muscle),  # R deltoid
+        17: (0.062 * lt * arm_muscle, 0.058 * lt * arm_muscle),  # R bicep peak
+        18: (0.046 * lt * arm_muscle, 0.046 * lt * arm_muscle),  # R elbow
+        19: (0.052 * lt * arm_muscle, 0.048 * lt * arm_muscle),  # R forearm
+        20: (0.038 * lt * arm_muscle, 0.034 * lt * arm_muscle),  # R wrist
 
-        # Left leg — thicker with thigh/calf bulges
-        21: (0.082 * lt, 0.074 * lt),          # L hip joint (wider)
-        22: (0.088 * lt, 0.078 * lt),          # L thigh peak (WIDEST)
-        23: (0.060 * lt, 0.058 * lt),          # L knee (narrow joint)
-        24: (0.066 * lt, 0.058 * lt),          # L calf peak (wider than knee)
-        25: (0.048 * lt, 0.046 * lt),          # L ankle (taper)
+        # Left leg — gender-scaled muscle
+        21: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle * glute_depth),   # L hip joint
+        22: (0.088 * lt * leg_muscle, 0.078 * lt * leg_muscle),  # L thigh peak
+        23: (0.060 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # L knee
+        24: (0.066 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # L calf peak
+        25: (0.048 * lt * leg_muscle, 0.046 * lt * leg_muscle),  # L ankle
 
-        # Right leg — mirror of left
-        26: (0.082 * lt, 0.074 * lt),          # R hip joint (wider)
-        27: (0.088 * lt, 0.078 * lt),          # R thigh peak (WIDEST)
-        28: (0.060 * lt, 0.058 * lt),          # R knee (narrow joint)
-        29: (0.066 * lt, 0.058 * lt),          # R calf peak (wider than knee)
-        30: (0.048 * lt, 0.046 * lt),          # R ankle (taper)
+        # Right leg — mirror
+        26: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle * glute_depth),   # R hip joint
+        27: (0.088 * lt * leg_muscle, 0.078 * lt * leg_muscle),  # R thigh peak
+        28: (0.060 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # R knee
+        29: (0.066 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # R calf peak
+        30: (0.048 * lt * leg_muscle, 0.046 * lt * leg_muscle),  # R ankle
     }
 
     return verts, edges, radii

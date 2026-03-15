@@ -83,6 +83,8 @@ def cmd_generate(args):
         cmd.extend(["--preset", args.preset])
     if args.build:
         cmd.extend(["--build", args.build])
+    if args.gender:
+        cmd.extend(["--gender", args.gender])
     if args.skin_tone:
         cmd.extend(["--skin-tone", args.skin_tone])
     if args.hair_style:
@@ -162,6 +164,8 @@ def main():
                             help="Character preset (average, tall, short, child, brute, slender)")
     gen_parser.add_argument("--build", default=None,
                             help="Body build (lean, average, stocky, heavy)")
+    gen_parser.add_argument("--gender", default=None,
+                            help="Body gender (neutral, male, female)")
     gen_parser.add_argument("--skin-tone", default=None,
                             help="Skin tone name or R,G,B,A values")
     gen_parser.add_argument("--hair-style", default=None,
