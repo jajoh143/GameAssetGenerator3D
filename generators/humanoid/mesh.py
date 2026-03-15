@@ -55,20 +55,14 @@ def _create_sphere(name, radius, location, segments=12, rings=8):
     return obj
 
 
-def _create_cone(name, r_bottom, r_top, depth, location, segments=12, cap=True):
-    """Create a truncated cone.
-
-    Args:
-        cap: If False, delete the end-cap faces so the cone is an open tube.
-            This prevents visible flat polygons where torso sections meet.
-    """
+def _create_cone(name, r_bottom, r_top, depth, location, segments=12):
+    """Create a truncated cone (clean tapered primitive)."""
     bpy.ops.mesh.primitive_cone_add(
         vertices=segments,
         radius1=r_bottom,
         radius2=r_top,
         depth=depth,
         location=location,
-        end_fill_type='NGON' if cap else 'NOTHING',
     )
     obj = bpy.context.active_object
     obj.name = name
@@ -171,8 +165,23 @@ def create_body(cfg):
     neck_r_base = 0.058 * lt
     neck_r_top = 0.046 * lt
     neck = _create_cone("Neck", neck_r_base, neck_r_top, neck_len,
-                        (0, 0, chest_z + neck_len / 2), segments=10, cap=False)
+                        (0, 0, chest_z + neck_len / 2), segments=10)
     parts.append(neck)
+
+    # --- Shoulders ---
+    # Spheres at each shoulder to give a raised shoulder silhouette,
+    # matching the reference model's shoulder bump.
+    shoulder_r = 0.08 * lt
+    for side, x_sign in [("L", 1), ("R", -1)]:
+        shoulder = _create_sphere(
+            f"Shoulder.{side}", shoulder_r,
+            (x_sign * (sw - 0.02), 0, chest_z - 0.04),
+            segments=8, rings=6,
+        )
+        shoulder.scale = (1.3, 0.9, 0.7)
+        bpy.context.view_layer.objects.active = shoulder
+        bpy.ops.object.transform_apply(scale=True)
+        parts.append(shoulder)
 
     # --- Torso ---
     # Built as 3 stacked truncated cones for a smooth organic taper:
@@ -192,7 +201,7 @@ def create_body(cfg):
         r_top=sw,                        # top edge (shoulder width)
         depth=upper_chest_h,
         location=(0, 0, chest_z - upper_chest_h / 2),
-        segments=12, cap=False,
+        segments=12,
     )
     # Flatten front-to-back relative to width
     upper_chest.scale = (1.0, td / sw * 1.2, 1.0)
@@ -207,7 +216,7 @@ def create_body(cfg):
         r_top=mid_chest_w,               # mid-chest width
         depth=lower_chest_h,
         location=(0, 0, chest_z - upper_chest_h - lower_chest_h / 2),
-        segments=12, cap=False,
+        segments=12,
     )
     lower_chest.scale = (1.0, td / mid_chest_w * 1.1, 1.0)
     bpy.context.view_layer.objects.active = lower_chest
@@ -221,7 +230,7 @@ def create_body(cfg):
         r_top=waist_half_w,              # waist width at top
         depth=lower_torso_h,
         location=(0, 0, hip_z + lower_torso_h / 2),
-        segments=12, cap=False,
+        segments=12,
     )
     lower_torso.scale = (1.0, td / waist_half_w * 1.05, 1.0)
     bpy.context.view_layer.objects.active = lower_torso
@@ -235,7 +244,7 @@ def create_body(cfg):
         r_top=hw + 0.02,
         depth=0.10,
         location=(0, 0, hip_z - 0.01),
-        segments=12, cap=False,
+        segments=12,
     )
     pelvis.scale = (1.0, td / (hw + 0.02) * 1.0, 1.0)
     bpy.context.view_layer.objects.active = pelvis
