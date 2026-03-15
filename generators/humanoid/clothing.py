@@ -51,6 +51,17 @@ def get_clothing_color_names():
     return sorted(CLOTHING_COLORS.keys())
 
 
+# Default color per clothing type (used when no color is specified)
+CLOTHING_DEFAULT_COLORS = {
+    "tshirt":  "grey",
+    "jacket":  "brown",
+    "pants":   "navy",
+    "shorts":  "tan",
+    "armor":   "steel",
+    "robe":    "brown",
+}
+
+
 # ─── Blender geometry helpers ──────────────────────────────────────────────
 
 def _create_box(bpy, name, size, location):
@@ -410,7 +421,9 @@ def create_clothing(cfg, clothing_spec, color=None):
         cfg: dict with body proportion values.
         clothing_spec: Clothing type name, or comma-separated list
             (e.g. "tshirt,pants"), or a list of names.
-        color: RGBA tuple, named color string, or None for defaults.
+        color: RGBA tuple, named color string, or None for per-type defaults.
+            When None, each piece uses its own default color (e.g. grey for
+            shirts, navy for pants). When specified, all pieces share the color.
 
     Returns:
         List of (blender_object, bone_name) tuples.
@@ -420,13 +433,13 @@ def create_clothing(cfg, clothing_spec, color=None):
     if clothing_spec == "none" or not clothing_spec:
         return []
 
-    # Resolve color
-    if color is None:
-        rgba = CLOTHING_COLORS["grey"]
-    elif isinstance(color, str):
-        rgba = CLOTHING_COLORS.get(color, CLOTHING_COLORS["grey"])
-    else:
-        rgba = tuple(color)
+    # Resolve override color (None means use per-type defaults)
+    override_rgba = None
+    if color is not None:
+        if isinstance(color, str):
+            override_rgba = CLOTHING_COLORS.get(color, CLOTHING_COLORS["grey"])
+        else:
+            override_rgba = tuple(color)
 
     # Parse clothing spec into list
     if isinstance(clothing_spec, str):
@@ -437,6 +450,11 @@ def create_clothing(cfg, clothing_spec, color=None):
     results = []
     for ctype in types:
         if ctype in CLOTHING_BUILDERS:
+            if override_rgba is not None:
+                rgba = override_rgba
+            else:
+                default_name = CLOTHING_DEFAULT_COLORS.get(ctype, "grey")
+                rgba = CLOTHING_COLORS[default_name]
             pieces = CLOTHING_BUILDERS[ctype](cfg, rgba)
             results.extend(pieces)
 

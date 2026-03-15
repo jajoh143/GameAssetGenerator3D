@@ -47,17 +47,18 @@ def parse_args():
                         help="Skin tone name or R,G,B,A (e.g., 'tan' or '0.5,0.4,0.3,1.0')")
 
     # Hair
-    parser.add_argument("--hair-style", default="none",
+    parser.add_argument("--hair-style", default="short",
                         help="Hair style (none, buzzed, short, spiky, long, mohawk)")
-    parser.add_argument("--hair-color", default="dark_brown",
+    parser.add_argument("--hair-color", default="brown",
                         help="Hair color name or R,G,B,A values")
 
     # Clothing
-    parser.add_argument("--clothing", default="none",
+    parser.add_argument("--clothing", default="tshirt,pants",
                         help="Clothing type or comma-separated list "
                              "(none, tshirt, jacket, pants, shorts, armor, robe)")
-    parser.add_argument("--clothing-color", default="grey",
-                        help="Clothing color name or R,G,B,A values")
+    parser.add_argument("--clothing-color", default=None,
+                        help="Clothing color name or R,G,B,A values "
+                             "(default: per-type, e.g. grey shirt, navy pants)")
 
     # Direct proportion overrides
     parser.add_argument("--height", type=float, default=None)
@@ -108,7 +109,7 @@ def main():
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
         "clothing": args.clothing,
-        "clothing_color": _parse_color_value(args.clothing_color),
+        "clothing_color": _parse_color_value(args.clothing_color) if args.clothing_color else None,
         "randomize": args.randomize,
     }
 

@@ -172,20 +172,25 @@ def prompt_humanoid():
     skin = prompt_choice("Skin tone:", HUMANOID_SKIN_TONES, default="medium")
     args.extend(["--skin-tone", skin])
 
-    hair_style = prompt_choice("Hair style:", HUMANOID_HAIR_STYLES, default="none")
+    hair_style = prompt_choice("Hair style:", HUMANOID_HAIR_STYLES, default="short")
     args.extend(["--hair-style", hair_style])
 
     if hair_style != "none":
-        hair_color = prompt_choice("Hair color:", HUMANOID_HAIR_COLORS, default="dark_brown")
+        hair_color = prompt_choice("Hair color:", HUMANOID_HAIR_COLORS, default="brown")
         args.extend(["--hair-color", hair_color])
 
     print("\n── Clothing ──")
     clothing = prompt_multi("What clothing? (pick multiple for combos, e.g. tshirt + pants):",
                             HUMANOID_CLOTHING_TYPES[1:],  # exclude "none"
                             default_all=False)
-    if clothing:
-        args.extend(["--clothing", ",".join(clothing)])
-        clothing_color = prompt_choice("Clothing color:", HUMANOID_CLOTHING_COLORS, default="grey")
+    if not clothing:
+        # Default outfit: tshirt + pants
+        clothing = ["tshirt", "pants"]
+        print("    Using default: tshirt + pants")
+    args.extend(["--clothing", ",".join(clothing)])
+
+    if prompt_yes_no("Override clothing color? (default: grey shirt, navy pants)", default=False):
+        clothing_color = prompt_choice("Clothing color (all pieces):", HUMANOID_CLOTHING_COLORS, default="grey")
         args.extend(["--clothing-color", clothing_color])
 
     print("\n── Animations ──")
