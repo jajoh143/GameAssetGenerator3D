@@ -1,11 +1,13 @@
 """Low-poly humanoid mesh construction.
 
-Builds the body from geometric primitives that are joined into a single mesh.
-Designed to produce a clean, game-ready mesh with smooth organic forms.
+Builds the body using Blender's Skin modifier on a stick-figure skeleton.
+The Skin modifier generates smooth, organic geometry from vertices and edges,
+with per-vertex radii controlling body thickness at each joint. This produces
+natural shoulder rounding and smooth torso tapering without stacking primitives.
 
-Body shaping uses truncated cones for tapered torso, limbs, and neck.
-Smoothing uses per-vertex normals (shade_smooth) with a wide edge-split
-angle so organic surfaces are soft while intentional edges stay crisp.
+A Subdivision Surface modifier (level 1) is applied on top for additional
+smoothing. The head, eyes, nose, hands, and feet are added as separate
+primitives and joined into the final mesh.
 """
 
 import bpy
@@ -29,39 +31,12 @@ def _create_box(name, size, location, scale=(1, 1, 1)):
     return obj
 
 
-def _create_cylinder(name, radius, depth, location, segments=12):
-    """Create a cylinder."""
-    bpy.ops.mesh.primitive_cylinder_add(
-        vertices=segments,
-        radius=radius,
-        depth=depth,
-        location=location,
-    )
-    obj = bpy.context.active_object
-    obj.name = name
-    return obj
-
-
 def _create_sphere(name, radius, location, segments=12, rings=8):
     """Create a UV sphere."""
     bpy.ops.mesh.primitive_uv_sphere_add(
         segments=segments,
         ring_count=rings,
         radius=radius,
-        location=location,
-    )
-    obj = bpy.context.active_object
-    obj.name = name
-    return obj
-
-
-def _create_cone(name, r_bottom, r_top, depth, location, segments=12):
-    """Create a truncated cone (clean tapered primitive)."""
-    bpy.ops.mesh.primitive_cone_add(
-        vertices=segments,
-        radius1=r_bottom,
-        radius2=r_top,
-        depth=depth,
         location=location,
     )
     obj = bpy.context.active_object
@@ -81,25 +56,6 @@ def _join_objects(objects):
     return result
 
 
-def _smooth_normals(obj):
-    """Apply smooth shading with bevel for rounded edges.
-
-    Uses shade_smooth for soft per-vertex normals on organic surfaces,
-    a bevel modifier to round sharp box edges (especially shoulder tops
-    and torso corners), and edge-split at 50 degrees to keep only
-    intentional hard edges crisp.
-    """
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.shade_smooth()
-    bevel = obj.modifiers.new(name="Bevel", type='BEVEL')
-    bevel.width = 0.018
-    bevel.segments = 2
-    bevel.limit_method = 'ANGLE'
-    bevel.angle_limit = math.radians(40)
-    mod = obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
-    mod.split_angle = math.radians(50)
-
-
 def _apply_material(obj, skin_tone=None):
     """Apply a base material with configurable skin tone."""
     mat = bpy.data.materials.new(name="Humanoid_Base")
@@ -112,12 +68,164 @@ def _apply_material(obj, skin_tone=None):
     obj.data.materials.append(mat)
 
 
+def _build_skin_body(cfg):
+    """Build the torso, arms, and legs using the Skin modifier.
+
+    Creates a stick-figure mesh (vertices + edges) and applies:
+    1. Skin modifier — generates organic quad geometry with per-vertex radii
+    2. Subdivision Surface — smooths the result (level 1 for low-poly)
+
+    The Skin modifier naturally creates smooth transitions at joints like
+    shoulders, making the torso-to-arm connection look organic rather than
+    stacked boxes.
+
+    Returns the applied mesh object (modifiers baked into geometry).
+    """
+    sw = cfg["shoulder_width"]
+    hw = cfg["hip_width"]
+    arm_len = cfg["arm_length"]
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+    neck_len = cfg["neck_length"]
+    head_r = cfg["head_size"]
+    lt = cfg.get("limb_thickness", 1.0)
+    td = cfg.get("torso_depth", 0.20)
+
+    # Vertical layout (bottom-up)
+    foot_top = 0.06
+    knee_z = foot_top + leg_len * 0.48
+    hip_z = foot_top + leg_len
+    waist_z = hip_z + torso_len * 0.35
+    chest_z = hip_z + torso_len
+    neck_z = chest_z + neck_len
+    head_z = neck_z + head_r
+
+    # Arm positions
+    shoulder_x = sw + 0.04
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    wrist_z = elbow_z - lower_arm_len
+
+    # --- Define stick-figure vertices ---
+    verts = [
+        # Spine (center line)
+        (0, 0, hip_z - 0.02),       # 0: Pelvis base
+        (0, 0, hip_z),              # 1: Hip center
+        (0, 0, waist_z),            # 2: Waist
+        (0, 0, chest_z),            # 3: Chest top
+        (0, 0, chest_z + neck_len), # 4: Neck top
+
+        # Left arm
+        (shoulder_x * 0.3, 0, chest_z - 0.01),   # 5: L inner shoulder
+        (shoulder_x, 0, arm_top_z),               # 6: L shoulder tip
+        (shoulder_x, 0, elbow_z),                 # 7: L elbow
+        (shoulder_x, 0, wrist_z),                 # 8: L wrist
+
+        # Right arm
+        (-shoulder_x * 0.3, 0, chest_z - 0.01),  # 9: R inner shoulder
+        (-shoulder_x, 0, arm_top_z),              # 10: R shoulder tip
+        (-shoulder_x, 0, elbow_z),                # 11: R elbow
+        (-shoulder_x, 0, wrist_z),                # 12: R wrist
+
+        # Left leg
+        (hw, 0, hip_z),             # 13: L hip joint
+        (hw, 0, knee_z),            # 14: L knee
+        (hw, 0, foot_top),          # 15: L ankle
+
+        # Right leg
+        (-hw, 0, hip_z),            # 16: R hip joint
+        (-hw, 0, knee_z),           # 17: R knee
+        (-hw, 0, foot_top),         # 18: R ankle
+    ]
+
+    # --- Define edges (skeleton connectivity) ---
+    edges = [
+        # Spine
+        (0, 1), (1, 2), (2, 3), (3, 4),
+        # Left arm (branches from chest)
+        (3, 5), (5, 6), (6, 7), (7, 8),
+        # Right arm (branches from chest)
+        (3, 9), (9, 10), (10, 11), (11, 12),
+        # Left leg (branches from hip)
+        (1, 13), (13, 14), (14, 15),
+        # Right leg (branches from hip)
+        (1, 16), (16, 17), (17, 18),
+    ]
+
+    # --- Per-vertex skin radii (rx, ry) ---
+    # rx = side-to-side width, ry = front-to-back depth
+    waist_half_w = min(sw, hw) * 0.85
+    radii = {
+        0:  (hw + 0.02, td * 0.45),           # Pelvis base
+        1:  (hw + 0.02, td * 0.50),            # Hip center
+        2:  (waist_half_w, td * 0.48),         # Waist (narrower)
+        3:  (sw, td * 0.55),                   # Chest top (shoulder width)
+        4:  (0.052 * lt, 0.052 * lt),          # Neck top
+
+        5:  (sw * 0.35, td * 0.42),            # L inner shoulder
+        6:  (0.055 * lt, 0.050 * lt),          # L shoulder tip
+        7:  (0.042 * lt, 0.042 * lt),          # L elbow
+        8:  (0.034 * lt, 0.030 * lt),          # L wrist
+
+        9:  (sw * 0.35, td * 0.42),            # R inner shoulder
+        10: (0.055 * lt, 0.050 * lt),          # R shoulder tip
+        11: (0.042 * lt, 0.042 * lt),          # R elbow
+        12: (0.034 * lt, 0.030 * lt),          # R wrist
+
+        13: (0.072 * lt, 0.065 * lt),          # L hip joint
+        14: (0.058 * lt, 0.055 * lt),          # L knee
+        15: (0.048 * lt, 0.045 * lt),          # L ankle
+
+        16: (0.072 * lt, 0.065 * lt),          # R hip joint
+        17: (0.058 * lt, 0.055 * lt),          # R knee
+        18: (0.048 * lt, 0.045 * lt),          # R ankle
+    }
+
+    # --- Create the mesh ---
+    mesh = bpy.data.meshes.new("SkinBody_Mesh")
+    mesh.from_pydata(verts, edges, [])
+    mesh.update()
+
+    obj = bpy.data.objects.new("SkinBody", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    # --- Add Skin modifier ---
+    skin_mod = obj.modifiers.new(name="Skin", type='SKIN')
+    skin_mod.branch_smoothing = 0.8
+    skin_mod.use_smooth_shade = True
+
+    # Set per-vertex radii and mark root
+    skin_data = mesh.skin_vertices[0].data
+    for i, sv in enumerate(skin_data):
+        rx, ry = radii.get(i, (0.05, 0.05))
+        sv.radius = (rx, ry)
+        if i == 0:
+            sv.use_root = True
+
+    # --- Add Subdivision Surface for smoothing ---
+    subsurf = obj.modifiers.new(name="Subsurf", type='SUBSURF')
+    subsurf.levels = 1
+    subsurf.render_levels = 1
+
+    # --- Apply modifiers to bake into geometry ---
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier="Skin")
+    bpy.ops.object.modifier_apply(modifier="Subsurf")
+
+    return obj
+
+
 def create_body(cfg):
     """Build the complete humanoid mesh from config values.
 
     The character is built standing upright with feet at Z=0.
-    Uses truncated cones for organic tapered forms on the torso, limbs, and
-    neck to match the silhouette of the reference model.
+    Uses Blender's Skin modifier for the torso, arms, and legs to create
+    smooth organic forms with natural shoulder rounding. Head, hands, feet,
+    and facial features are added as separate primitives and joined in.
 
     Args:
         cfg: dict with body proportion values.
@@ -144,179 +252,54 @@ def create_body(cfg):
     td = cfg.get("torso_depth", 0.20)
     skin_tone = cfg.get("skin_tone", None)
 
-    # Vertical layout (bottom-up)
+    # Vertical layout
     foot_top = 0.06
     knee_z = foot_top + leg_len * 0.48
     hip_z = foot_top + leg_len
-    waist_z = hip_z + torso_len * 0.35
     chest_z = hip_z + torso_len
     neck_z = chest_z + neck_len
     head_z = neck_z + head_r
 
-    # Waist is narrower than both chest and hips for an hourglass taper
-    waist_half_w = min(sw, hw) * 0.85
+    # Arm positions
+    shoulder_x = sw + 0.04
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    wrist_z = elbow_z - lower_arm_len
 
     parts = []
 
-    # --- Head ---
+    # --- Skin-modifier body (torso + arms + legs) ---
+    skin_body = _build_skin_body(cfg)
+    parts.append(skin_body)
+
+    # --- Head (sphere, scaled for human proportions) ---
     # Reference model head ratio W:H:D = 0.70:1.00:0.79
-    # Make it taller and slightly narrower than a sphere
     head = _create_sphere("Head", head_r, (0, 0, head_z), segments=14, rings=10)
     head.scale = (0.88, 0.92, 1.05)
     bpy.context.view_layer.objects.active = head
     bpy.ops.object.transform_apply(scale=True)
     parts.append(head)
 
-    # --- Neck ---
-    neck_r = 0.052 * lt
-    neck = _create_cylinder("Neck", neck_r, neck_len,
-                            (0, 0, chest_z + neck_len / 2), segments=10)
-    parts.append(neck)
-
-    # --- Torso ---
-    # Uses boxes (wider than deep = rectangular cross-section like a real
-    # human torso). Four sections: chest, mid-torso transition, waist, pelvis.
-    # The mid-torso bridges the width difference for a smoother taper.
-
-    # Upper chest — full shoulder width, creates the shoulder shelf
-    upper_chest_h = torso_len * 0.35
-    chest = _create_box(
-        "Chest",
-        size=(sw * 2, td * 1.1, upper_chest_h),
-        location=(0, 0, chest_z - upper_chest_h / 2),
-    )
-    parts.append(chest)
-
-    # Mid-torso transition — blends chest width down toward waist
-    waist_w = waist_half_w * 2
-    mid_w = (sw * 2 + waist_w) / 2
-    mid_h = torso_len * 0.25
-    mid_z = chest_z - upper_chest_h
-    mid_torso = _create_box(
-        "MidTorso",
-        size=(mid_w, td * 1.02, mid_h),
-        location=(0, 0, mid_z - mid_h / 2),
-    )
-    parts.append(mid_torso)
-
-    # Lower torso / waist — narrower than chest for hourglass taper
-    lower_torso_h = torso_len * 0.40
-    waist_piece = _create_box(
-        "Waist",
-        size=(waist_w, td * 0.95, lower_torso_h),
-        location=(0, 0, hip_z + lower_torso_h / 2),
-    )
-    parts.append(waist_piece)
-
-    # Pelvis
-    pelvis = _create_box(
-        "Pelvis",
-        size=(hw * 2 + 0.04, td * 0.9, 0.10),
-        location=(0, 0, hip_z - 0.01),
-    )
-    parts.append(pelvis)
-
-    # --- Shoulders ---
-    # Boxes that bridge from the top of the chest out to the arm
-    # attachment points, creating a proper shoulder shelf/slope.
-    shoulder_x = sw + 0.04   # matches arm attachment X
-    shoulder_h = 0.06 * lt
-    shoulder_depth = td * 0.85
+    # --- Hands (spheres at wrist ends) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
-        # Shoulder bridge from chest edge to arm position
-        bridge_w = shoulder_x - sw + 0.02
-        bridge_x = x_sign * (sw + bridge_w / 2 - 0.01)
-        bridge = _create_box(
-            f"Shoulder.{side}",
-            size=(bridge_w, shoulder_depth, shoulder_h),
-            location=(bridge_x, 0, chest_z - shoulder_h / 2),
+        hand = _create_sphere(
+            f"Hand.{side}", hand_size,
+            (x_sign * shoulder_x, 0, wrist_z - hand_size * 0.5),
+            segments=8, rings=5,
         )
-        parts.append(bridge)
+        parts.append(hand)
 
-        # Rounded shoulder cap (sphere at the shoulder joint)
-        cap = _create_sphere(
-            f"ShoulderCap.{side}", 0.06 * lt,
-            (x_sign * shoulder_x, 0, chest_z - 0.04),
-            segments=8, rings=6,
-        )
-        cap.scale = (0.9, 0.8, 0.7)
-        bpy.context.view_layer.objects.active = cap
-        bpy.ops.object.transform_apply(scale=True)
-        parts.append(cap)
-
-    # --- Legs (tapered cylinders) ---
+    # --- Feet (boxes) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
         x = x_sign * hw
-
-        # Upper leg (thicker at hip, thinner at knee)
-        upper_leg_len = abs(knee_z - hip_z)
-        upper_leg = _create_cone(
-            f"UpperLeg.{side}",
-            r_bottom=0.058 * lt,   # knee end (thinner)
-            r_top=0.072 * lt,      # hip end (thicker)
-            depth=upper_leg_len,
-            location=(x, 0, (hip_z + knee_z) / 2),
-            segments=10,
-        )
-        parts.append(upper_leg)
-
-        # Lower leg (thicker at knee, thinner at ankle)
-        lower_leg_len = knee_z - foot_top
-        lower_leg = _create_cone(
-            f"LowerLeg.{side}",
-            r_bottom=0.048 * lt,   # ankle end (thinner)
-            r_top=0.060 * lt,      # knee end (thicker)
-            depth=lower_leg_len,
-            location=(x, 0, (foot_top + knee_z) / 2),
-            segments=10,
-        )
-        parts.append(lower_leg)
-
-        # Foot
         foot = _create_box(
             f"Foot.{side}",
             size=(foot_w, foot_len, 0.06),
             location=(x, foot_len * 0.15, 0.03),
         )
         parts.append(foot)
-
-    # --- Arms (tapered, hanging down at sides) ---
-    for side, x_sign in [("L", 1), ("R", -1)]:
-        shoulder_x = x_sign * (sw + 0.04)
-        arm_top_z = chest_z - 0.06
-
-        # Upper arm
-        upper_arm_len = arm_len * 0.48
-        elbow_z = arm_top_z - upper_arm_len
-        upper_arm = _create_cone(
-            f"UpperArm.{side}",
-            r_bottom=0.042 * lt,   # elbow (thinner)
-            r_top=0.055 * lt,      # shoulder (thicker)
-            depth=upper_arm_len,
-            location=(shoulder_x, 0, (arm_top_z + elbow_z) / 2),
-            segments=10,
-        )
-        parts.append(upper_arm)
-
-        # Lower arm
-        lower_arm_len = arm_len * 0.52
-        wrist_z = elbow_z - lower_arm_len
-        lower_arm = _create_cone(
-            f"LowerArm.{side}",
-            r_bottom=0.034 * lt,   # wrist (thinner)
-            r_top=0.044 * lt,      # elbow (thicker)
-            depth=lower_arm_len,
-            location=(shoulder_x, 0, (elbow_z + wrist_z) / 2),
-            segments=10,
-        )
-        parts.append(lower_arm)
-
-        # Hand
-        hand = _create_sphere(
-            f"Hand.{side}", hand_size,
-            (shoulder_x, 0, wrist_z - hand_size * 0.5), segments=8, rings=5,
-        )
-        parts.append(hand)
 
     # --- Face (eyes + nose) ---
     eye_r = head_r * 0.06
@@ -348,13 +331,18 @@ def create_body(cfg):
     )
     parts.append(nose)
 
-    # --- Join body parts ---
+    # --- Join all parts ---
     body = _join_objects(parts)
 
     bpy.context.scene.cursor.location = (0, 0, 0)
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
-    _smooth_normals(body)
+    # Smooth shading on the joined mesh
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.shade_smooth()
+    mod = body.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
+    mod.split_angle = math.radians(50)
+
     _apply_material(body, skin_tone)
 
     # --- Hair (separate object, will be parented to Head bone) ---

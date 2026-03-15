@@ -110,8 +110,7 @@ def _apply_clothing_material(bpy, obj, rgba, roughness=0.85):
 
 
 def _join_parts(bpy, parts, name="Clothing"):
-    """Join multiple objects into one and add bevel for rounded edges."""
-    import math
+    """Join multiple objects into one with smooth shading."""
     if not parts:
         return None
     if len(parts) == 1:
@@ -125,14 +124,8 @@ def _join_parts(bpy, parts, name="Clothing"):
         bpy.ops.object.join()
         result = bpy.context.active_object
         result.name = name
-    # Smooth shading + bevel to match body mesh rounding
     bpy.context.view_layer.objects.active = result
     bpy.ops.object.shade_smooth()
-    bevel = result.modifiers.new(name="Bevel", type='BEVEL')
-    bevel.width = 0.012
-    bevel.segments = 2
-    bevel.limit_method = 'ANGLE'
-    bevel.angle_limit = math.radians(40)
     return result
 
 
