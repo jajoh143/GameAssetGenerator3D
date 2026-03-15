@@ -178,7 +178,7 @@ def build_body_skeleton(cfg):
     thigh_z = hip_z - (hip_z - knee_z) * 0.35
     calf_z = knee_z - (knee_z - foot_top) * 0.30
 
-    waist_half_w = min(sw, hw) * 0.85
+    waist_half_w = min(sw, hw) * 0.72
 
     # --- Vertices (31 total) ---
     verts = [
@@ -192,7 +192,7 @@ def build_body_skeleton(cfg):
         (0, 0, neck_z),                # 6: Neck top
 
         # Left arm (7-13)
-        (shoulder_x * 0.3, 0, chest_z - 0.01),   # 7: L inner shoulder
+        (shoulder_x * 0.4, 0, chest_z - 0.01),   # 7: L inner shoulder
         (shoulder_x, 0, arm_top_z),               # 8: L shoulder tip
         (shoulder_x, 0, deltoid_z),               # 9: L deltoid
         (shoulder_x, 0, bicep_z),                 # 10: L bicep peak
@@ -201,7 +201,7 @@ def build_body_skeleton(cfg):
         (shoulder_x, 0, wrist_z),                 # 13: L wrist
 
         # Right arm (14-20)
-        (-shoulder_x * 0.3, 0, chest_z - 0.01),  # 14: R inner shoulder
+        (-shoulder_x * 0.4, 0, chest_z - 0.01),  # 14: R inner shoulder
         (-shoulder_x, 0, arm_top_z),              # 15: R shoulder tip
         (-shoulder_x, 0, deltoid_z),              # 16: R deltoid
         (-shoulder_x, 0, bicep_z),                # 17: R bicep peak
@@ -239,47 +239,48 @@ def build_body_skeleton(cfg):
     ]
 
     # --- Per-vertex radii (rx, ry) ---
+    # Hourglass silhouette: wide chest/shoulders → narrow waist → wide hips
     radii = {
-        # Spine — hourglass taper with rib flare
-        0:  (hw + 0.02, td * 0.45),           # Pelvis base
-        1:  (hw + 0.02, td * 0.50),            # Hip center (wide)
-        2:  (hw * 0.9, td * 0.48),             # Lower waist (slight narrowing)
-        3:  (waist_half_w, td * 0.45),         # Waist (narrowest)
-        4:  (sw * 0.85, td * 0.52),            # Lower chest (rib flare)
-        5:  (sw, td * 0.55),                   # Chest top (shoulder width)
-        6:  (0.052 * lt, 0.052 * lt),          # Neck top
+        # Spine — strong hourglass with rib flare
+        0:  (hw + 0.04, td * 0.48),            # Pelvis base (wide)
+        1:  (hw + 0.05, td * 0.52),            # Hip center (WIDE flare)
+        2:  (hw * 0.8, td * 0.44),             # Lower waist (narrowing)
+        3:  (waist_half_w, td * 0.40),         # Waist (NARROWEST pinch)
+        4:  (sw * 0.90, td * 0.54),            # Lower chest (rib flare out)
+        5:  (sw * 1.05, td * 0.58),            # Chest top (WIDE, broader than sw)
+        6:  (0.055 * lt, 0.055 * lt),          # Neck top
 
-        # Left arm — deltoid, bicep, forearm bulges
-        7:  (sw * 0.35, td * 0.42),            # L inner shoulder
-        8:  (0.058 * lt, 0.053 * lt),          # L shoulder tip
-        9:  (0.062 * lt, 0.056 * lt),          # L deltoid (WIDER)
-        10: (0.054 * lt, 0.050 * lt),          # L bicep peak
-        11: (0.040 * lt, 0.040 * lt),          # L elbow (narrow joint)
-        12: (0.046 * lt, 0.042 * lt),          # L forearm (wider than elbow)
-        13: (0.034 * lt, 0.030 * lt),          # L wrist (taper)
+        # Left arm — thicker overall with deltoid, bicep, forearm bulges
+        7:  (sw * 0.40, td * 0.45),            # L inner shoulder (wider)
+        8:  (0.068 * lt, 0.060 * lt),          # L shoulder tip (bigger)
+        9:  (0.072 * lt, 0.064 * lt),          # L deltoid (WIDEST arm point)
+        10: (0.062 * lt, 0.058 * lt),          # L bicep peak
+        11: (0.046 * lt, 0.046 * lt),          # L elbow (narrow joint)
+        12: (0.052 * lt, 0.048 * lt),          # L forearm (wider than elbow)
+        13: (0.038 * lt, 0.034 * lt),          # L wrist (taper)
 
         # Right arm — mirror of left
-        14: (sw * 0.35, td * 0.42),            # R inner shoulder
-        15: (0.058 * lt, 0.053 * lt),          # R shoulder tip
-        16: (0.062 * lt, 0.056 * lt),          # R deltoid (WIDER)
-        17: (0.054 * lt, 0.050 * lt),          # R bicep peak
-        18: (0.040 * lt, 0.040 * lt),          # R elbow (narrow joint)
-        19: (0.046 * lt, 0.042 * lt),          # R forearm (wider than elbow)
-        20: (0.034 * lt, 0.030 * lt),          # R wrist (taper)
+        14: (sw * 0.40, td * 0.45),            # R inner shoulder (wider)
+        15: (0.068 * lt, 0.060 * lt),          # R shoulder tip (bigger)
+        16: (0.072 * lt, 0.064 * lt),          # R deltoid (WIDEST arm point)
+        17: (0.062 * lt, 0.058 * lt),          # R bicep peak
+        18: (0.046 * lt, 0.046 * lt),          # R elbow (narrow joint)
+        19: (0.052 * lt, 0.048 * lt),          # R forearm (wider than elbow)
+        20: (0.038 * lt, 0.034 * lt),          # R wrist (taper)
 
-        # Left leg — thigh, calf bulges
-        21: (0.074 * lt, 0.067 * lt),          # L hip joint
-        22: (0.080 * lt, 0.072 * lt),          # L thigh peak (WIDEST)
-        23: (0.056 * lt, 0.054 * lt),          # L knee (narrow joint)
-        24: (0.062 * lt, 0.055 * lt),          # L calf peak (wider than knee)
-        25: (0.046 * lt, 0.044 * lt),          # L ankle (taper)
+        # Left leg — thicker with thigh/calf bulges
+        21: (0.082 * lt, 0.074 * lt),          # L hip joint (wider)
+        22: (0.088 * lt, 0.078 * lt),          # L thigh peak (WIDEST)
+        23: (0.060 * lt, 0.058 * lt),          # L knee (narrow joint)
+        24: (0.066 * lt, 0.058 * lt),          # L calf peak (wider than knee)
+        25: (0.048 * lt, 0.046 * lt),          # L ankle (taper)
 
         # Right leg — mirror of left
-        26: (0.074 * lt, 0.067 * lt),          # R hip joint
-        27: (0.080 * lt, 0.072 * lt),          # R thigh peak (WIDEST)
-        28: (0.056 * lt, 0.054 * lt),          # R knee (narrow joint)
-        29: (0.062 * lt, 0.055 * lt),          # R calf peak (wider than knee)
-        30: (0.046 * lt, 0.044 * lt),          # R ankle (taper)
+        26: (0.082 * lt, 0.074 * lt),          # R hip joint (wider)
+        27: (0.088 * lt, 0.078 * lt),          # R thigh peak (WIDEST)
+        28: (0.060 * lt, 0.058 * lt),          # R knee (narrow joint)
+        29: (0.066 * lt, 0.058 * lt),          # R calf peak (wider than knee)
+        30: (0.048 * lt, 0.046 * lt),          # R ankle (taper)
     }
 
     return verts, edges, radii
