@@ -3,11 +3,16 @@
 Builds the body using Blender's Skin modifier on a stick-figure skeleton.
 The Skin modifier generates smooth, organic geometry from vertices and edges,
 with per-vertex radii controlling body thickness at each joint. This produces
-natural shoulder rounding and smooth torso tapering without stacking primitives.
+natural shoulder rounding, smooth torso tapering, and subtle muscle definition
+without stacking primitives.
 
-A Subdivision Surface modifier (level 1) is applied on top for additional
-smoothing. The head, eyes, nose, hands, and feet are added as separate
-primitives and joined into the final mesh.
+The skeleton includes intermediate vertices for muscle bulges (deltoid, bicep,
+forearm, thigh, calf) and torso shaping (lower chest, lower waist). A
+Subdivision Surface modifier (level 1) is applied on top for additional
+smoothing.
+
+The skeleton builder is exposed via build_body_skeleton() so clothing.py can
+reuse the same skeleton with inflated radii for perfectly fitting clothing.
 """
 
 import bpy
@@ -68,18 +73,74 @@ def _apply_material(obj, skin_tone=None):
     obj.data.materials.append(mat)
 
 
-def _build_skin_body(cfg):
-    """Build the torso, arms, and legs using the Skin modifier.
+# ─── Skeleton builder (shared with clothing.py) ────────────────────────────
 
-    Creates a stick-figure mesh (vertices + edges) and applies:
-    1. Skin modifier — generates organic quad geometry with per-vertex radii
-    2. Subdivision Surface — smooths the result (level 1 for low-poly)
+# Vertex name constants for indexing into the skeleton.
+# These define which vertices belong to which body region, so clothing
+# builders can select subsets of the skeleton.
 
-    The Skin modifier naturally creates smooth transitions at joints like
-    shoulders, making the torso-to-arm connection look organic rather than
-    stacked boxes.
+# Spine: 0-6
+V_PELVIS = 0
+V_HIP = 1
+V_LOWER_WAIST = 2
+V_WAIST = 3
+V_LOWER_CHEST = 4
+V_CHEST = 5
+V_NECK = 6
 
-    Returns the applied mesh object (modifiers baked into geometry).
+# Left arm: 7-13
+V_L_INNER_SHOULDER = 7
+V_L_SHOULDER = 8
+V_L_DELTOID = 9
+V_L_BICEP = 10
+V_L_ELBOW = 11
+V_L_FOREARM = 12
+V_L_WRIST = 13
+
+# Right arm: 14-20
+V_R_INNER_SHOULDER = 14
+V_R_SHOULDER = 15
+V_R_DELTOID = 16
+V_R_BICEP = 17
+V_R_ELBOW = 18
+V_R_FOREARM = 19
+V_R_WRIST = 20
+
+# Left leg: 21-26
+V_L_HIP_JOINT = 21
+V_L_THIGH = 22
+V_L_KNEE = 23
+V_L_CALF = 24
+V_L_ANKLE = 25
+
+# Right leg: 26-30
+V_R_HIP_JOINT = 26
+V_R_THIGH = 27
+V_R_KNEE = 28
+V_R_CALF = 29
+V_R_ANKLE = 30
+
+# Region sets for clothing
+REGION_SPINE = {V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
+                V_CHEST, V_NECK}
+REGION_L_ARM = {V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP,
+                V_L_ELBOW, V_L_FOREARM, V_L_WRIST}
+REGION_R_ARM = {V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP,
+                V_R_ELBOW, V_R_FOREARM, V_R_WRIST}
+REGION_L_LEG = {V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE, V_L_CALF, V_L_ANKLE}
+REGION_R_LEG = {V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE}
+
+
+def build_body_skeleton(cfg):
+    """Build the stick-figure skeleton with muscle-definition vertices.
+
+    Returns (verts, edges, radii) where:
+        verts: list of (x, y, z) positions
+        edges: list of (i, j) index pairs
+        radii: dict mapping vertex index to (rx, ry)
+
+    This function is shared between mesh.py and clothing.py so clothing
+    can reuse the same skeleton with inflated radii.
     """
     sw = cfg["shoulder_width"]
     hw = cfg["hip_width"]
@@ -87,7 +148,6 @@ def _build_skin_body(cfg):
     leg_len = cfg["leg_length"]
     torso_len = cfg["torso_length"]
     neck_len = cfg["neck_length"]
-    head_r = cfg["head_size"]
     lt = cfg.get("limb_thickness", 1.0)
     td = cfg.get("torso_depth", 0.20)
 
@@ -96,9 +156,10 @@ def _build_skin_body(cfg):
     knee_z = foot_top + leg_len * 0.48
     hip_z = foot_top + leg_len
     waist_z = hip_z + torso_len * 0.35
+    lower_waist_z = hip_z + torso_len * 0.15
+    lower_chest_z = hip_z + torso_len * 0.70
     chest_z = hip_z + torso_len
     neck_z = chest_z + neck_len
-    head_z = neck_z + head_r
 
     # Arm positions
     shoulder_x = sw + 0.04
@@ -108,94 +169,146 @@ def _build_skin_body(cfg):
     lower_arm_len = arm_len * 0.52
     wrist_z = elbow_z - lower_arm_len
 
-    # --- Define stick-figure vertices ---
+    # Muscle vertex positions along arms
+    deltoid_z = arm_top_z - upper_arm_len * 0.25
+    bicep_z = arm_top_z - upper_arm_len * 0.60
+    forearm_z = elbow_z - lower_arm_len * 0.30
+
+    # Muscle vertex positions along legs
+    thigh_z = hip_z - (hip_z - knee_z) * 0.35
+    calf_z = knee_z - (knee_z - foot_top) * 0.30
+
+    waist_half_w = min(sw, hw) * 0.85
+
+    # --- Vertices (31 total) ---
     verts = [
-        # Spine (center line)
-        (0, 0, hip_z - 0.02),       # 0: Pelvis base
-        (0, 0, hip_z),              # 1: Hip center
-        (0, 0, waist_z),            # 2: Waist
-        (0, 0, chest_z),            # 3: Chest top
-        (0, 0, chest_z + neck_len), # 4: Neck top
+        # Spine (0-6)
+        (0, 0, hip_z - 0.02),         # 0: Pelvis base
+        (0, 0, hip_z),                 # 1: Hip center
+        (0, 0, lower_waist_z),         # 2: Lower waist (belly)
+        (0, 0, waist_z),               # 3: Waist (narrowest)
+        (0, 0, lower_chest_z),         # 4: Lower chest (rib flare)
+        (0, 0, chest_z),               # 5: Chest top
+        (0, 0, neck_z),                # 6: Neck top
 
-        # Left arm
-        (shoulder_x * 0.3, 0, chest_z - 0.01),   # 5: L inner shoulder
-        (shoulder_x, 0, arm_top_z),               # 6: L shoulder tip
-        (shoulder_x, 0, elbow_z),                 # 7: L elbow
-        (shoulder_x, 0, wrist_z),                 # 8: L wrist
+        # Left arm (7-13)
+        (shoulder_x * 0.3, 0, chest_z - 0.01),   # 7: L inner shoulder
+        (shoulder_x, 0, arm_top_z),               # 8: L shoulder tip
+        (shoulder_x, 0, deltoid_z),               # 9: L deltoid
+        (shoulder_x, 0, bicep_z),                 # 10: L bicep peak
+        (shoulder_x, 0, elbow_z),                 # 11: L elbow
+        (shoulder_x, 0, forearm_z),               # 12: L forearm
+        (shoulder_x, 0, wrist_z),                 # 13: L wrist
 
-        # Right arm
-        (-shoulder_x * 0.3, 0, chest_z - 0.01),  # 9: R inner shoulder
-        (-shoulder_x, 0, arm_top_z),              # 10: R shoulder tip
-        (-shoulder_x, 0, elbow_z),                # 11: R elbow
-        (-shoulder_x, 0, wrist_z),                # 12: R wrist
+        # Right arm (14-20)
+        (-shoulder_x * 0.3, 0, chest_z - 0.01),  # 14: R inner shoulder
+        (-shoulder_x, 0, arm_top_z),              # 15: R shoulder tip
+        (-shoulder_x, 0, deltoid_z),              # 16: R deltoid
+        (-shoulder_x, 0, bicep_z),                # 17: R bicep peak
+        (-shoulder_x, 0, elbow_z),                # 18: R elbow
+        (-shoulder_x, 0, forearm_z),              # 19: R forearm
+        (-shoulder_x, 0, wrist_z),                # 20: R wrist
 
-        # Left leg
-        (hw, 0, hip_z),             # 13: L hip joint
-        (hw, 0, knee_z),            # 14: L knee
-        (hw, 0, foot_top),          # 15: L ankle
+        # Left leg (21-25)
+        (hw, 0, hip_z),               # 21: L hip joint
+        (hw, 0, thigh_z),             # 22: L thigh peak
+        (hw, 0, knee_z),              # 23: L knee
+        (hw, 0, calf_z),              # 24: L calf peak
+        (hw, 0, foot_top),            # 25: L ankle
 
-        # Right leg
-        (-hw, 0, hip_z),            # 16: R hip joint
-        (-hw, 0, knee_z),           # 17: R knee
-        (-hw, 0, foot_top),         # 18: R ankle
+        # Right leg (26-30)
+        (-hw, 0, hip_z),              # 26: R hip joint
+        (-hw, 0, thigh_z),            # 27: R thigh peak
+        (-hw, 0, knee_z),             # 28: R knee
+        (-hw, 0, calf_z),             # 29: R calf peak
+        (-hw, 0, foot_top),           # 30: R ankle
     ]
 
-    # --- Define edges (skeleton connectivity) ---
+    # --- Edges ---
     edges = [
         # Spine
-        (0, 1), (1, 2), (2, 3), (3, 4),
-        # Left arm (branches from chest)
-        (3, 5), (5, 6), (6, 7), (7, 8),
-        # Right arm (branches from chest)
-        (3, 9), (9, 10), (10, 11), (11, 12),
-        # Left leg (branches from hip)
-        (1, 13), (13, 14), (14, 15),
-        # Right leg (branches from hip)
-        (1, 16), (16, 17), (17, 18),
+        (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
+        # Left arm
+        (5, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13),
+        # Right arm
+        (5, 14), (14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20),
+        # Left leg
+        (1, 21), (21, 22), (22, 23), (23, 24), (24, 25),
+        # Right leg
+        (1, 26), (26, 27), (27, 28), (28, 29), (29, 30),
     ]
 
-    # --- Per-vertex skin radii (rx, ry) ---
-    # rx = side-to-side width, ry = front-to-back depth
-    waist_half_w = min(sw, hw) * 0.85
+    # --- Per-vertex radii (rx, ry) ---
     radii = {
+        # Spine — hourglass taper with rib flare
         0:  (hw + 0.02, td * 0.45),           # Pelvis base
-        1:  (hw + 0.02, td * 0.50),            # Hip center
-        2:  (waist_half_w, td * 0.48),         # Waist (narrower)
-        3:  (sw, td * 0.55),                   # Chest top (shoulder width)
-        4:  (0.052 * lt, 0.052 * lt),          # Neck top
+        1:  (hw + 0.02, td * 0.50),            # Hip center (wide)
+        2:  (hw * 0.9, td * 0.48),             # Lower waist (slight narrowing)
+        3:  (waist_half_w, td * 0.45),         # Waist (narrowest)
+        4:  (sw * 0.85, td * 0.52),            # Lower chest (rib flare)
+        5:  (sw, td * 0.55),                   # Chest top (shoulder width)
+        6:  (0.052 * lt, 0.052 * lt),          # Neck top
 
-        5:  (sw * 0.35, td * 0.42),            # L inner shoulder
-        6:  (0.055 * lt, 0.050 * lt),          # L shoulder tip
-        7:  (0.042 * lt, 0.042 * lt),          # L elbow
-        8:  (0.034 * lt, 0.030 * lt),          # L wrist
+        # Left arm — deltoid, bicep, forearm bulges
+        7:  (sw * 0.35, td * 0.42),            # L inner shoulder
+        8:  (0.058 * lt, 0.053 * lt),          # L shoulder tip
+        9:  (0.062 * lt, 0.056 * lt),          # L deltoid (WIDER)
+        10: (0.054 * lt, 0.050 * lt),          # L bicep peak
+        11: (0.040 * lt, 0.040 * lt),          # L elbow (narrow joint)
+        12: (0.046 * lt, 0.042 * lt),          # L forearm (wider than elbow)
+        13: (0.034 * lt, 0.030 * lt),          # L wrist (taper)
 
-        9:  (sw * 0.35, td * 0.42),            # R inner shoulder
-        10: (0.055 * lt, 0.050 * lt),          # R shoulder tip
-        11: (0.042 * lt, 0.042 * lt),          # R elbow
-        12: (0.034 * lt, 0.030 * lt),          # R wrist
+        # Right arm — mirror of left
+        14: (sw * 0.35, td * 0.42),            # R inner shoulder
+        15: (0.058 * lt, 0.053 * lt),          # R shoulder tip
+        16: (0.062 * lt, 0.056 * lt),          # R deltoid (WIDER)
+        17: (0.054 * lt, 0.050 * lt),          # R bicep peak
+        18: (0.040 * lt, 0.040 * lt),          # R elbow (narrow joint)
+        19: (0.046 * lt, 0.042 * lt),          # R forearm (wider than elbow)
+        20: (0.034 * lt, 0.030 * lt),          # R wrist (taper)
 
-        13: (0.072 * lt, 0.065 * lt),          # L hip joint
-        14: (0.058 * lt, 0.055 * lt),          # L knee
-        15: (0.048 * lt, 0.045 * lt),          # L ankle
+        # Left leg — thigh, calf bulges
+        21: (0.074 * lt, 0.067 * lt),          # L hip joint
+        22: (0.080 * lt, 0.072 * lt),          # L thigh peak (WIDEST)
+        23: (0.056 * lt, 0.054 * lt),          # L knee (narrow joint)
+        24: (0.062 * lt, 0.055 * lt),          # L calf peak (wider than knee)
+        25: (0.046 * lt, 0.044 * lt),          # L ankle (taper)
 
-        16: (0.072 * lt, 0.065 * lt),          # R hip joint
-        17: (0.058 * lt, 0.055 * lt),          # R knee
-        18: (0.048 * lt, 0.045 * lt),          # R ankle
+        # Right leg — mirror of left
+        26: (0.074 * lt, 0.067 * lt),          # R hip joint
+        27: (0.080 * lt, 0.072 * lt),          # R thigh peak (WIDEST)
+        28: (0.056 * lt, 0.054 * lt),          # R knee (narrow joint)
+        29: (0.062 * lt, 0.055 * lt),          # R calf peak (wider than knee)
+        30: (0.046 * lt, 0.044 * lt),          # R ankle (taper)
     }
 
-    # --- Create the mesh ---
-    mesh = bpy.data.meshes.new("SkinBody_Mesh")
+    return verts, edges, radii
+
+
+def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
+                         branch_smoothing=0.7, subsurf_level=1):
+    """Create a mesh from skeleton and apply Skin + Subdivision Surface.
+
+    Args:
+        verts, edges, radii: from build_body_skeleton()
+        name: object name
+        branch_smoothing: 0-1, how smooth branch junctions are
+        subsurf_level: subdivision level (0 = no subdivision)
+
+    Returns the mesh object with modifiers applied.
+    """
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
     mesh.from_pydata(verts, edges, [])
     mesh.update()
 
-    obj = bpy.data.objects.new("SkinBody", mesh)
+    obj = bpy.data.objects.new(name, mesh)
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    # --- Add Skin modifier ---
+    # Skin modifier
     skin_mod = obj.modifiers.new(name="Skin", type='SKIN')
-    skin_mod.branch_smoothing = 0.8
+    skin_mod.branch_smoothing = branch_smoothing
     skin_mod.use_smooth_shade = True
 
     # Set per-vertex radii and mark root
@@ -206,15 +319,17 @@ def _build_skin_body(cfg):
         if i == 0:
             sv.use_root = True
 
-    # --- Add Subdivision Surface for smoothing ---
-    subsurf = obj.modifiers.new(name="Subsurf", type='SUBSURF')
-    subsurf.levels = 1
-    subsurf.render_levels = 1
+    # Subdivision Surface
+    if subsurf_level > 0:
+        subsurf = obj.modifiers.new(name="Subsurf", type='SUBSURF')
+        subsurf.levels = subsurf_level
+        subsurf.render_levels = subsurf_level
 
-    # --- Apply modifiers to bake into geometry ---
+    # Apply modifiers
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.modifier_apply(modifier="Skin")
-    bpy.ops.object.modifier_apply(modifier="Subsurf")
+    if subsurf_level > 0:
+        bpy.ops.object.modifier_apply(modifier="Subsurf")
 
     return obj
 
@@ -224,8 +339,8 @@ def create_body(cfg):
 
     The character is built standing upright with feet at Z=0.
     Uses Blender's Skin modifier for the torso, arms, and legs to create
-    smooth organic forms with natural shoulder rounding. Head, hands, feet,
-    and facial features are added as separate primitives and joined in.
+    smooth organic forms with natural shoulder rounding and muscle definition.
+    Head, hands, feet, and facial features are added as separate primitives.
 
     Args:
         cfg: dict with body proportion values.
@@ -235,7 +350,6 @@ def create_body(cfg):
     """
     _clear_scene()
 
-    h = cfg["height"]
     sw = cfg["shoulder_width"]
     hw = cfg["hip_width"]
     head_r = cfg["head_size"]
@@ -246,15 +360,12 @@ def create_body(cfg):
     hand_size = cfg["hand_size"]
     foot_len = cfg["foot_length"]
     foot_w = cfg["foot_width"]
-
-    # Body variation parameters
     lt = cfg.get("limb_thickness", 1.0)
     td = cfg.get("torso_depth", 0.20)
     skin_tone = cfg.get("skin_tone", None)
 
     # Vertical layout
     foot_top = 0.06
-    knee_z = foot_top + leg_len * 0.48
     hip_z = foot_top + leg_len
     chest_z = hip_z + torso_len
     neck_z = chest_z + neck_len
@@ -271,11 +382,12 @@ def create_body(cfg):
     parts = []
 
     # --- Skin-modifier body (torso + arms + legs) ---
-    skin_body = _build_skin_body(cfg)
+    verts, edges, radii = build_body_skeleton(cfg)
+    skin_body = _apply_skin_modifier(verts, edges, radii, name="SkinBody",
+                                     branch_smoothing=0.7)
     parts.append(skin_body)
 
     # --- Head (sphere, scaled for human proportions) ---
-    # Reference model head ratio W:H:D = 0.70:1.00:0.79
     head = _create_sphere("Head", head_r, (0, 0, head_z), segments=14, rings=10)
     head.scale = (0.88, 0.92, 1.05)
     bpy.context.view_layer.objects.active = head
@@ -337,7 +449,7 @@ def create_body(cfg):
     bpy.context.scene.cursor.location = (0, 0, 0)
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
-    # Smooth shading on the joined mesh
+    # Smooth shading
     bpy.context.view_layer.objects.active = body
     bpy.ops.object.shade_smooth()
     mod = body.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
@@ -359,6 +471,7 @@ def create_body(cfg):
     if clothing_type and clothing_type != "none":
         from . import clothing as clothing_module
         clothing_color = cfg.get("clothing_color", None)
-        clothing_objs = clothing_module.create_clothing(cfg, clothing_type, clothing_color)
+        clothing_objs = clothing_module.create_clothing(cfg, clothing_type,
+                                                        clothing_color)
 
     return body, hair_obj, clothing_objs
