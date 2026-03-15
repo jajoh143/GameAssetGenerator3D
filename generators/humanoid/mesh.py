@@ -82,14 +82,20 @@ def _join_objects(objects):
 
 
 def _smooth_normals(obj):
-    """Apply smooth shading with a wide edge-split angle.
+    """Apply smooth shading with bevel for rounded edges.
 
     Uses shade_smooth for soft per-vertex normals on organic surfaces,
-    and edge-split at 50 degrees to keep only intentional hard edges
-    (like where limbs meet the torso) crisp.
+    a bevel modifier to round sharp box edges (especially shoulder tops
+    and torso corners), and edge-split at 50 degrees to keep only
+    intentional hard edges crisp.
     """
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.shade_smooth()
+    bevel = obj.modifiers.new(name="Bevel", type='BEVEL')
+    bevel.width = 0.018
+    bevel.segments = 2
+    bevel.limit_method = 'ANGLE'
+    bevel.angle_limit = math.radians(40)
     mod = obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
     mod.split_angle = math.radians(50)
 
@@ -169,11 +175,11 @@ def create_body(cfg):
 
     # --- Torso ---
     # Uses boxes (wider than deep = rectangular cross-section like a real
-    # human torso). Three sections: chest, waist, pelvis.
-    # Shoulder shelf is part of the chest — full shoulder width at the top.
+    # human torso). Four sections: chest, mid-torso transition, waist, pelvis.
+    # The mid-torso bridges the width difference for a smoother taper.
 
     # Upper chest — full shoulder width, creates the shoulder shelf
-    upper_chest_h = torso_len * 0.50
+    upper_chest_h = torso_len * 0.35
     chest = _create_box(
         "Chest",
         size=(sw * 2, td * 1.1, upper_chest_h),
@@ -181,9 +187,20 @@ def create_body(cfg):
     )
     parts.append(chest)
 
-    # Lower torso / waist — narrower than chest for hourglass taper
+    # Mid-torso transition — blends chest width down toward waist
     waist_w = waist_half_w * 2
-    lower_torso_h = torso_len * 0.50
+    mid_w = (sw * 2 + waist_w) / 2
+    mid_h = torso_len * 0.25
+    mid_z = chest_z - upper_chest_h
+    mid_torso = _create_box(
+        "MidTorso",
+        size=(mid_w, td * 1.02, mid_h),
+        location=(0, 0, mid_z - mid_h / 2),
+    )
+    parts.append(mid_torso)
+
+    # Lower torso / waist — narrower than chest for hourglass taper
+    lower_torso_h = torso_len * 0.40
     waist_piece = _create_box(
         "Waist",
         size=(waist_w, td * 0.95, lower_torso_h),
