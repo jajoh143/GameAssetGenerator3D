@@ -1,16 +1,14 @@
 """Low-poly humanoid mesh construction.
 
 Builds the body from geometric primitives that are joined into a single mesh.
-Designed to be ~300-500 faces — light enough for mobile/web games while still
-reading as a humanoid silhouette.
+Designed to produce a clean, game-ready mesh with smooth organic forms.
 
-Body shaping uses tapered torso sections (wider chest, narrower waist, wider
-hips) and higher-segment primitives for smoother organic forms. Smoothing uses
-per-vertex normals with a wide edge-split angle for a clean, soft low-poly look.
+Body shaping uses truncated cones for tapered torso, limbs, and neck.
+Smoothing uses per-vertex normals (shade_smooth) with a wide edge-split
+angle so organic surfaces are soft while intentional edges stay crisp.
 """
 
 import bpy
-import bmesh
 import math
 from mathutils import Vector, Matrix
 
@@ -31,8 +29,8 @@ def _create_box(name, size, location, scale=(1, 1, 1)):
     return obj
 
 
-def _create_cylinder(name, radius, depth, location, segments=10):
-    """Create a low-poly cylinder."""
+def _create_cylinder(name, radius, depth, location, segments=12):
+    """Create a cylinder."""
     bpy.ops.mesh.primitive_cylinder_add(
         vertices=segments,
         radius=radius,
@@ -44,8 +42,8 @@ def _create_cylinder(name, radius, depth, location, segments=10):
     return obj
 
 
-def _create_sphere(name, radius, location, segments=10, rings=8):
-    """Create a low-poly sphere (UV sphere)."""
+def _create_sphere(name, radius, location, segments=12, rings=8):
+    """Create a UV sphere."""
     bpy.ops.mesh.primitive_uv_sphere_add(
         segments=segments,
         ring_count=rings,
@@ -57,12 +55,12 @@ def _create_sphere(name, radius, location, segments=10, rings=8):
     return obj
 
 
-def _create_tapered_cylinder(name, radius_top, radius_bottom, depth, location, segments=10):
-    """Create a tapered cylinder (truncated cone) for organic body shapes."""
+def _create_cone(name, r_bottom, r_top, depth, location, segments=12):
+    """Create a truncated cone (clean tapered primitive, no bmesh needed)."""
     bpy.ops.mesh.primitive_cone_add(
         vertices=segments,
-        radius1=radius_bottom,
-        radius2=radius_top,
+        radius1=r_bottom,
+        radius2=r_top,
         depth=depth,
         location=location,
     )
@@ -84,25 +82,16 @@ def _join_objects(objects):
 
 
 def _smooth_normals(obj):
-    """Apply smooth shading with subdivision and a wide edge-split angle.
+    """Apply smooth shading with a wide edge-split angle.
 
-    Matches the smooth per-vertex normals seen in the reference model:
-    subdivision level 1 for rounder organic forms, smooth shading on all
-    faces, and edge-split at 50 degrees to preserve intentional hard edges
-    (like where limbs meet the torso) while keeping body surfaces soft.
+    Uses shade_smooth for soft per-vertex normals on organic surfaces,
+    and edge-split at 50 degrees to keep only intentional hard edges
+    (like where limbs meet the torso) crisp.
     """
     bpy.context.view_layer.objects.active = obj
-
-    # Subdivision surface for rounder shapes (level 1 keeps poly count low)
-    sub = obj.modifiers.new(name="Subdivision", type='SUBSURF')
-    sub.levels = 1
-    sub.render_levels = 1
-
-    # Edge split at a wide angle — only hard edges on sharp joins
-    split = obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
-    split.split_angle = math.radians(50)
-
     bpy.ops.object.shade_smooth()
+    mod = obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
+    mod.split_angle = math.radians(50)
 
 
 def _apply_material(obj, skin_tone=None):
@@ -121,8 +110,8 @@ def create_body(cfg):
     """Build the complete humanoid mesh from config values.
 
     The character is built standing upright with feet at Z=0.
-    Body uses tapered torso sections for a natural silhouette with wider
-    chest, narrower waist, and wider hips.
+    Uses truncated cones for organic tapered forms on the torso, limbs, and
+    neck to match the silhouette of the reference model.
 
     Args:
         cfg: dict with body proportion values.
@@ -144,9 +133,9 @@ def create_body(cfg):
     foot_len = cfg["foot_length"]
     foot_w = cfg["foot_width"]
 
-    # Body variation parameters (with backwards-compatible defaults)
-    lt = cfg.get("limb_thickness", 1.0)   # multiplier for limb radii
-    td = cfg.get("torso_depth", 0.20)     # front-to-back torso size
+    # Body variation parameters
+    lt = cfg.get("limb_thickness", 1.0)
+    td = cfg.get("torso_depth", 0.20)
     skin_tone = cfg.get("skin_tone", None)
 
     # Vertical layout (bottom-up)
@@ -158,108 +147,120 @@ def create_body(cfg):
     neck_z = chest_z + neck_len
     head_z = neck_z + head_r
 
-    # Waist width — narrower than both chest and hips for hourglass taper
-    waist_half_w = min(sw, hw) * 0.82
+    # Waist is narrower than both chest and hips for an hourglass taper
+    waist_half_w = min(sw, hw) * 0.85
 
     parts = []
 
-    # --- Head (more segments for smoother sphere) ---
-    head = _create_sphere("Head", head_r, (0, 0, head_z), segments=12, rings=9)
-    # Slightly flatten front-to-back for a more natural head shape
-    head.scale = (1.0, 0.92, 1.02)
+    # --- Head ---
+    # Reference model head ratio W:H:D = 0.70:1.00:0.79
+    # Make it taller and slightly narrower than a sphere
+    head = _create_sphere("Head", head_r, (0, 0, head_z), segments=14, rings=10)
+    head.scale = (0.88, 0.92, 1.05)
     bpy.context.view_layer.objects.active = head
     bpy.ops.object.transform_apply(scale=True)
     parts.append(head)
 
-    # --- Neck (tapered — wider at base, narrower at top) ---
+    # --- Neck (tapered: wider at base, narrower at top) ---
     neck_r_base = 0.058 * lt
-    neck_r_top = 0.048 * lt
-    neck = _create_tapered_cylinder(
-        "Neck", neck_r_top, neck_r_base, neck_len,
-        (0, 0, chest_z + neck_len / 2), segments=10,
-    )
+    neck_r_top = 0.046 * lt
+    neck = _create_cone("Neck", neck_r_base, neck_r_top, neck_len,
+                        (0, 0, chest_z + neck_len / 2), segments=10)
     parts.append(neck)
 
-    # --- Upper Chest (tapered: shoulder-width at top, narrows toward waist) ---
-    upper_torso_h = torso_len * 0.55
-    chest_top_half_w = sw
-    chest_bot_half_w = (sw + waist_half_w) / 2  # blend toward waist
+    # --- Torso ---
+    # Built as 3 stacked truncated cones for a smooth organic taper:
+    #   Upper chest: shoulder-width at top, tapers toward waist
+    #   Lower chest: continues taper to waist
+    #   Lower torso: waist at top, widens to hips at bottom
 
-    upper_chest = _create_box(
-        "UpperChest",
-        size=(1, 1, 1),
-        location=(0, 0, chest_z - upper_torso_h / 2),
-    )
-    # Use bmesh to taper: scale top verts wider, bottom verts narrower
-    bpy.context.view_layer.objects.active = upper_chest
-    bpy.ops.object.mode_set(mode='EDIT')
-    bm = bmesh.from_edit_mesh(upper_chest.data)
-    for v in bm.verts:
-        if v.co.z > 0:  # top half
-            v.co.x *= chest_top_half_w
-            v.co.y *= td * 0.58
-            v.co.z *= upper_torso_h / 2
-        else:  # bottom half
-            v.co.x *= chest_bot_half_w
-            v.co.y *= td * 0.48
-            v.co.z *= upper_torso_h / 2
-    bmesh.update_edit_mesh(upper_chest.data)
-    bpy.ops.object.mode_set(mode='OBJECT')
-    parts.append(upper_chest)
-
-    # --- Lower Torso / Waist (tapered: narrow at waist, widens to hips) ---
+    upper_chest_h = torso_len * 0.35
+    lower_chest_h = torso_len * 0.20
     lower_torso_h = torso_len * 0.45
 
-    lower_torso = _create_box(
-        "LowerTorso",
-        size=(1, 1, 1),
-        location=(0, 0, hip_z + lower_torso_h / 2),
+    # Upper chest (widest at top = shoulder width, narrows down)
+    mid_chest_w = (sw + waist_half_w) / 2
+    upper_chest = _create_cone(
+        "UpperChest",
+        r_bottom=mid_chest_w,           # bottom edge (mid-chest)
+        r_top=sw,                        # top edge (shoulder width)
+        depth=upper_chest_h,
+        location=(0, 0, chest_z - upper_chest_h / 2),
+        segments=12,
     )
+    # Flatten front-to-back relative to width
+    upper_chest.scale = (1.0, td / sw * 1.2, 1.0)
+    bpy.context.view_layer.objects.active = upper_chest
+    bpy.ops.object.transform_apply(scale=True)
+    parts.append(upper_chest)
+
+    # Lower chest (continues narrowing to waist)
+    lower_chest = _create_cone(
+        "LowerChest",
+        r_bottom=waist_half_w + 0.01,   # near-waist width
+        r_top=mid_chest_w,               # mid-chest width
+        depth=lower_chest_h,
+        location=(0, 0, chest_z - upper_chest_h - lower_chest_h / 2),
+        segments=12,
+    )
+    lower_chest.scale = (1.0, td / mid_chest_w * 1.1, 1.0)
+    bpy.context.view_layer.objects.active = lower_chest
+    bpy.ops.object.transform_apply(scale=True)
+    parts.append(lower_chest)
+
+    # Lower torso (waist → hips, widens toward bottom)
+    lower_torso = _create_cone(
+        "LowerTorso",
+        r_bottom=hw + 0.02,             # hip width at bottom
+        r_top=waist_half_w,              # waist width at top
+        depth=lower_torso_h,
+        location=(0, 0, hip_z + lower_torso_h / 2),
+        segments=12,
+    )
+    lower_torso.scale = (1.0, td / waist_half_w * 1.05, 1.0)
     bpy.context.view_layer.objects.active = lower_torso
-    bpy.ops.object.mode_set(mode='EDIT')
-    bm = bmesh.from_edit_mesh(lower_torso.data)
-    for v in bm.verts:
-        if v.co.z > 0:  # top = waist (narrow)
-            v.co.x *= waist_half_w
-            v.co.y *= td * 0.45
-            v.co.z *= lower_torso_h / 2
-        else:  # bottom = hips (wider)
-            v.co.x *= hw + 0.03
-            v.co.y *= td * 0.48
-            v.co.z *= lower_torso_h / 2
-    bmesh.update_edit_mesh(lower_torso.data)
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.transform_apply(scale=True)
     parts.append(lower_torso)
 
     # --- Pelvis ---
-    pelvis = _create_box(
+    pelvis = _create_cone(
         "Pelvis",
-        size=(hw * 2 + 0.04, td * 0.95, 0.10),
+        r_bottom=hw - 0.01,
+        r_top=hw + 0.02,
+        depth=0.10,
         location=(0, 0, hip_z - 0.01),
+        segments=12,
     )
+    pelvis.scale = (1.0, td / (hw + 0.02) * 1.0, 1.0)
+    bpy.context.view_layer.objects.active = pelvis
+    bpy.ops.object.transform_apply(scale=True)
     parts.append(pelvis)
 
-    # --- Legs (tapered cylinders — thicker at top, thinner at bottom) ---
+    # --- Legs (tapered cylinders) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
         x = x_sign * hw
 
-        # Upper leg (tapered: wider at hip, narrower at knee)
+        # Upper leg (thicker at hip, thinner at knee)
         upper_leg_len = abs(knee_z - hip_z)
-        upper_r_top = 0.072 * lt
-        upper_r_bot = 0.058 * lt
-        upper_leg = _create_tapered_cylinder(
-            f"UpperLeg.{side}", upper_r_bot, upper_r_top, upper_leg_len,
-            (x, 0, (hip_z + knee_z) / 2), segments=10,
+        upper_leg = _create_cone(
+            f"UpperLeg.{side}",
+            r_bottom=0.058 * lt,   # knee end (thinner)
+            r_top=0.072 * lt,      # hip end (thicker)
+            depth=upper_leg_len,
+            location=(x, 0, (hip_z + knee_z) / 2),
+            segments=10,
         )
         parts.append(upper_leg)
 
-        # Lower leg (tapered: wider at knee, narrower at ankle)
+        # Lower leg (thicker at knee, thinner at ankle)
         lower_leg_len = knee_z - foot_top
-        lower_r_top = 0.060 * lt
-        lower_r_bot = 0.048 * lt
-        lower_leg = _create_tapered_cylinder(
-            f"LowerLeg.{side}", lower_r_bot, lower_r_top, lower_leg_len,
-            (x, 0, (foot_top + knee_z) / 2), segments=10,
+        lower_leg = _create_cone(
+            f"LowerLeg.{side}",
+            r_bottom=0.048 * lt,   # ankle end (thinner)
+            r_top=0.060 * lt,      # knee end (thicker)
+            depth=lower_leg_len,
+            location=(x, 0, (foot_top + knee_z) / 2),
+            segments=10,
         )
         parts.append(lower_leg)
 
@@ -271,26 +272,34 @@ def create_body(cfg):
         )
         parts.append(foot)
 
-    # --- Arms (tapered cylinders hanging down) ---
+    # --- Arms (tapered, hanging down at sides) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
         shoulder_x = x_sign * (sw + 0.04)
-        arm_top_z = chest_z - 0.06  # shoulder attachment point
+        arm_top_z = chest_z - 0.06
 
-        # Upper arm (tapered)
+        # Upper arm
         upper_arm_len = arm_len * 0.48
         elbow_z = arm_top_z - upper_arm_len
-        upper_arm = _create_tapered_cylinder(
-            f"UpperArm.{side}", 0.042 * lt, 0.055 * lt, upper_arm_len,
-            (shoulder_x, 0, (arm_top_z + elbow_z) / 2), segments=10,
+        upper_arm = _create_cone(
+            f"UpperArm.{side}",
+            r_bottom=0.042 * lt,   # elbow (thinner)
+            r_top=0.055 * lt,      # shoulder (thicker)
+            depth=upper_arm_len,
+            location=(shoulder_x, 0, (arm_top_z + elbow_z) / 2),
+            segments=10,
         )
         parts.append(upper_arm)
 
-        # Lower arm (tapered)
+        # Lower arm
         lower_arm_len = arm_len * 0.52
         wrist_z = elbow_z - lower_arm_len
-        lower_arm = _create_tapered_cylinder(
-            f"LowerArm.{side}", 0.034 * lt, 0.044 * lt, lower_arm_len,
-            (shoulder_x, 0, (elbow_z + wrist_z) / 2), segments=10,
+        lower_arm = _create_cone(
+            f"LowerArm.{side}",
+            r_bottom=0.034 * lt,   # wrist (thinner)
+            r_top=0.044 * lt,      # elbow (thicker)
+            depth=lower_arm_len,
+            location=(shoulder_x, 0, (elbow_z + wrist_z) / 2),
+            segments=10,
         )
         parts.append(lower_arm)
 
@@ -303,11 +312,10 @@ def create_body(cfg):
 
     # --- Face (eyes + nose) ---
     eye_r = head_r * 0.06
-    eye_spacing = head_r * 0.32
-    eye_y = head_r * 0.85       # front of head
-    eye_z = head_z + head_r * 0.1
+    eye_spacing = head_r * 0.28
+    eye_y = head_r * 0.82
+    eye_z = head_z + head_r * 0.12
 
-    # Eye material (dark)
     eye_mat = bpy.data.materials.new(name="Eye_Material")
     eye_mat.use_nodes = True
     eye_bsdf = eye_mat.node_tree.nodes.get("Principled BSDF")
@@ -324,11 +332,10 @@ def create_body(cfg):
         eye.data.materials.append(eye_mat)
         parts.append(eye)
 
-    # Nose (small sphere protruding from front of face)
     nose_r = head_r * 0.07
     nose = _create_sphere(
         "Nose", nose_r,
-        (0, head_r * 0.90, head_z - head_r * 0.08),
+        (0, head_r * 0.86, head_z - head_r * 0.06),
         segments=6, rings=4,
     )
     parts.append(nose)
@@ -336,7 +343,6 @@ def create_body(cfg):
     # --- Join body parts ---
     body = _join_objects(parts)
 
-    # Set origin to base of feet
     bpy.context.scene.cursor.location = (0, 0, 0)
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
@@ -351,7 +357,7 @@ def create_body(cfg):
         from . import hair as hair_module
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
-    # --- Clothing (separate objects, parented to appropriate bones) ---
+    # --- Clothing (separate objects, skinned to armature) ---
     clothing_objs = []
     clothing_type = cfg.get("clothing", "tshirt,pants")
     if clothing_type and clothing_type != "none":
