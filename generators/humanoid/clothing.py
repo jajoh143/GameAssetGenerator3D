@@ -128,6 +128,16 @@ def _join_parts(bpy, parts, name="Clothing"):
 
 # ─── Shared body layout helpers ────────────────────────────────────────────
 
+def _create_box(bpy, name, size, location):
+    """Create a box mesh."""
+    bpy.ops.mesh.primitive_cube_add(size=1, location=location)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.scale = (size[0], size[1], size[2])
+    bpy.ops.object.transform_apply(scale=True)
+    return obj
+
+
 def _body_layout(cfg):
     """Compute key Z positions and widths matching mesh.py body layout."""
     sw = cfg["shoulder_width"]
@@ -142,90 +152,68 @@ def _body_layout(cfg):
     waist_z = hip_z + torso_len * 0.35
     chest_z = hip_z + torso_len
     waist_half_w = min(sw, hw) * 0.85
-    mid_chest_w = (sw + waist_half_w) / 2
+    shoulder_x = sw + 0.04  # arm attachment X
 
     return {
         "foot_top": foot_top, "knee_z": knee_z, "hip_z": hip_z,
         "waist_z": waist_z, "chest_z": chest_z,
         "sw": sw, "hw": hw, "td": td,
-        "waist_half_w": waist_half_w, "mid_chest_w": mid_chest_w,
+        "waist_half_w": waist_half_w, "shoulder_x": shoulder_x,
     }
 
 
 # ─── Clothing builders ────────────────────────────────────────────────────
 
 def _build_tshirt(cfg, color):
-    """T-shirt: tapered torso cones + short sleeve tubes."""
+    """T-shirt: box torso + shoulder covers + short sleeves."""
     import bpy
 
     lay = _body_layout(cfg)
     sw, hw, td = lay["sw"], lay["hw"], lay["td"]
     hip_z, chest_z = lay["hip_z"], lay["chest_z"]
     waist_half_w = lay["waist_half_w"]
-    mid_chest_w = lay["mid_chest_w"]
+    shoulder_x = lay["shoulder_x"]
     torso_len = cfg["torso_length"]
     lt = cfg.get("limb_thickness", 1.0)
     arm_len = cfg["arm_length"]
-
-    # Clothing offset — slightly larger than body
     off = 0.012
 
     parts = []
 
-    # Upper torso cone (shoulder → mid-chest)
-    upper_h = torso_len * 0.35
-    upper = _create_cone(
-        bpy, "Shirt_Upper",
-        r_bottom=mid_chest_w + off,
-        r_top=sw + off,
-        depth=upper_h,
-        location=(0, 0, chest_z - upper_h / 2),
-        segments=12,
-    )
-    upper.scale = (1.0, td / sw * 1.2, 1.0)
-    bpy.context.view_layer.objects.active = upper
-    bpy.ops.object.transform_apply(scale=True)
+    # Upper torso (chest — full shoulder width)
+    upper_h = torso_len * 0.50
+    upper = _create_box(bpy, "Shirt_Upper",
+                        (sw * 2 + off * 2, td * 1.1 + off * 2, upper_h),
+                        (0, 0, chest_z - upper_h / 2))
     parts.append(upper)
 
-    # Lower torso cone (mid-chest → waist)
-    lower_h = torso_len * 0.20
-    lower = _create_cone(
-        bpy, "Shirt_Lower",
-        r_bottom=waist_half_w + off,
-        r_top=mid_chest_w + off,
-        depth=lower_h,
-        location=(0, 0, chest_z - upper_h - lower_h / 2),
-        segments=12,
-    )
-    lower.scale = (1.0, td / mid_chest_w * 1.1, 1.0)
-    bpy.context.view_layer.objects.active = lower
-    bpy.ops.object.transform_apply(scale=True)
+    # Lower torso (waist — narrower)
+    waist_w = waist_half_w * 2
+    lower_h = torso_len * 0.45
+    lower = _create_box(bpy, "Shirt_Lower",
+                        (waist_w + off * 2, td * 0.95 + off * 2, lower_h),
+                        (0, 0, hip_z + lower_h / 2 + 0.02))
     parts.append(lower)
 
-    # Bottom section (waist → just above hips)
-    bot_h = torso_len * 0.35
-    bot = _create_cone(
-        bpy, "Shirt_Bottom",
-        r_bottom=hw + 0.02 + off,
-        r_top=waist_half_w + off,
-        depth=bot_h,
-        location=(0, 0, hip_z + bot_h / 2),
-        segments=12,
-    )
-    bot.scale = (1.0, td / waist_half_w * 1.05, 1.0)
-    bpy.context.view_layer.objects.active = bot
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(bot)
-
-    # Short sleeves
-    sleeve_len = arm_len * 0.2
+    # Shoulder covers + sleeves — box over shoulder bridging to arm cylinder
+    sleeve_len = arm_len * 0.22
+    arm_z = chest_z - 0.06
     for side, x_sign in [("L", 1), ("R", -1)]:
-        sx = x_sign * (sw + 0.04)
-        arm_z = chest_z - 0.06
+        sx = x_sign * shoulder_x
+
+        # Shoulder cover (box bridging chest edge to arm)
+        bridge_w = shoulder_x - sw + 0.03
+        bridge = _create_box(
+            bpy, f"Shirt_Shoulder_{side}",
+            (bridge_w + off, td * 0.85 + off, 0.07),
+            (x_sign * (sw + bridge_w / 2 - 0.01), 0, chest_z - 0.03),
+        )
+        parts.append(bridge)
+
+        # Sleeve (cylinder covering upper arm)
         sleeve = _create_cone(
             bpy, f"Shirt_Sleeve_{side}",
-            r_bottom=0.044 * lt + off,
-            r_top=0.058 * lt + off,
+            r_bottom=0.048 * lt + off, r_top=0.060 * lt + off,
             depth=sleeve_len,
             location=(sx, 0, arm_z - sleeve_len / 2),
             segments=10,
@@ -238,14 +226,14 @@ def _build_tshirt(cfg, color):
 
 
 def _build_jacket(cfg, color):
-    """Jacket: tapered torso cones + full arm sleeves + collar."""
+    """Jacket: box torso + shoulder covers + full arm sleeves + collar."""
     import bpy
 
     lay = _body_layout(cfg)
     sw, hw, td = lay["sw"], lay["hw"], lay["td"]
     hip_z, chest_z = lay["hip_z"], lay["chest_z"]
     waist_half_w = lay["waist_half_w"]
-    mid_chest_w = lay["mid_chest_w"]
+    shoulder_x = lay["shoulder_x"]
     torso_len = cfg["torso_length"]
     arm_len = cfg["arm_length"]
     neck_len = cfg["neck_length"]
@@ -255,37 +243,19 @@ def _build_jacket(cfg, color):
     parts = []
 
     # Upper torso
-    upper_h = torso_len * 0.35
-    upper = _create_cone(bpy, "Jacket_Upper",
-                         r_bottom=mid_chest_w + off, r_top=sw + off,
-                         depth=upper_h,
-                         location=(0, 0, chest_z - upper_h / 2), segments=12)
-    upper.scale = (1.0, td / sw * 1.2, 1.0)
-    bpy.context.view_layer.objects.active = upper
-    bpy.ops.object.transform_apply(scale=True)
+    upper_h = torso_len * 0.50
+    upper = _create_box(bpy, "Jacket_Upper",
+                        (sw * 2 + off * 2, td * 1.1 + off * 2, upper_h),
+                        (0, 0, chest_z - upper_h / 2))
     parts.append(upper)
 
-    # Mid torso
-    mid_h = torso_len * 0.20
-    mid = _create_cone(bpy, "Jacket_Mid",
-                       r_bottom=waist_half_w + off, r_top=mid_chest_w + off,
-                       depth=mid_h,
-                       location=(0, 0, chest_z - upper_h - mid_h / 2), segments=12)
-    mid.scale = (1.0, td / mid_chest_w * 1.1, 1.0)
-    bpy.context.view_layer.objects.active = mid
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(mid)
-
     # Lower torso
-    bot_h = torso_len * 0.40
-    bot = _create_cone(bpy, "Jacket_Bottom",
-                       r_bottom=hw + 0.02 + off, r_top=waist_half_w + off,
-                       depth=bot_h,
-                       location=(0, 0, hip_z + bot_h / 2), segments=12)
-    bot.scale = (1.0, td / waist_half_w * 1.05, 1.0)
-    bpy.context.view_layer.objects.active = bot
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(bot)
+    waist_w = waist_half_w * 2
+    lower_h = torso_len * 0.48
+    lower = _create_box(bpy, "Jacket_Lower",
+                        (waist_w + off * 2, td * 0.95 + off * 2, lower_h),
+                        (0, 0, hip_z + lower_h / 2))
+    parts.append(lower)
 
     # Collar
     collar = _create_cylinder(bpy, "Jacket_Collar",
@@ -293,11 +263,19 @@ def _build_jacket(cfg, color):
                               (0, 0, chest_z + neck_len * 0.25), segments=10)
     parts.append(collar)
 
-    # Full sleeves (tapered)
+    # Shoulder covers + full sleeves
+    arm_z = chest_z - 0.06
     for side, x_sign in [("L", 1), ("R", -1)]:
-        sx = x_sign * (sw + 0.04)
-        arm_z = chest_z - 0.06
+        sx = x_sign * shoulder_x
 
+        # Shoulder cover
+        bridge_w = shoulder_x - sw + 0.03
+        bridge = _create_box(bpy, f"Jacket_Shoulder_{side}",
+                             (bridge_w + off, td * 0.85 + off, 0.08),
+                             (x_sign * (sw + bridge_w / 2 - 0.01), 0, chest_z - 0.03))
+        parts.append(bridge)
+
+        # Upper sleeve
         upper_len = arm_len * 0.48
         elbow_z = arm_z - upper_len
         upper_sl = _create_cone(bpy, f"Jacket_UpperSl_{side}",
@@ -306,6 +284,7 @@ def _build_jacket(cfg, color):
                                 location=(sx, 0, (arm_z + elbow_z) / 2), segments=10)
         parts.append(upper_sl)
 
+        # Lower sleeve
         lower_len = arm_len * 0.48
         lower_sl = _create_cone(bpy, f"Jacket_LowerSl_{side}",
                                 r_bottom=0.037 * lt + off, r_top=0.047 * lt + off,
@@ -319,7 +298,7 @@ def _build_jacket(cfg, color):
 
 
 def _build_pants(cfg, color):
-    """Pants: waist cone + tapered leg tubes from hips to ankles."""
+    """Pants: box waistband + tapered leg tubes from hips to ankles."""
     import bpy
 
     lay = _body_layout(cfg)
@@ -333,15 +312,12 @@ def _build_pants(cfg, color):
 
     parts = []
 
-    # Waistband (cone matching lower torso shape)
+    # Waistband (box matching lower torso)
     waist_h = torso_len * 0.15
-    waist = _create_cone(bpy, "Pants_Waist",
-                         r_bottom=hw + 0.02 + off, r_top=waist_half_w + off,
-                         depth=waist_h,
-                         location=(0, 0, hip_z + waist_h / 2), segments=12)
-    waist.scale = (1.0, td / waist_half_w * 1.05, 1.0)
-    bpy.context.view_layer.objects.active = waist
-    bpy.ops.object.transform_apply(scale=True)
+    waist_w = waist_half_w * 2
+    waist = _create_box(bpy, "Pants_Waist",
+                        (waist_w + off * 2, td * 0.95 + off * 2, waist_h),
+                        (0, 0, hip_z + waist_h / 2))
     parts.append(waist)
 
     # Legs (tapered)
@@ -369,7 +345,7 @@ def _build_pants(cfg, color):
 
 
 def _build_shorts(cfg, color):
-    """Shorts: waist cone + short tapered leg tubes."""
+    """Shorts: box waistband + short tapered leg tubes."""
     import bpy
 
     lay = _body_layout(cfg)
@@ -385,13 +361,10 @@ def _build_shorts(cfg, color):
 
     # Waistband
     waist_h = torso_len * 0.12
-    waist = _create_cone(bpy, "Shorts_Waist",
-                         r_bottom=hw + 0.02 + off, r_top=waist_half_w + off,
-                         depth=waist_h,
-                         location=(0, 0, hip_z + waist_h / 2), segments=12)
-    waist.scale = (1.0, td / waist_half_w * 1.05, 1.0)
-    bpy.context.view_layer.objects.active = waist
-    bpy.ops.object.transform_apply(scale=True)
+    waist_w = waist_half_w * 2
+    waist = _create_box(bpy, "Shorts_Waist",
+                        (waist_w + off * 2, td * 0.95 + off * 2, waist_h),
+                        (0, 0, hip_z + waist_h / 2))
     parts.append(waist)
 
     # Short legs
@@ -410,58 +383,48 @@ def _build_shorts(cfg, color):
 
 
 def _build_armor(cfg, color):
-    """Armor: tapered chest plate cones with shoulder pads and belt."""
+    """Armor: box chest plate with shoulder pads and belt."""
     import bpy
 
     lay = _body_layout(cfg)
     sw, hw, td = lay["sw"], lay["hw"], lay["td"]
     hip_z, chest_z = lay["hip_z"], lay["chest_z"]
     waist_half_w = lay["waist_half_w"]
-    mid_chest_w = lay["mid_chest_w"]
+    shoulder_x = lay["shoulder_x"]
     torso_len = cfg["torso_length"]
     off = 0.018
 
     parts = []
 
-    # Upper plate
-    upper_h = torso_len * 0.45
-    upper = _create_cone(bpy, "Armor_Upper",
-                         r_bottom=mid_chest_w + off, r_top=sw + off,
-                         depth=upper_h,
-                         location=(0, 0, chest_z - upper_h / 2), segments=12)
-    upper.scale = (1.0, td / sw * 1.35, 1.0)
-    bpy.context.view_layer.objects.active = upper
-    bpy.ops.object.transform_apply(scale=True)
+    # Upper plate (chest width)
+    upper_h = torso_len * 0.50
+    upper = _create_box(bpy, "Armor_Upper",
+                        (sw * 2 + off * 2, td * 1.3 + off * 2, upper_h),
+                        (0, 0, chest_z - upper_h / 2))
     parts.append(upper)
 
-    # Lower plate
+    # Lower plate (waist)
+    waist_w = waist_half_w * 2
     lower_h = torso_len * 0.30
-    lower = _create_cone(bpy, "Armor_Lower",
-                         r_bottom=waist_half_w + off, r_top=mid_chest_w + off,
-                         depth=lower_h,
-                         location=(0, 0, chest_z - upper_h - lower_h / 2), segments=12)
-    lower.scale = (1.0, td / mid_chest_w * 1.25, 1.0)
-    bpy.context.view_layer.objects.active = lower
-    bpy.ops.object.transform_apply(scale=True)
+    lower = _create_box(bpy, "Armor_Lower",
+                        (waist_w + off * 2, td * 1.15 + off * 2, lower_h),
+                        (0, 0, chest_z - upper_h - lower_h / 2 + 0.02))
     parts.append(lower)
 
     # Shoulder pads
     for side, x_sign in [("L", 1), ("R", -1)]:
         pad = _create_sphere(bpy, f"Armor_Shoulder_{side}", 0.10,
-                             (x_sign * (sw + 0.06), 0, chest_z - 0.04),
+                             (x_sign * shoulder_x, 0, chest_z - 0.02),
                              segments=8, rings=5)
-        pad.scale = (1.0, 0.8, 0.6)
+        pad.scale = (1.2, 0.9, 0.7)
         bpy.context.view_layer.objects.active = pad
         bpy.ops.object.transform_apply(scale=True)
         parts.append(pad)
 
     # Belt
-    belt = _create_cylinder(bpy, "Armor_Belt",
-                            waist_half_w + off + 0.01, 0.06,
-                            (0, 0, hip_z + torso_len * 0.1), segments=12)
-    belt.scale = (1.0, td / waist_half_w * 1.1, 1.0)
-    bpy.context.view_layer.objects.active = belt
-    bpy.ops.object.transform_apply(scale=True)
+    belt = _create_box(bpy, "Armor_Belt",
+                       (waist_w + off * 2 + 0.02, td * 1.0, 0.06),
+                       (0, 0, hip_z + torso_len * 0.1))
     parts.append(belt)
 
     armor = _join_parts(bpy, parts, "Armor")
@@ -470,14 +433,14 @@ def _build_armor(cfg, color):
 
 
 def _build_robe(cfg, color):
-    """Robe: tapered torso cones + skirt cone + wide sleeves."""
+    """Robe: box torso + shoulder covers + wide skirt + long sleeves."""
     import bpy
 
     lay = _body_layout(cfg)
     sw, hw, td = lay["sw"], lay["hw"], lay["td"]
     hip_z, chest_z = lay["hip_z"], lay["chest_z"]
     waist_half_w = lay["waist_half_w"]
-    mid_chest_w = lay["mid_chest_w"]
+    shoulder_x = lay["shoulder_x"]
     torso_len = cfg["torso_length"]
     arm_len = cfg["arm_length"]
     leg_len = cfg["leg_length"]
@@ -486,34 +449,44 @@ def _build_robe(cfg, color):
 
     parts = []
 
-    # Upper torso
-    upper_h = torso_len * 0.55
-    upper = _create_cone(bpy, "Robe_Upper",
-                         r_bottom=waist_half_w + off, r_top=sw + off,
-                         depth=upper_h,
-                         location=(0, 0, chest_z - upper_h / 2), segments=12)
-    upper.scale = (1.0, td / sw * 1.2, 1.0)
-    bpy.context.view_layer.objects.active = upper
-    bpy.ops.object.transform_apply(scale=True)
+    # Upper torso (box, shoulder width)
+    upper_h = torso_len * 0.50
+    upper = _create_box(bpy, "Robe_Upper",
+                        (sw * 2 + off * 2, td * 1.1 + off * 2, upper_h),
+                        (0, 0, chest_z - upper_h / 2))
     parts.append(upper)
 
-    # Lower torso + skirt (widens dramatically)
-    skirt_h = torso_len * 0.45 + leg_len * 0.85
+    # Lower torso (box, waist width)
+    waist_w = waist_half_w * 2
+    lower_h = torso_len * 0.50
+    lower = _create_box(bpy, "Robe_Lower",
+                        (waist_w + off * 2, td * 0.95 + off * 2, lower_h),
+                        (0, 0, hip_z + lower_h / 2))
+    parts.append(lower)
+
+    # Skirt (cone widening from waist to ankles)
+    skirt_h = leg_len * 0.85
     skirt_bottom_r = hw + 0.15
     skirt = _create_cone(bpy, "Robe_Skirt",
                          r_bottom=skirt_bottom_r, r_top=waist_half_w + off,
                          depth=skirt_h,
-                         location=(0, 0, hip_z - leg_len * 0.85 / 2 + torso_len * 0.45 / 2),
+                         location=(0, 0, hip_z - skirt_h / 2),
                          segments=12)
-    skirt.scale = (1.0, td / waist_half_w * 1.3, 1.0)
-    bpy.context.view_layer.objects.active = skirt
-    bpy.ops.object.transform_apply(scale=True)
     parts.append(skirt)
 
-    # Wide sleeves (tapered)
+    # Shoulder covers + wide sleeves
+    arm_z = chest_z - 0.06
     for side, x_sign in [("L", 1), ("R", -1)]:
-        sx = x_sign * (sw + 0.04)
-        arm_z = chest_z - 0.06
+        sx = x_sign * shoulder_x
+
+        # Shoulder cover
+        bridge_w = shoulder_x - sw + 0.03
+        bridge = _create_box(bpy, f"Robe_Shoulder_{side}",
+                             (bridge_w + off, td * 0.85 + off, 0.08),
+                             (x_sign * (sw + bridge_w / 2 - 0.01), 0, chest_z - 0.03))
+        parts.append(bridge)
+
+        # Wide sleeve (longer and flared)
         sleeve_len = arm_len * 0.7
         sleeve = _create_cone(bpy, f"Robe_Sleeve_{side}",
                               r_bottom=0.055 * lt + off, r_top=0.07 * lt + off,

@@ -161,95 +161,71 @@ def create_body(cfg):
     bpy.ops.object.transform_apply(scale=True)
     parts.append(head)
 
-    # --- Neck (tapered: wider at base, narrower at top) ---
-    neck_r_base = 0.058 * lt
-    neck_r_top = 0.046 * lt
-    neck = _create_cone("Neck", neck_r_base, neck_r_top, neck_len,
-                        (0, 0, chest_z + neck_len / 2), segments=10)
+    # --- Neck ---
+    neck_r = 0.052 * lt
+    neck = _create_cylinder("Neck", neck_r, neck_len,
+                            (0, 0, chest_z + neck_len / 2), segments=10)
     parts.append(neck)
 
+    # --- Torso ---
+    # Uses boxes (wider than deep = rectangular cross-section like a real
+    # human torso). Three sections: chest, waist, pelvis.
+    # Shoulder shelf is part of the chest — full shoulder width at the top.
+
+    # Upper chest — full shoulder width, creates the shoulder shelf
+    upper_chest_h = torso_len * 0.50
+    chest = _create_box(
+        "Chest",
+        size=(sw * 2, td * 1.1, upper_chest_h),
+        location=(0, 0, chest_z - upper_chest_h / 2),
+    )
+    parts.append(chest)
+
+    # Lower torso / waist — narrower than chest for hourglass taper
+    waist_w = waist_half_w * 2
+    lower_torso_h = torso_len * 0.50
+    waist_piece = _create_box(
+        "Waist",
+        size=(waist_w, td * 0.95, lower_torso_h),
+        location=(0, 0, hip_z + lower_torso_h / 2),
+    )
+    parts.append(waist_piece)
+
+    # Pelvis
+    pelvis = _create_box(
+        "Pelvis",
+        size=(hw * 2 + 0.04, td * 0.9, 0.10),
+        location=(0, 0, hip_z - 0.01),
+    )
+    parts.append(pelvis)
+
     # --- Shoulders ---
-    # Spheres at each shoulder to give a raised shoulder silhouette,
-    # matching the reference model's shoulder bump.
-    shoulder_r = 0.08 * lt
+    # Boxes that bridge from the top of the chest out to the arm
+    # attachment points, creating a proper shoulder shelf/slope.
+    shoulder_x = sw + 0.04   # matches arm attachment X
+    shoulder_h = 0.06 * lt
+    shoulder_depth = td * 0.85
     for side, x_sign in [("L", 1), ("R", -1)]:
-        shoulder = _create_sphere(
-            f"Shoulder.{side}", shoulder_r,
-            (x_sign * (sw - 0.02), 0, chest_z - 0.04),
+        # Shoulder bridge from chest edge to arm position
+        bridge_w = shoulder_x - sw + 0.02
+        bridge_x = x_sign * (sw + bridge_w / 2 - 0.01)
+        bridge = _create_box(
+            f"Shoulder.{side}",
+            size=(bridge_w, shoulder_depth, shoulder_h),
+            location=(bridge_x, 0, chest_z - shoulder_h / 2),
+        )
+        parts.append(bridge)
+
+        # Rounded shoulder cap (sphere at the shoulder joint)
+        cap = _create_sphere(
+            f"ShoulderCap.{side}", 0.06 * lt,
+            (x_sign * shoulder_x, 0, chest_z - 0.04),
             segments=8, rings=6,
         )
-        shoulder.scale = (1.3, 0.9, 0.7)
-        bpy.context.view_layer.objects.active = shoulder
+        cap.scale = (0.9, 0.8, 0.7)
+        bpy.context.view_layer.objects.active = cap
         bpy.ops.object.transform_apply(scale=True)
-        parts.append(shoulder)
-
-    # --- Torso ---
-    # Built as 3 stacked truncated cones for a smooth organic taper:
-    #   Upper chest: shoulder-width at top, tapers toward waist
-    #   Lower chest: continues taper to waist
-    #   Lower torso: waist at top, widens to hips at bottom
-
-    upper_chest_h = torso_len * 0.35
-    lower_chest_h = torso_len * 0.20
-    lower_torso_h = torso_len * 0.45
-
-    # Upper chest (widest at top = shoulder width, narrows down)
-    mid_chest_w = (sw + waist_half_w) / 2
-    upper_chest = _create_cone(
-        "UpperChest",
-        r_bottom=mid_chest_w,           # bottom edge (mid-chest)
-        r_top=sw,                        # top edge (shoulder width)
-        depth=upper_chest_h,
-        location=(0, 0, chest_z - upper_chest_h / 2),
-        segments=12,
-    )
-    # Flatten front-to-back relative to width
-    upper_chest.scale = (1.0, td / sw * 1.2, 1.0)
-    bpy.context.view_layer.objects.active = upper_chest
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(upper_chest)
-
-    # Lower chest (continues narrowing to waist)
-    lower_chest = _create_cone(
-        "LowerChest",
-        r_bottom=waist_half_w + 0.01,   # near-waist width
-        r_top=mid_chest_w,               # mid-chest width
-        depth=lower_chest_h,
-        location=(0, 0, chest_z - upper_chest_h - lower_chest_h / 2),
-        segments=12,
-    )
-    lower_chest.scale = (1.0, td / mid_chest_w * 1.1, 1.0)
-    bpy.context.view_layer.objects.active = lower_chest
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(lower_chest)
-
-    # Lower torso (waist → hips, widens toward bottom)
-    lower_torso = _create_cone(
-        "LowerTorso",
-        r_bottom=hw + 0.02,             # hip width at bottom
-        r_top=waist_half_w,              # waist width at top
-        depth=lower_torso_h,
-        location=(0, 0, hip_z + lower_torso_h / 2),
-        segments=12,
-    )
-    lower_torso.scale = (1.0, td / waist_half_w * 1.05, 1.0)
-    bpy.context.view_layer.objects.active = lower_torso
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(lower_torso)
-
-    # --- Pelvis ---
-    pelvis = _create_cone(
-        "Pelvis",
-        r_bottom=hw - 0.01,
-        r_top=hw + 0.02,
-        depth=0.10,
-        location=(0, 0, hip_z - 0.01),
-        segments=12,
-    )
-    pelvis.scale = (1.0, td / (hw + 0.02) * 1.0, 1.0)
-    bpy.context.view_layer.objects.active = pelvis
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(pelvis)
+        parts.append(cap)
 
     # --- Legs (tapered cylinders) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
