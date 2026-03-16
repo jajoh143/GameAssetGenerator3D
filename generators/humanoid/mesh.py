@@ -61,6 +61,114 @@ def _join_objects(objects):
     return result
 
 
+def _create_hand(name, hand_size, location, side="L"):
+    """Create a low-poly mitt-with-thumb hand.
+
+    Builds a flat palm + tapered finger block + separate thumb using
+    simple box geometry.  ~24 faces per hand — much more readable as
+    a human hand than the old sphere, and lower poly count.
+
+    Args:
+        name: object name (e.g. "Hand.L")
+        hand_size: base scale factor from config
+        location: (x, y, z) wrist attachment point
+        side: "L" or "R" — mirrors the thumb on X axis
+    """
+    import bmesh
+
+    bm = bmesh.new()
+    s = hand_size           # base scale
+    x0, y0, z0 = location
+    sign = 1 if side == "L" else -1
+
+    # Palm dimensions
+    palm_w = s * 0.90       # width (X)
+    palm_d = s * 0.50       # depth/thickness (Y)
+    palm_h = s * 1.0        # height (Z, wrist to finger root)
+
+    # --- Palm (box) ---
+    # 8 verts, oriented so Z is along the arm (downward from wrist)
+    pw, pd, ph = palm_w / 2, palm_d / 2, palm_h
+    palm_verts = [
+        bm.verts.new((x0 + sign * (-pw), y0 - pd, z0)),            # 0: top-back-inner
+        bm.verts.new((x0 + sign * ( pw), y0 - pd, z0)),            # 1: top-back-outer
+        bm.verts.new((x0 + sign * ( pw), y0 + pd, z0)),            # 2: top-front-outer
+        bm.verts.new((x0 + sign * (-pw), y0 + pd, z0)),            # 3: top-front-inner
+        bm.verts.new((x0 + sign * (-pw * 0.9), y0 - pd * 0.8, z0 - ph)),  # 4: bot-back-inner
+        bm.verts.new((x0 + sign * ( pw * 0.9), y0 - pd * 0.8, z0 - ph)),  # 5: bot-back-outer
+        bm.verts.new((x0 + sign * ( pw * 0.9), y0 + pd * 0.8, z0 - ph)),  # 6: bot-front-outer
+        bm.verts.new((x0 + sign * (-pw * 0.9), y0 + pd * 0.8, z0 - ph)),  # 7: bot-front-inner
+    ]
+    pv = palm_verts
+    # 6 faces for the palm box
+    bm.faces.new([pv[0], pv[1], pv[2], pv[3]])  # top
+    bm.faces.new([pv[4], pv[7], pv[6], pv[5]])  # bottom
+    bm.faces.new([pv[0], pv[3], pv[7], pv[4]])  # inner side
+    bm.faces.new([pv[1], pv[5], pv[6], pv[2]])  # outer side
+    bm.faces.new([pv[0], pv[4], pv[5], pv[1]])  # back
+    bm.faces.new([pv[3], pv[2], pv[6], pv[7]])  # front (palm face)
+
+    # --- Fingers (tapered slab extending from palm bottom) ---
+    finger_len = s * 0.80
+    ftaper = 0.65           # fingers narrow toward tips
+    fz = z0 - ph - finger_len
+    fv = [
+        pv[4],  # reuse palm bottom verts as finger root
+        pv[5],
+        pv[6],
+        pv[7],
+        bm.verts.new((x0 + sign * (-pw * 0.9 * ftaper), y0 - pd * 0.6, fz)),  # 8: tip-back-inner
+        bm.verts.new((x0 + sign * ( pw * 0.9 * ftaper), y0 - pd * 0.6, fz)),  # 9: tip-back-outer
+        bm.verts.new((x0 + sign * ( pw * 0.9 * ftaper), y0 + pd * 0.6, fz)),  # 10: tip-front-outer
+        bm.verts.new((x0 + sign * (-pw * 0.9 * ftaper), y0 + pd * 0.6, fz)),  # 11: tip-front-inner
+    ]
+    # 5 faces for fingers (top is shared with palm bottom)
+    bm.faces.new([fv[4], fv[5], fv[6], fv[7]])  # fingertip cap
+    bm.faces.new([fv[0], fv[4], fv[5], fv[1]])  # back
+    bm.faces.new([fv[3], fv[2], fv[6], fv[7]])  # front (palm side)
+    bm.faces.new([fv[0], fv[3], fv[7], fv[4]])  # inner
+    bm.faces.new([fv[1], fv[5], fv[6], fv[2]])  # outer
+
+    # --- Thumb (small tapered box, angled outward) ---
+    thumb_len = s * 0.55
+    tw, td_t = palm_w * 0.30, palm_d * 0.35
+    # Thumb root: inner side of palm, slightly below wrist
+    tx_base = x0 + sign * (-pw * 0.7)
+    tz_base = z0 - ph * 0.25
+    # Thumb tip: angled outward and downward
+    tx_tip = x0 + sign * (-pw * 1.35)
+    tz_tip = tz_base - thumb_len
+    tv = [
+        bm.verts.new((tx_base - sign * tw, y0 - td_t, tz_base)),         # 12
+        bm.verts.new((tx_base + sign * tw, y0 - td_t, tz_base)),         # 13
+        bm.verts.new((tx_base + sign * tw, y0 + td_t, tz_base)),         # 14
+        bm.verts.new((tx_base - sign * tw, y0 + td_t, tz_base)),         # 15
+        bm.verts.new((tx_tip - sign * tw * 0.6, y0 - td_t * 0.7, tz_tip)),  # 16
+        bm.verts.new((tx_tip + sign * tw * 0.6, y0 - td_t * 0.7, tz_tip)),  # 17
+        bm.verts.new((tx_tip + sign * tw * 0.6, y0 + td_t * 0.7, tz_tip)),  # 18
+        bm.verts.new((tx_tip - sign * tw * 0.6, y0 + td_t * 0.7, tz_tip)),  # 19
+    ]
+    # 6 faces for the thumb
+    bm.faces.new([tv[0], tv[1], tv[2], tv[3]])  # root cap
+    bm.faces.new([tv[4], tv[7], tv[6], tv[5]])  # tip cap
+    bm.faces.new([tv[0], tv[4], tv[5], tv[1]])  # back
+    bm.faces.new([tv[3], tv[2], tv[6], tv[7]])  # front
+    bm.faces.new([tv[0], tv[3], tv[7], tv[4]])  # inner
+    bm.faces.new([tv[1], tv[5], tv[6], tv[2]])  # outer
+
+    # Build Blender mesh from bmesh
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    return obj
+
+
 def _apply_material(obj, skin_tone=None):
     """Apply a base material with configurable skin tone."""
     mat = bpy.data.materials.new(name="Humanoid_Base")
@@ -153,12 +261,13 @@ def build_body_skeleton(cfg):
     gender = cfg.get("gender", "neutral")
 
     # Vertical layout (bottom-up)
+    # Standard 8-head figure: torso divides into ~thirds (hip→navel, navel→chest, chest→shoulder)
     foot_top = 0.06
     knee_z = foot_top + leg_len * 0.48
     hip_z = foot_top + leg_len
-    waist_z = hip_z + torso_len * 0.35
-    lower_waist_z = hip_z + torso_len * 0.15
-    lower_chest_z = hip_z + torso_len * 0.70
+    lower_waist_z = hip_z + torso_len * 0.20     # belly button area
+    waist_z = hip_z + torso_len * 0.42            # natural waist (narrowest)
+    lower_chest_z = hip_z + torso_len * 0.68      # bottom of ribcage
     chest_z = hip_z + torso_len
     neck_z = chest_z + neck_len
 
@@ -439,12 +548,12 @@ def create_body(cfg):
     bpy.ops.object.transform_apply(scale=True)
     parts.append(head)
 
-    # --- Hands (spheres at wrist ends) ---
+    # --- Hands (low-poly mitt with thumb) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
-        hand = _create_sphere(
+        hand = _create_hand(
             f"Hand.{side}", hand_size,
-            (x_sign * shoulder_x, 0, wrist_z - hand_size * 0.5),
-            segments=8, rings=5,
+            (x_sign * shoulder_x, 0, wrist_z),
+            side=side,
         )
         parts.append(hand)
 

@@ -63,7 +63,7 @@ def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
     foot_top = 0.06
     knee_z = foot_top + leg_len * 0.48
     hip_z = foot_top + leg_len
-    waist_z = hip_z + torso_len * 0.35
+    waist_z = hip_z + torso_len * 0.42
     chest_z = hip_z + torso_len
     neck_z = chest_z + neck_len
     head_z = neck_z + head_r
