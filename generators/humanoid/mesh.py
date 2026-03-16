@@ -421,19 +421,19 @@ def build_body_skeleton(cfg):
         19: (0.052 * lt * arm_muscle, 0.048 * lt * arm_muscle),  # R forearm
         20: (0.038 * lt * arm_muscle, 0.034 * lt * arm_muscle),  # R wrist
 
-        # Left leg — gender-scaled muscle
-        21: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle * glute_depth),   # L hip joint
-        22: (0.088 * lt * leg_muscle, 0.078 * lt * leg_muscle),  # L thigh peak
-        23: (0.060 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # L knee
-        24: (0.066 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # L calf peak
-        25: (0.048 * lt * leg_muscle, 0.046 * lt * leg_muscle),  # L ankle
+        # Left leg — gender-scaled muscle (thicker for realistic proportions)
+        21: (0.105 * lt * leg_muscle, 0.095 * lt * leg_muscle * glute_depth),   # L hip joint
+        22: (0.112 * lt * leg_muscle, 0.098 * lt * leg_muscle),  # L thigh peak
+        23: (0.074 * lt * leg_muscle, 0.072 * lt * leg_muscle),  # L knee
+        24: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle),  # L calf peak
+        25: (0.058 * lt * leg_muscle, 0.056 * lt * leg_muscle),  # L ankle
 
         # Right leg — mirror
-        26: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle * glute_depth),   # R hip joint
-        27: (0.088 * lt * leg_muscle, 0.078 * lt * leg_muscle),  # R thigh peak
-        28: (0.060 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # R knee
-        29: (0.066 * lt * leg_muscle, 0.058 * lt * leg_muscle),  # R calf peak
-        30: (0.048 * lt * leg_muscle, 0.046 * lt * leg_muscle),  # R ankle
+        26: (0.105 * lt * leg_muscle, 0.095 * lt * leg_muscle * glute_depth),   # R hip joint
+        27: (0.112 * lt * leg_muscle, 0.098 * lt * leg_muscle),  # R thigh peak
+        28: (0.074 * lt * leg_muscle, 0.072 * lt * leg_muscle),  # R knee
+        29: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle),  # R calf peak
+        30: (0.058 * lt * leg_muscle, 0.056 * lt * leg_muscle),  # R ankle
     }
 
     return verts, edges, radii

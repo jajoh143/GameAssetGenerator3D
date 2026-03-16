@@ -168,9 +168,10 @@ def _build_tshirt(cfg, color):
                        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP,
                        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP)
 
-    # Torso spine (hip to chest) + short sleeves (to bicep)
+    # Torso spine (pelvis to chest) + short sleeves (to bicep)
+    # Include V_PELVIS so shirt extends below hip and fully covers pants waistband
     vertex_mask = {
-        V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
+        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
         V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP,
         V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP,
     }
@@ -179,6 +180,9 @@ def _build_tshirt(cfg, color):
     mults = {}
     for v in vertex_mask:
         mults[v] = (1.12, 1.12)
+    # Shirt hem wider at hip/pelvis to fully cover pants underneath
+    mults[V_HIP] = (1.22, 1.22)
+    mults[V_PELVIS] = (1.20, 1.20)
     # Sleeves slightly tighter at the ends
     for v in (V_L_BICEP, V_R_BICEP):
         mults[v] = (1.08, 1.08)
