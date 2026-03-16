@@ -247,18 +247,20 @@ def _build_pants(cfg, color):
         V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE,
     }
 
-    # Fitted pants — enough clearance over body to prevent bleed-through
+    # Fitted pants — generous clearance over body to prevent bleed-through
     mults = {}
     for v in vertex_mask:
-        mults[v] = (1.18, 1.18)
+        mults[v] = (1.28, 1.28)
     for v in (V_L_HIP_JOINT, V_R_HIP_JOINT):
-        mults[v] = (1.22, 1.22)
+        mults[v] = (1.32, 1.32)
     for v in (V_L_THIGH, V_R_THIGH):
-        mults[v] = (1.20, 1.20)
+        mults[v] = (1.30, 1.30)
+    for v in (V_L_CALF, V_R_CALF):
+        mults[v] = (1.26, 1.26)
     for v in (V_L_KNEE, V_R_KNEE):
-        mults[v] = (1.16, 1.16)
+        mults[v] = (1.24, 1.24)
     for v in (V_L_ANKLE, V_R_ANKLE):
-        mults[v] = (1.12, 1.12)
+        mults[v] = (1.20, 1.20)
 
     pants = _build_skin_clothing(cfg, "Pants", vertex_mask, mults)
     _apply_clothing_material(pants, color)
@@ -277,15 +279,17 @@ def _build_shorts(cfg, color):
         V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE,
     }
 
-    # Loose fit shorts — enough clearance over body
+    # Loose fit shorts — generous clearance over body
     mults = {}
     for v in vertex_mask:
-        mults[v] = (1.20, 1.20)
+        mults[v] = (1.30, 1.30)
     for v in (V_L_HIP_JOINT, V_R_HIP_JOINT):
-        mults[v] = (1.24, 1.24)
+        mults[v] = (1.34, 1.34)
+    for v in (V_L_THIGH, V_R_THIGH):
+        mults[v] = (1.32, 1.32)
     # Looser at the hem
     for v in (V_L_KNEE, V_R_KNEE):
-        mults[v] = (1.22, 1.22)
+        mults[v] = (1.28, 1.28)
 
     shorts = _build_skin_clothing(cfg, "Shorts", vertex_mask, mults)
     _apply_clothing_material(shorts, color)

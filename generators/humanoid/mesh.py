@@ -489,11 +489,13 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
 
 
 def _create_shaped_head(name, head_r, location, segments=10, rings=7):
-    """Create a head sphere with bmesh facial deformation.
+    """Create a head sphere with subtle bmesh facial deformation.
 
     Builds a UV sphere at reduced resolution (segments=10, rings=7 → ~70 quads)
-    then displaces vertices to sculpt a jaw, brow ridge, and cheekbones for a
-    more human-looking head shape.
+    then applies gentle vertex displacement for jaw, brow, and cheekbones.
+    Keeps the head mostly round and smooth — deformations are subtle.
+
+    In Blender, -Y is the forward/face direction (maps to -Z in glTF).
     """
     import bmesh
 
@@ -505,8 +507,8 @@ def _create_shaped_head(name, head_r, location, segments=10, rings=7):
     obj = bpy.context.active_object
     obj.name = name
 
-    # Apply initial elliptical scaling (narrower X, deeper Y, taller Z)
-    obj.scale = (0.88, 0.92, 1.05)
+    # Apply gentle elliptical scaling — keep it mostly round
+    obj.scale = (0.92, 0.95, 1.03)
     bpy.ops.object.transform_apply(scale=True)
 
     # Deform vertices for facial features using bmesh
@@ -516,8 +518,8 @@ def _create_shaped_head(name, head_r, location, segments=10, rings=7):
 
     cx, cy, cz = location
     # Effective radii after scaling
-    rx_eff = head_r * 0.88
-    rz_eff = head_r * 1.05
+    rx_eff = head_r * 0.92
+    rz_eff = head_r * 1.03
 
     for v in bm.verts:
         # Position relative to head center
@@ -529,40 +531,39 @@ def _create_shaped_head(name, head_r, location, segments=10, rings=7):
         norm_z = (rel_z + rz_eff) / (2.0 * rz_eff)
         norm_z = max(0.0, min(1.0, norm_z))
 
-        # Front-facing factor: 1 at front, 0 at back
-        front = max(0.0, rel_y) / (head_r * 0.92) if head_r > 0 else 0
+        # Front-facing factor: 1 at front (negative Y in Blender), 0 at back
+        front = max(0.0, -rel_y) / (head_r * 0.95) if head_r > 0 else 0
         front = min(1.0, front)
 
-        # --- Jaw narrowing (lower 35% of head) ---
-        if norm_z < 0.35:
-            t = (0.35 - norm_z) / 0.35  # 0 at midline, 1 at chin
-            v.co.x -= rel_x * 0.25 * t  # narrow toward chin
-            v.co.y += head_r * 0.015 * t * front  # project chin forward
+        # --- Gentle jaw narrowing (lower 30% of head) ---
+        if norm_z < 0.30:
+            t = (0.30 - norm_z) / 0.30  # 0 at midline, 1 at chin
+            v.co.x -= rel_x * 0.15 * t  # narrow toward chin (subtle)
+            v.co.y -= head_r * 0.01 * t * front  # project chin forward (-Y)
 
-        # --- Brow ridge (55-65% height, front-facing) ---
+        # --- Subtle brow ridge (55-65% height, front-facing) ---
         if 0.55 < norm_z < 0.65 and front > 0.3:
             brow_t = 1.0 - abs(norm_z - 0.60) / 0.05  # peak at 60%
             brow_t = max(0.0, brow_t)
-            v.co.y += head_r * 0.03 * brow_t * front  # push forward
-            v.co.z += head_r * 0.01 * brow_t * front  # slight upward
+            v.co.y -= head_r * 0.015 * brow_t * front  # push forward (-Y)
 
-        # --- Cheekbone push (40-55% height, sides, front half) ---
+        # --- Gentle cheekbone push (40-55% height, sides, front half) ---
         side_factor = abs(rel_x) / rx_eff if rx_eff > 0 else 0
         side_factor = min(1.0, side_factor)
         if 0.40 < norm_z < 0.55 and side_factor > 0.3 and front > 0.1:
             cheek_t = 1.0 - abs(norm_z - 0.47) / 0.08
             cheek_t = max(0.0, min(1.0, cheek_t))
-            push = head_r * 0.025 * cheek_t * side_factor
+            push = head_r * 0.015 * cheek_t * side_factor
             if rel_x > 0:
                 v.co.x += push
             else:
                 v.co.x -= push
 
-        # --- Slight back-of-skull flattening (top 30%, back) ---
-        if norm_z > 0.7 and rel_y < -head_r * 0.3:
-            back_t = (-rel_y - head_r * 0.3) / (head_r * 0.6)
+        # --- Slight back-of-skull rounding (top 30%, back = +Y) ---
+        if norm_z > 0.7 and rel_y > head_r * 0.3:
+            back_t = (rel_y - head_r * 0.3) / (head_r * 0.6)
             back_t = max(0.0, min(1.0, back_t))
-            v.co.y += head_r * 0.02 * back_t  # flatten back slightly
+            v.co.y -= head_r * 0.01 * back_t  # flatten back slightly
 
     bm.to_mesh(obj.data)
     bm.free()
@@ -648,9 +649,10 @@ def create_body(cfg):
         parts.append(foot)
 
     # --- Face (eyes + nose) ---
+    # Note: In Blender, -Y is the forward direction (toward camera in glTF).
     eye_r = head_r * 0.06
     eye_spacing = head_r * 0.28
-    eye_y = head_r * 0.82
+    eye_y = -(head_r * 0.82)
     eye_z = head_z + head_r * 0.12
 
     eye_mat = bpy.data.materials.new(name="Eye_Material")
@@ -672,7 +674,7 @@ def create_body(cfg):
     nose_r = head_r * 0.07
     nose = _create_sphere(
         "Nose", nose_r,
-        (0, head_r * 0.86, head_z - head_r * 0.06),
+        (0, -(head_r * 0.86), head_z - head_r * 0.06),
         segments=6, rings=4,
     )
     parts.append(nose)
