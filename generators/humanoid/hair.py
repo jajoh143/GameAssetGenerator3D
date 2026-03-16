@@ -109,9 +109,9 @@ def build_buzzed(head_z, head_r):
     import bpy
     parts = []
     cap = _create_sphere(bpy, "Hair_Buzzed", head_r * 1.05,
-                         (0, 0, head_z + head_r * 0.25),
+                         (0, 0, head_z + head_r * 0.55),
                          segments=10, rings=5)
-    cap.scale = (1.02, 1.0, 0.48)
+    cap.scale = (1.02, 1.0, 0.42)
     bpy.context.view_layer.objects.active = cap
     bpy.ops.object.transform_apply(scale=True)
     parts.append(cap)
@@ -121,10 +121,10 @@ def build_buzzed(head_z, head_r):
         side_cap = _create_sphere(
             bpy, f"Hair_Buzzed_Side_{side}",
             head_r * 0.95,
-            (x_sign * head_r * 0.2, 0, head_z + head_r * 0.15),
+            (x_sign * head_r * 0.2, 0, head_z + head_r * 0.40),
             segments=8, rings=4,
         )
-        side_cap.scale = (0.6, 0.9, 0.45)
+        side_cap.scale = (0.6, 0.9, 0.42)
         bpy.context.view_layer.objects.active = side_cap
         bpy.ops.object.transform_apply(scale=True)
         parts.append(side_cap)
@@ -137,16 +137,16 @@ def build_short(head_z, head_r):
     import bpy
     parts = []
     top = _create_sphere(bpy, "Hair_Short_Top", head_r * 1.12,
-                         (0, 0, head_z + head_r * 0.30),
+                         (0, 0, head_z + head_r * 0.55),
                          segments=10, rings=5)
-    top.scale = (1.08, 1.05, 0.55)
+    top.scale = (1.08, 1.05, 0.50)
     bpy.context.view_layer.objects.active = top
     bpy.ops.object.transform_apply(scale=True)
     parts.append(top)
 
     back = _create_box(bpy, "Hair_Short_Back",
                        (head_r * 1.9, head_r * 0.55, head_r * 0.8),
-                       (0, -head_r * 0.45, head_z + head_r * 0.35))
+                       (0, -head_r * 0.45, head_z + head_r * 0.55))
     parts.append(back)
 
     # Side volume
@@ -154,10 +154,10 @@ def build_short(head_z, head_r):
         side_part = _create_sphere(
             bpy, f"Hair_Short_Side_{side}",
             head_r * 0.9,
-            (x_sign * head_r * 0.55, -head_r * 0.1, head_z + head_r * 0.25),
+            (x_sign * head_r * 0.55, -head_r * 0.1, head_z + head_r * 0.45),
             segments=8, rings=4,
         )
-        side_part.scale = (0.45, 0.8, 0.55)
+        side_part.scale = (0.45, 0.8, 0.50)
         bpy.context.view_layer.objects.active = side_part
         bpy.ops.object.transform_apply(scale=True)
         parts.append(side_part)
@@ -172,9 +172,9 @@ def build_spiky(head_z, head_r):
 
     # Base cap
     cap = _create_sphere(bpy, "Hair_Spiky_Base", head_r * 1.08,
-                         (0, 0, head_z + head_r * 0.30),
+                         (0, 0, head_z + head_r * 0.55),
                          segments=10, rings=5)
-    cap.scale = (1.05, 1.02, 0.45)
+    cap.scale = (1.05, 1.02, 0.42)
     bpy.context.view_layer.objects.active = cap
     bpy.ops.object.transform_apply(scale=True)
     parts.append(cap)
@@ -218,7 +218,7 @@ def build_spiky(head_z, head_r):
         x = xo * head_r
         y = yo * head_r
         h = spike_h * h_mult
-        z = head_z + head_r * 0.92 + h / 2
+        z = head_z + head_r * 1.02 + h / 2
 
         spike = _create_cone(bpy, f"Hair_Spike_{i}", spike_r, h,
                              (x, y, z), segments=5)
@@ -236,9 +236,9 @@ def build_long(head_z, head_r):
     parts = []
 
     top = _create_sphere(bpy, "Hair_Long_Top", head_r * 1.14,
-                         (0, 0, head_z + head_r * 0.30),
+                         (0, 0, head_z + head_r * 0.55),
                          segments=10, rings=5)
-    top.scale = (1.08, 1.08, 0.52)
+    top.scale = (1.08, 1.08, 0.48)
     bpy.context.view_layer.objects.active = top
     bpy.ops.object.transform_apply(scale=True)
     parts.append(top)
@@ -250,7 +250,7 @@ def build_long(head_z, head_r):
             bpy, f"Hair_Long_Side_{side}",
             (curtain_w, head_r * 0.85, curtain_h),
             (x_sign * head_r * 0.85, -head_r * 0.1,
-             head_z - curtain_h / 2 + head_r * 0.55),
+             head_z - curtain_h / 2 + head_r * 0.75),
         )
         parts.append(curtain)
 
@@ -258,13 +258,13 @@ def build_long(head_z, head_r):
     back = _create_box(bpy, "Hair_Long_Back",
                        (head_r * 1.7, head_r * 0.45, back_h),
                        (0, -head_r * 0.65,
-                        head_z - back_h / 2 + head_r * 0.65))
+                        head_z - back_h / 2 + head_r * 0.85))
     parts.append(back)
 
     # Fringe / bangs across forehead
     fringe = _create_box(bpy, "Hair_Long_Fringe",
                          (head_r * 1.6, head_r * 0.3, head_r * 0.35),
-                         (0, head_r * 0.6, head_z + head_r * 0.55))
+                         (0, head_r * 0.6, head_z + head_r * 0.70))
     parts.append(fringe)
 
     return parts
@@ -285,7 +285,7 @@ def build_mohawk(head_z, head_r):
         y = head_r * 0.6 - i * step
         t = abs(i - ridge_count / 2) / (ridge_count / 2)
         h = ridge_height * (1.0 - 0.3 * t)
-        z = head_z + head_r * 0.88 + h / 2
+        z = head_z + head_r * 1.02 + h / 2
 
         segment = _create_box(
             bpy, f"Hair_Mohawk_{i}",
@@ -298,10 +298,10 @@ def build_mohawk(head_z, head_r):
         side_cap = _create_sphere(
             bpy, f"Hair_Mohawk_Side_{side}",
             head_r * 1.03,
-            (x_sign * head_r * 0.15, 0, head_z + head_r * 0.25),
+            (x_sign * head_r * 0.15, 0, head_z + head_r * 0.45),
             segments=8, rings=4,
         )
-        side_cap.scale = (0.5, 0.92, 0.42)
+        side_cap.scale = (0.5, 0.92, 0.40)
         bpy.context.view_layer.objects.active = side_cap
         bpy.ops.object.transform_apply(scale=True)
         parts.append(side_cap)
