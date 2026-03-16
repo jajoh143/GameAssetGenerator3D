@@ -111,7 +111,7 @@ def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
                                  (x, 0, knee_z), (x, 0, foot_top), upper_leg)
 
         foot = _create_bone(edit_bones, f"Foot.{side}",
-                            (x, 0, foot_top), (x, 0.18, foot_top), lower_leg)
+                            (x, 0, foot_top), (x, -0.18, foot_top), lower_leg)
 
     # ---- Arms (hanging down at sides) ----
     for side, x_sign in [("L", 1), ("R", -1)]:
