@@ -440,7 +440,8 @@ def build_body_skeleton(cfg):
 
 
 def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
-                         branch_smoothing=0.7, subsurf_level=1):
+                         branch_smoothing=0.7, subsurf_level=1,
+                         use_mirror=True):
     """Create a mesh from skeleton and apply Skin + Subdivision Surface.
 
     Args:
@@ -448,9 +449,13 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
         name: object name
         branch_smoothing: 0-1, how smooth branch junctions are
         subsurf_level: subdivision level (0 = no subdivision)
+        use_mirror: if True, delete the X<0 half after Skin/Subsurf and
+            apply a Mirror modifier to guarantee perfect left-right symmetry.
 
     Returns the mesh object with modifiers applied.
     """
+    import bmesh
+
     mesh = bpy.data.meshes.new(f"{name}_Mesh")
     mesh.from_pydata(verts, edges, [])
     mesh.update()
@@ -484,6 +489,32 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
     bpy.ops.object.modifier_apply(modifier="Skin")
     if subsurf_level > 0:
         bpy.ops.object.modifier_apply(modifier="Subsurf")
+
+    # Enforce perfect symmetry via Mirror modifier
+    if use_mirror:
+        # Delete the right half (X < 0) using bmesh
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+        # Remove vertices on the negative X side (with small threshold to
+        # keep center-line vertices)
+        to_remove = [v for v in bm.verts if v.co.x < -0.001]
+        for v in to_remove:
+            bm.verts.remove(v)
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+        # Add and apply Mirror modifier on X axis
+        mirror = obj.modifiers.new(name="Mirror", type='MIRROR')
+        mirror.use_axis[0] = True       # Mirror on X
+        mirror.use_axis[1] = False
+        mirror.use_axis[2] = False
+        mirror.use_mirror_merge = True
+        mirror.merge_threshold = 0.002
+        mirror.use_clip = True
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.modifier_apply(modifier="Mirror")
 
     return obj
 
