@@ -498,15 +498,20 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
 
     # Enforce perfect symmetry via Mirror modifier
     if use_mirror:
-        # Delete the right half (X < 0) using bmesh
+        # Cleanly bisect the mesh at X=0 and remove the negative X side
         bm = bmesh.new()
         bm.from_mesh(obj.data)
-        bm.verts.ensure_lookup_table()
-        # Remove vertices on the negative X side (with small threshold to
-        # keep center-line vertices)
-        to_remove = [v for v in bm.verts if v.co.x < -0.001]
-        for v in to_remove:
-            bm.verts.remove(v)
+
+        # Bisect at the YZ plane (X=0), clearing geometry on the negative side
+        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        bmesh.ops.bisect_plane(
+            bm, geom=geom,
+            plane_co=(0, 0, 0),
+            plane_no=(1, 0, 0),  # X-axis normal
+            clear_inner=True,     # remove X < 0 side
+            clear_outer=False,
+        )
+
         bm.to_mesh(obj.data)
         bm.free()
         obj.data.update()

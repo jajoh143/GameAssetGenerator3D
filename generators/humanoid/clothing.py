@@ -125,19 +125,29 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
         name=name, branch_smoothing=branch_smoothing, subsurf_level=1,
     )
 
-    # Delete faces outside the clothing Z-range
+    # Cleanly trim mesh to the clothing Z-range using bisect planes
     bm = bmesh.new()
     bm.from_mesh(clothing_obj.data)
-    bm.faces.ensure_lookup_table()
 
-    faces_to_delete = []
-    for face in bm.faces:
-        center = face.calc_center_median()
-        if center.z < z_min or center.z > z_max:
-            faces_to_delete.append(face)
+    # Cut at z_max — remove everything above
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(
+        bm, geom=geom,
+        plane_co=(0, 0, z_max),
+        plane_no=(0, 0, 1),  # Z-axis normal, clear outer = above
+        clear_inner=False,
+        clear_outer=True,
+    )
 
-    if faces_to_delete:
-        bmesh.ops.delete(bm, geom=faces_to_delete, context='FACES')
+    # Cut at z_min — remove everything below
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(
+        bm, geom=geom,
+        plane_co=(0, 0, z_min),
+        plane_no=(0, 0, 1),  # Z-axis normal, clear inner = below
+        clear_inner=True,
+        clear_outer=False,
+    )
 
     # Offset remaining vertices along their normals for clothing thickness
     bm.verts.ensure_lookup_table()
