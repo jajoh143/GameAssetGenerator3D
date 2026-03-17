@@ -80,64 +80,74 @@ def _apply_clothing_material(obj, rgba, roughness=0.85):
 
 
 def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
-                         branch_smoothing=1.0, extra_parts_fn=None):
-    """Build a clothing piece using the body's Skin modifier skeleton.
+                         branch_smoothing=1.0, extra_parts_fn=None,
+                         offset=0.008):
+    """Build a clothing piece by duplicating the body's Skin mesh and offsetting.
 
-    Takes the same skeleton as the body but keeps only the vertices in
-    vertex_mask, and inflates their radii by the multipliers. This produces
-    a clothing mesh that perfectly follows the body's contours.
+    Instead of generating an independent Skin mesh from a skeleton subset
+    (which produces a different shape), this builds the FULL body mesh using
+    the exact same skeleton and radii, then:
+      1. Deletes faces outside the clothing Z-range
+      2. Offsets remaining vertices along their normals
+
+    This guarantees clothing perfectly follows the body contour.
 
     Args:
         cfg: body config dict
         name: object name for the clothing piece
-        vertex_mask: set of vertex indices to include
-        radii_multipliers: dict mapping vertex index to (rx_mult, ry_mult),
-            or a single (rx_mult, ry_mult) tuple for uniform inflation
+        vertex_mask: set of skeleton vertex indices defining the clothing region
+            (used to determine the Z-range for face deletion)
+        radii_multipliers: kept for API compat but no longer used for shape —
+            offset parameter controls clothing thickness instead
         branch_smoothing: smoothness at branch junctions
         extra_parts_fn: optional callable(bpy, cfg, clothing_obj) that adds
             extra geometry (e.g., collar, skirt cone) and returns a list of
             extra objects to join with the clothing
+        offset: distance to push vertices outward along normals (clothing thickness)
 
     Returns:
         The clothing mesh object (modifiers applied, material not yet set).
     """
     import bpy
+    import bmesh
     from .mesh import build_body_skeleton, _apply_skin_modifier
 
     verts, edges, radii = build_body_skeleton(cfg)
 
-    # Default multiplier
-    if isinstance(radii_multipliers, tuple):
-        default_mult = radii_multipliers
-    else:
-        default_mult = (1.12, 1.12)
+    # Determine the Z-range of the clothing from skeleton vertex positions
+    z_values = [verts[idx][2] for idx in vertex_mask]
+    z_min = min(z_values) - 0.015
+    z_max = max(z_values) + 0.015
 
-    # Filter to only vertices in mask, remap indices
-    old_to_new = {}
-    new_verts = []
-    new_radii = {}
-    for old_idx in sorted(vertex_mask):
-        new_idx = len(new_verts)
-        old_to_new[old_idx] = new_idx
-        new_verts.append(verts[old_idx])
-        rx, ry = radii[old_idx]
-        if isinstance(radii_multipliers, dict):
-            mx, my = radii_multipliers.get(old_idx, default_mult)
-        else:
-            mx, my = radii_multipliers
-        new_radii[new_idx] = (rx * mx, ry * my)
-
-    # Filter edges to only those where both endpoints are in mask
-    new_edges = []
-    for a, b in edges:
-        if a in old_to_new and b in old_to_new:
-            new_edges.append((old_to_new[a], old_to_new[b]))
-
-    # Build the skin mesh
+    # Build FULL body mesh with exact same radii (identical shape to body)
     clothing_obj = _apply_skin_modifier(
-        new_verts, new_edges, new_radii,
+        verts, edges, radii,
         name=name, branch_smoothing=branch_smoothing, subsurf_level=1,
     )
+
+    # Delete faces outside the clothing Z-range
+    bm = bmesh.new()
+    bm.from_mesh(clothing_obj.data)
+    bm.faces.ensure_lookup_table()
+
+    faces_to_delete = []
+    for face in bm.faces:
+        center = face.calc_center_median()
+        if center.z < z_min or center.z > z_max:
+            faces_to_delete.append(face)
+
+    if faces_to_delete:
+        bmesh.ops.delete(bm, geom=faces_to_delete, context='FACES')
+
+    # Offset remaining vertices along their normals for clothing thickness
+    bm.verts.ensure_lookup_table()
+    bm.normal_update()
+    for v in bm.verts:
+        v.co += v.normal * offset
+
+    bm.to_mesh(clothing_obj.data)
+    bm.free()
+    clothing_obj.data.update()
 
     # Add extra geometry if needed (collar, skirt, etc.)
     if extra_parts_fn:
@@ -176,15 +186,8 @@ def _build_tshirt(cfg, color):
         V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP,
     }
 
-    # Slightly loose fit — 1.12x body radii, sleeves tighter
-    mults = {}
-    for v in vertex_mask:
-        mults[v] = (1.12, 1.12)
-    # Sleeves slightly tighter at the ends
-    for v in (V_L_BICEP, V_R_BICEP):
-        mults[v] = (1.08, 1.08)
-
-    shirt = _build_skin_clothing(cfg, "TShirt", vertex_mask, mults)
+    shirt = _build_skin_clothing(cfg, "TShirt", vertex_mask, {},
+                                 offset=0.008)
     _apply_clothing_material(shirt, color)
     return [(shirt, "Spine")]
 
@@ -206,15 +209,6 @@ def _build_jacket(cfg, color):
         V_R_BICEP, V_R_ELBOW, V_R_FOREARM, V_R_WRIST,
     }
 
-    # Puffy at shoulders, tighter at wrists
-    mults = {}
-    for v in vertex_mask:
-        mults[v] = (1.18, 1.18)
-    for v in (V_L_FOREARM, V_R_FOREARM):
-        mults[v] = (1.12, 1.12)
-    for v in (V_L_WRIST, V_R_WRIST):
-        mults[v] = (1.10, 1.10)
-
     def _add_collar(bpy_mod, _cfg, _clothing):
         """Add a collar cylinder above the chest."""
         neck_len = _cfg["neck_length"]
@@ -229,8 +223,8 @@ def _build_jacket(cfg, color):
         collar.name = "Jacket_Collar"
         return [collar]
 
-    jacket = _build_skin_clothing(cfg, "Jacket", vertex_mask, mults,
-                                  extra_parts_fn=_add_collar)
+    jacket = _build_skin_clothing(cfg, "Jacket", vertex_mask, {},
+                                  extra_parts_fn=_add_collar, offset=0.012)
     _apply_clothing_material(jacket, color)
     return [(jacket, "Spine")]
 
@@ -247,22 +241,8 @@ def _build_pants(cfg, color):
         V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE,
     }
 
-    # Fitted pants — snug fit that follows body contour
-    mults = {}
-    for v in vertex_mask:
-        mults[v] = (1.15, 1.15)
-    for v in (V_L_HIP_JOINT, V_R_HIP_JOINT):
-        mults[v] = (1.20, 1.20)
-    for v in (V_L_THIGH, V_R_THIGH):
-        mults[v] = (1.18, 1.18)
-    for v in (V_L_CALF, V_R_CALF):
-        mults[v] = (1.15, 1.15)
-    for v in (V_L_KNEE, V_R_KNEE):
-        mults[v] = (1.14, 1.14)
-    for v in (V_L_ANKLE, V_R_ANKLE):
-        mults[v] = (1.12, 1.12)
-
-    pants = _build_skin_clothing(cfg, "Pants", vertex_mask, mults)
+    pants = _build_skin_clothing(cfg, "Pants", vertex_mask, {},
+                                 offset=0.008)
     _apply_clothing_material(pants, color)
     return [(pants, "Hips")]
 
@@ -279,19 +259,8 @@ def _build_shorts(cfg, color):
         V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE,
     }
 
-    # Loose fit shorts — slightly roomier than pants
-    mults = {}
-    for v in vertex_mask:
-        mults[v] = (1.20, 1.20)
-    for v in (V_L_HIP_JOINT, V_R_HIP_JOINT):
-        mults[v] = (1.24, 1.24)
-    for v in (V_L_THIGH, V_R_THIGH):
-        mults[v] = (1.22, 1.22)
-    # Looser at the hem
-    for v in (V_L_KNEE, V_R_KNEE):
-        mults[v] = (1.20, 1.20)
-
-    shorts = _build_skin_clothing(cfg, "Shorts", vertex_mask, mults)
+    shorts = _build_skin_clothing(cfg, "Shorts", vertex_mask, {},
+                                  offset=0.010)
     _apply_clothing_material(shorts, color)
     return [(shorts, "Hips")]
 
@@ -308,16 +277,8 @@ def _build_armor(cfg, color):
         V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
     }
 
-    # Thick armor — 1.25x at chest, big shoulder pads
-    mults = {}
-    for v in vertex_mask:
-        mults[v] = (1.22, 1.25)
-    # Big shoulder pads
-    for v in (V_L_SHOULDER, V_R_SHOULDER, V_L_DELTOID, V_R_DELTOID):
-        mults[v] = (1.40, 1.35)
-
-    armor = _build_skin_clothing(cfg, "Armor", vertex_mask, mults,
-                                 branch_smoothing=0.5)
+    armor = _build_skin_clothing(cfg, "Armor", vertex_mask, {},
+                                 offset=0.018)
     _apply_clothing_material(armor, color, roughness=0.4)
     return [(armor, "Spine")]
 
@@ -340,14 +301,6 @@ def _build_robe(cfg, color):
         V_R_BICEP, V_R_ELBOW, V_R_FOREARM,
     }
 
-    # Loose robe — flowing sleeves
-    mults = {}
-    for v in vertex_mask:
-        mults[v] = (1.15, 1.15)
-    # Wider flowing sleeves at the ends
-    for v in (V_L_FOREARM, V_R_FOREARM):
-        mults[v] = (1.30, 1.30)
-
     def _add_skirt(bpy_mod, _cfg, _clothing):
         """Add a cone skirt from waist to ankles."""
         hw = _cfg["hip_width"]
@@ -367,8 +320,8 @@ def _build_robe(cfg, color):
         skirt.name = "Robe_Skirt"
         return [skirt]
 
-    robe = _build_skin_clothing(cfg, "Robe", vertex_mask, mults,
-                                extra_parts_fn=_add_skirt)
+    robe = _build_skin_clothing(cfg, "Robe", vertex_mask, {},
+                                extra_parts_fn=_add_skirt, offset=0.010)
     _apply_clothing_material(robe, color)
     return [(robe, "Spine")]
 
