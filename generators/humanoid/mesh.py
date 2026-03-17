@@ -490,10 +490,10 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
     if subsurf_level > 0:
         bpy.ops.object.modifier_apply(modifier="Subsurf")
 
-    # Smooth pass to soften sharp edges at branch junctions (hip/shoulder)
+    # Gentle smooth pass to soften sharp edges at branch junctions
     smooth = obj.modifiers.new(name="Smooth", type='SMOOTH')
-    smooth.factor = 0.5
-    smooth.iterations = 4
+    smooth.factor = 0.3
+    smooth.iterations = 2
     bpy.ops.object.modifier_apply(modifier="Smooth")
 
     # Enforce perfect symmetry via Mirror modifier
