@@ -490,6 +490,12 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
     if subsurf_level > 0:
         bpy.ops.object.modifier_apply(modifier="Subsurf")
 
+    # Smooth pass to soften sharp edges at branch junctions (hip/shoulder)
+    smooth = obj.modifiers.new(name="Smooth", type='SMOOTH')
+    smooth.factor = 0.5
+    smooth.iterations = 4
+    bpy.ops.object.modifier_apply(modifier="Smooth")
+
     # Enforce perfect symmetry via Mirror modifier
     if use_mirror:
         # Delete the right half (X < 0) using bmesh
@@ -656,7 +662,7 @@ def create_body(cfg):
     # --- Skin-modifier body (torso + arms + legs) ---
     verts, edges, radii = build_body_skeleton(cfg)
     skin_body = _apply_skin_modifier(verts, edges, radii, name="SkinBody",
-                                     branch_smoothing=0.7)
+                                     branch_smoothing=1.0)
     parts.append(skin_body)
 
     # --- Head (shaped sphere with facial deformation) ---

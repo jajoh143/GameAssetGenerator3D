@@ -80,7 +80,7 @@ def _apply_clothing_material(obj, rgba, roughness=0.85):
 
 
 def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
-                         branch_smoothing=0.7, extra_parts_fn=None):
+                         branch_smoothing=1.0, extra_parts_fn=None):
     """Build a clothing piece using the body's Skin modifier skeleton.
 
     Takes the same skeleton as the body but keeps only the vertices in
