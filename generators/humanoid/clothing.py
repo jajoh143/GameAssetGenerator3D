@@ -81,14 +81,15 @@ def _apply_clothing_material(obj, rgba, roughness=0.85):
 
 def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
                          branch_smoothing=1.0, extra_parts_fn=None,
-                         offset=0.008):
+                         offset=0.008, use_x_bisect=True):
     """Build a clothing piece by duplicating the body's Skin mesh and offsetting.
 
     Instead of generating an independent Skin mesh from a skeleton subset
     (which produces a different shape), this builds the FULL body mesh using
     the exact same skeleton and radii, then:
       1. Deletes faces outside the clothing Z-range
-      2. Offsets remaining vertices along their normals
+      2. Optionally trims arm geometry via X-range bisects (for lower-body garments)
+      3. Offsets remaining vertices along their normals
 
     This guarantees clothing perfectly follows the body contour.
 
@@ -104,6 +105,8 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
             extra geometry (e.g., collar, skirt cone) and returns a list of
             extra objects to join with the clothing
         offset: distance to push vertices outward along normals (clothing thickness)
+        use_x_bisect: if True, trim arm geometry via X-range bisects. Set False
+            for upper-body garments that include arm/shoulder geometry.
 
     Returns:
         The clothing mesh object (modifiers applied, material not yet set).
@@ -116,8 +119,8 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
 
     # Determine the Z-range of the clothing from skeleton vertex positions
     z_values = [verts[idx][2] for idx in vertex_mask]
-    z_min = min(z_values) - 0.015
-    z_max = max(z_values) + 0.015
+    z_min = min(z_values) - 0.02
+    z_max = max(z_values) + 0.03
 
     # Determine the X-range to exclude arm geometry at overlapping Z heights
     # Account for Skin modifier radius inflation beyond skeleton positions
@@ -158,25 +161,27 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
         clear_outer=False,
     )
 
-    # Cut at +x_max — remove arm geometry extending beyond clothing X range
-    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-    bmesh.ops.bisect_plane(
-        bm, geom=geom,
-        plane_co=(x_max, 0, 0),
-        plane_no=(1, 0, 0),
-        clear_inner=False,
-        clear_outer=True,
-    )
+    # Optionally trim arm geometry (only for lower-body garments like pants)
+    if use_x_bisect:
+        # Cut at +x_max — remove arm geometry extending beyond clothing X range
+        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        bmesh.ops.bisect_plane(
+            bm, geom=geom,
+            plane_co=(x_max, 0, 0),
+            plane_no=(1, 0, 0),
+            clear_inner=False,
+            clear_outer=True,
+        )
 
-    # Cut at -x_max — mirror side
-    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-    bmesh.ops.bisect_plane(
-        bm, geom=geom,
-        plane_co=(-x_max, 0, 0),
-        plane_no=(1, 0, 0),
-        clear_inner=True,
-        clear_outer=False,
-    )
+        # Cut at -x_max — mirror side
+        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+        bmesh.ops.bisect_plane(
+            bm, geom=geom,
+            plane_co=(-x_max, 0, 0),
+            plane_no=(1, 0, 0),
+            clear_inner=True,
+            clear_outer=False,
+        )
 
     # Offset remaining vertices along their normals for clothing thickness
     bm.verts.ensure_lookup_table()
@@ -211,22 +216,25 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
 # ─── Clothing builders ────────────────────────────────────────────────────
 
 def _build_tshirt(cfg, color):
-    """T-shirt: torso + upper arms (to deltoid/bicep area)."""
+    """T-shirt: torso + upper arms (sleeves to elbow)."""
     from .mesh import (V_LOWER_WAIST, V_WAIST,
                        V_LOWER_CHEST, V_CHEST,
-                       V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP,
-                       V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP)
+                       V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
+                       V_L_BICEP, V_L_ELBOW,
+                       V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
+                       V_R_BICEP, V_R_ELBOW)
 
-    # Torso spine (lower waist to chest) + short sleeves (to bicep)
+    # Torso spine (lower waist to chest) + sleeves extending to elbow
     # Shirt hem sits at V_LOWER_WAIST (belly button) — above the pants waistband
     vertex_mask = {
         V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP,
-        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP,
+        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP, V_L_ELBOW,
+        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP, V_R_ELBOW,
     }
 
+    # use_x_bisect=False: shirt wraps shoulders and arms, don't cut X range
     shirt = _build_skin_clothing(cfg, "TShirt", vertex_mask, {},
-                                 offset=0.008)
+                                 offset=0.008, use_x_bisect=False)
     _apply_clothing_material(shirt, color)
     return [(shirt, "Spine")]
 
@@ -263,19 +271,21 @@ def _build_jacket(cfg, color):
         return [collar]
 
     jacket = _build_skin_clothing(cfg, "Jacket", vertex_mask, {},
-                                  extra_parts_fn=_add_collar, offset=0.012)
+                                  extra_parts_fn=_add_collar, offset=0.012,
+                                  use_x_bisect=False)
     _apply_clothing_material(jacket, color)
     return [(jacket, "Spine")]
 
 
 def _build_pants(cfg, color):
     """Pants: waist/hip area + full legs to ankles."""
-    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST,
+    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
                        V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE, V_L_CALF, V_L_ANKLE,
                        V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE)
 
+    # Include V_LOWER_CHEST so waistband extends high enough to tuck under shirt
     vertex_mask = {
-        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST,
+        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
         V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE, V_L_CALF, V_L_ANKLE,
         V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE,
     }
@@ -288,12 +298,12 @@ def _build_pants(cfg, color):
 
 def _build_shorts(cfg, color):
     """Shorts: waist/hip + upper legs only (to knee area)."""
-    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST,
+    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
                        V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE,
                        V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE)
 
     vertex_mask = {
-        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST,
+        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
         V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE,
         V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE,
     }
@@ -317,7 +327,7 @@ def _build_armor(cfg, color):
     }
 
     armor = _build_skin_clothing(cfg, "Armor", vertex_mask, {},
-                                 offset=0.018)
+                                 offset=0.018, use_x_bisect=False)
     _apply_clothing_material(armor, color, roughness=0.4)
     return [(armor, "Spine")]
 
@@ -360,7 +370,8 @@ def _build_robe(cfg, color):
         return [skirt]
 
     robe = _build_skin_clothing(cfg, "Robe", vertex_mask, {},
-                                extra_parts_fn=_add_skirt, offset=0.010)
+                                extra_parts_fn=_add_skirt, offset=0.010,
+                                use_x_bisect=False)
     _apply_clothing_material(robe, color)
     return [(robe, "Spine")]
 
