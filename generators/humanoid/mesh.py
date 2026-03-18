@@ -375,6 +375,10 @@ def build_body_skeleton(cfg):
         (-hw, 0, knee_z),             # 28: R knee
         (-hw, 0, calf_z),             # 29: R calf peak
         (-hw, 0, foot_top),           # 30: R ankle
+
+        # Inner hip transitions (31-32) — smooth waist-to-leg curve
+        (hw * 0.5, 0, hip_z),         # 31: L inner hip
+        (-hw * 0.5, 0, hip_z),        # 32: R inner hip
     ]
 
     # --- Edges ---
@@ -385,10 +389,10 @@ def build_body_skeleton(cfg):
         (5, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13),
         # Right arm
         (5, 14), (14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20),
-        # Left leg
-        (1, 21), (21, 22), (22, 23), (23, 24), (24, 25),
-        # Right leg
-        (1, 26), (26, 27), (27, 28), (28, 29), (29, 30),
+        # Left leg (via inner hip transition)
+        (1, 31), (31, 21), (21, 22), (22, 23), (23, 24), (24, 25),
+        # Right leg (via inner hip transition)
+        (1, 32), (32, 26), (26, 27), (27, 28), (28, 29), (29, 30),
     ]
 
     # --- Per-vertex radii (rx, ry) ---
@@ -434,6 +438,10 @@ def build_body_skeleton(cfg):
         28: (0.074 * lt * leg_muscle, 0.072 * lt * leg_muscle),  # R knee
         29: (0.082 * lt * leg_muscle, 0.074 * lt * leg_muscle),  # R calf peak
         30: (0.058 * lt * leg_muscle, 0.056 * lt * leg_muscle),  # R ankle
+
+        # Inner hip transitions — blend between spine and hip joint radii
+        31: (hw * hip_rx_mult * 0.6, td * 0.50 * glute_depth),   # L inner hip
+        32: (hw * hip_rx_mult * 0.6, td * 0.50 * glute_depth),   # R inner hip
     }
 
     return verts, edges, radii
@@ -490,11 +498,12 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
     if subsurf_level > 0:
         bpy.ops.object.modifier_apply(modifier="Subsurf")
 
-    # Gentle smooth pass to soften sharp edges at branch junctions
-    smooth = obj.modifiers.new(name="Smooth", type='SMOOTH')
-    smooth.factor = 0.3
-    smooth.iterations = 2
-    bpy.ops.object.modifier_apply(modifier="Smooth")
+    # Laplacian Smooth to soften sharp edges while preserving body shape
+    lap_smooth = obj.modifiers.new(name="LaplacianSmooth", type='LAPLACIANSMOOTH')
+    lap_smooth.lambda_factor = 0.3
+    lap_smooth.iterations = 3
+    lap_smooth.use_volume_preserve = True
+    bpy.ops.object.modifier_apply(modifier="LaplacianSmooth")
 
     # Enforce perfect symmetry via Mirror modifier
     if use_mirror:
@@ -667,7 +676,7 @@ def create_body(cfg):
     # --- Skin-modifier body (torso + arms + legs) ---
     verts, edges, radii = build_body_skeleton(cfg)
     skin_body = _apply_skin_modifier(verts, edges, radii, name="SkinBody",
-                                     branch_smoothing=1.0)
+                                     branch_smoothing=1.0, subsurf_level=2)
     parts.append(skin_body)
 
     # --- Head (shaped sphere with facial deformation) ---

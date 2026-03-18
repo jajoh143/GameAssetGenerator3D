@@ -119,13 +119,17 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
     z_min = min(z_values) - 0.015
     z_max = max(z_values) + 0.015
 
+    # Determine the X-range to exclude arm geometry at overlapping Z heights
+    x_values = [abs(verts[idx][0]) for idx in vertex_mask]
+    x_max = max(x_values) + 0.06  # small margin beyond skeleton X range
+
     # Build FULL body mesh with exact same radii (identical shape to body)
     clothing_obj = _apply_skin_modifier(
         verts, edges, radii,
-        name=name, branch_smoothing=branch_smoothing, subsurf_level=1,
+        name=name, branch_smoothing=branch_smoothing, subsurf_level=2,
     )
 
-    # Cleanly trim mesh to the clothing Z-range using bisect planes
+    # Cleanly trim mesh to the clothing region using bisect planes
     bm = bmesh.new()
     bm.from_mesh(clothing_obj.data)
 
@@ -134,7 +138,7 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
     bmesh.ops.bisect_plane(
         bm, geom=geom,
         plane_co=(0, 0, z_max),
-        plane_no=(0, 0, 1),  # Z-axis normal, clear outer = above
+        plane_no=(0, 0, 1),
         clear_inner=False,
         clear_outer=True,
     )
@@ -144,7 +148,27 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
     bmesh.ops.bisect_plane(
         bm, geom=geom,
         plane_co=(0, 0, z_min),
-        plane_no=(0, 0, 1),  # Z-axis normal, clear inner = below
+        plane_no=(0, 0, 1),
+        clear_inner=True,
+        clear_outer=False,
+    )
+
+    # Cut at +x_max — remove arm geometry extending beyond clothing X range
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(
+        bm, geom=geom,
+        plane_co=(x_max, 0, 0),
+        plane_no=(1, 0, 0),
+        clear_inner=False,
+        clear_outer=True,
+    )
+
+    # Cut at -x_max — mirror side
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(
+        bm, geom=geom,
+        plane_co=(-x_max, 0, 0),
+        plane_no=(1, 0, 0),
         clear_inner=True,
         clear_outer=False,
     )
