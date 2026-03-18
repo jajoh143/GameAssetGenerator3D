@@ -120,8 +120,13 @@ def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
     z_max = max(z_values) + 0.015
 
     # Determine the X-range to exclude arm geometry at overlapping Z heights
-    x_values = [abs(verts[idx][0]) for idx in vertex_mask]
-    x_max = max(x_values) + 0.06  # small margin beyond skeleton X range
+    # Account for Skin modifier radius inflation beyond skeleton positions
+    x_max_values = []
+    for idx in vertex_mask:
+        x = abs(verts[idx][0])
+        rx, _ry = radii[idx]
+        x_max_values.append(x + rx)
+    x_max = max(x_max_values) + 0.02 if x_max_values else 0.5
 
     # Build FULL body mesh with exact same radii (identical shape to body)
     clothing_obj = _apply_skin_modifier(

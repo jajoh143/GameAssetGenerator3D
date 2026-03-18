@@ -539,6 +539,80 @@ def _apply_skin_modifier(verts, edges, radii, name="SkinBody",
     return obj
 
 
+def _create_foot(name, foot_w, foot_len, location, side="L"):
+    """Create a low-poly tapered foot/shoe shape.
+
+    Builds a wedge-shaped foot with a wider heel tapering to a narrower
+    toe section. The foot points along -Y (forward in Blender/glTF).
+    ~20 faces per foot — much more readable than a plain box.
+
+    Args:
+        name: object name (e.g. "Foot.L")
+        foot_w: foot width
+        foot_len: foot length (heel to toe)
+        location: (x, y, z) ankle attachment point
+        side: "L" or "R"
+    """
+    import bmesh
+
+    bm = bmesh.new()
+    x0, y0, z0 = location
+
+    # Foot dimensions
+    hw = foot_w / 2          # half width
+    h = 0.06                 # foot height
+    toe_taper = 0.65         # toe narrows to 65% of heel width
+    toe_h = h * 0.7          # toe section is slightly thinner
+
+    # Heel is at y0, toe extends forward (-Y)
+    heel_y = y0 + foot_len * 0.3     # heel back
+    mid_y = y0 - foot_len * 0.2      # ball of foot
+    toe_y = y0 - foot_len * 0.7      # toe tip
+
+    # Vertices — 12 verts forming 3 cross-sections (heel, mid, toe)
+    # Bottom face (Z = 0, ground level)
+    v0 = bm.verts.new((x0 - hw,              heel_y,  0))          # heel back-inner
+    v1 = bm.verts.new((x0 + hw,              heel_y,  0))          # heel back-outer
+    v2 = bm.verts.new((x0 + hw,              mid_y,   0))          # mid-outer
+    v3 = bm.verts.new((x0 - hw,              mid_y,   0))          # mid-inner
+    v4 = bm.verts.new((x0 + hw * toe_taper,  toe_y,   0))          # toe-outer
+    v5 = bm.verts.new((x0 - hw * toe_taper,  toe_y,   0))          # toe-inner
+
+    # Top face (ankle height)
+    v6 = bm.verts.new((x0 - hw * 0.85,       heel_y,  h))          # heel top back-inner
+    v7 = bm.verts.new((x0 + hw * 0.85,       heel_y,  h))          # heel top back-outer
+    v8 = bm.verts.new((x0 + hw * 0.85,       mid_y,   h))          # mid top-outer
+    v9 = bm.verts.new((x0 - hw * 0.85,       mid_y,   h))          # mid top-inner
+    v10 = bm.verts.new((x0 + hw * toe_taper * 0.8, toe_y, toe_h))  # toe top-outer
+    v11 = bm.verts.new((x0 - hw * toe_taper * 0.8, toe_y, toe_h))  # toe top-inner
+
+    # Faces — heel section (4 sides + bottom + top)
+    bm.faces.new([v0, v1, v2, v3])      # bottom heel
+    bm.faces.new([v6, v9, v8, v7])      # top heel
+    bm.faces.new([v0, v6, v7, v1])      # back
+    bm.faces.new([v1, v7, v8, v2])      # outer heel
+    bm.faces.new([v0, v3, v9, v6])      # inner heel
+
+    # Faces — toe section (4 sides + bottom + top)
+    bm.faces.new([v3, v2, v4, v5])      # bottom toe
+    bm.faces.new([v9, v11, v10, v8])    # top toe
+    bm.faces.new([v2, v8, v10, v4])     # outer toe
+    bm.faces.new([v3, v5, v11, v9])     # inner toe
+    bm.faces.new([v4, v10, v11, v5])    # toe tip
+
+    # Build mesh
+    mesh_data = bpy.data.meshes.new(f"{name}_Mesh")
+    bm.to_mesh(mesh_data)
+    bm.free()
+
+    obj = bpy.data.objects.new(name, mesh_data)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    return obj
+
+
 def _create_shaped_head(name, head_r, location, segments=10, rings=7):
     """Create a smooth, round head sphere with subtle facial deformation.
 
@@ -692,13 +766,12 @@ def create_body(cfg):
         )
         parts.append(hand)
 
-    # --- Feet (boxes) ---
+    # --- Feet (tapered wedge shape) ---
     for side, x_sign in [("L", 1), ("R", -1)]:
         x = x_sign * hw
-        foot = _create_box(
-            f"Foot.{side}",
-            size=(foot_w, foot_len, 0.06),
-            location=(x, -foot_len * 0.15, 0.03),
+        foot = _create_foot(
+            f"Foot.{side}", foot_w, foot_len,
+            (x, 0, foot_top), side=side,
         )
         parts.append(foot)
 
