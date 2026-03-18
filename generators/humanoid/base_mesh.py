@@ -1,0 +1,695 @@
+"""Procedural base mesh with ring-based cross-section construction.
+
+Builds a complete low-poly humanoid body as a single unified bmesh with
+fixed topology (~350-450 quads). The mesh is constructed from octagonal
+cross-section rings connected by quad strips.
+
+Architecture inspired by MB-Lab/MakeHuman: a fixed-topology base mesh
+with morph targets for body variation, rather than modifier-based generation.
+
+The base mesh is always built for the "neutral average" body proportions.
+Body variation (gender, build, preset) is applied via the morph system
+in morphs.py.
+
+Key design decisions:
+- 8 vertices per ring (octagonal cross-section) for clean quad topology
+- Branch junctions (crotch, shoulders) use a few tris where unavoidable
+- All vertex positions computed from config params for morph generation
+- Vertex groups assigned at construction time for deterministic skinning
+- Feet at Z=0, character faces -Y direction
+"""
+
+import math
+from mathutils import Vector, Matrix
+
+
+# Ring vertex count — octagonal cross-sections
+RING_VERTS = 8
+
+
+def _make_ring(bm, center, rx, ry, n=RING_VERTS, z_up=True):
+    """Create a ring of vertices in an elliptical cross-section.
+
+    Args:
+        bm: bmesh instance
+        center: (x, y, z) center of the ring
+        rx: radius in the X direction (width)
+        ry: radius in the Y direction (depth/front-back)
+        n: number of vertices in the ring
+        z_up: if True, ring lies in XY plane (for vertical body parts)
+
+    Returns:
+        List of bmesh vertices forming the ring.
+    """
+    verts = []
+    cx, cy, cz = center
+    for i in range(n):
+        angle = 2 * math.pi * i / n
+        # Start at front (-Y) and go clockwise when viewed from above
+        lx = cx + rx * math.sin(angle)
+        ly = cy - ry * math.cos(angle)
+        verts.append(bm.verts.new((lx, ly, cz)))
+    return verts
+
+
+def _make_arm_ring(bm, center, rx, ry, n=RING_VERTS):
+    """Create a ring of vertices for an arm cross-section (XY plane at given Z).
+
+    Same as _make_ring but explicitly for limbs that run vertically.
+    """
+    return _make_ring(bm, center, rx, ry, n)
+
+
+def _bridge_rings(bm, ring_a, ring_b):
+    """Connect two rings with quad faces.
+
+    Rings must have the same vertex count. Creates one quad per
+    pair of adjacent vertices between the rings.
+
+    Returns list of created faces.
+    """
+    n = len(ring_a)
+    assert len(ring_b) == n, f"Ring sizes must match: {len(ring_a)} vs {len(ring_b)}"
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        # Wind faces consistently (outward-facing normals)
+        f = bm.faces.new([ring_a[i], ring_a[j], ring_b[j], ring_b[i]])
+        faces.append(f)
+    return faces
+
+
+def _cap_ring(bm, ring, top=True):
+    """Close a ring with a fan of triangles from a center vertex.
+
+    Args:
+        ring: list of bmesh vertices forming the ring
+        top: if True, normals point up; if False, normals point down
+    """
+    # Compute center
+    center = Vector((0, 0, 0))
+    for v in ring:
+        center += v.co
+    center /= len(ring)
+
+    cap_vert = bm.verts.new(center)
+    faces = []
+    n = len(ring)
+    for i in range(n):
+        j = (i + 1) % n
+        if top:
+            f = bm.faces.new([cap_vert, ring[i], ring[j]])
+        else:
+            f = bm.faces.new([cap_vert, ring[j], ring[i]])
+        faces.append(f)
+    return cap_vert, faces
+
+
+def _build_torso_rings(bm, cfg):
+    """Build torso as a series of cross-section rings from pelvis to chest.
+
+    Returns dict mapping region names to ring vertex lists, plus
+    a list of all (ring, bone_name) pairs for vertex group assignment.
+    """
+    sw = cfg["shoulder_width"]
+    hw = cfg["hip_width"]
+    torso_len = cfg["torso_length"]
+    leg_len = cfg["leg_length"]
+    neck_len = cfg["neck_length"]
+    td = cfg.get("torso_depth", 0.20)
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    lower_chest_z = hip_z + torso_len * 0.68
+    chest_z = hip_z + torso_len
+    neck_z = chest_z + neck_len
+
+    # Ring radii (rx=width, ry=depth) — hourglass silhouette
+    rings_spec = [
+        # (z, rx, ry, bone_name)
+        (hip_z - 0.02,    hw + 0.04,   td * 0.48,   "Hips"),       # pelvis base
+        (hip_z,           hw + 0.05,   td * 0.52,   "Hips"),       # hip center
+        (lower_waist_z,   hw * 0.80,   td * 0.44,   "Hips"),       # lower waist
+        (waist_z,         sw * 0.65,   td * 0.40,   "Spine"),      # waist (narrowest)
+        (lower_chest_z,   sw * 0.90,   td * 0.54,   "Chest"),      # lower chest
+        (chest_z,         sw * 1.05,   td * 0.58,   "Chest"),      # chest top
+        (neck_z,          0.055,       0.055,        "Neck"),       # neck top
+    ]
+
+    rings = {}
+    ring_groups = []  # (ring_verts, bone_name)
+
+    for i, (z, rx, ry, bone_name) in enumerate(rings_spec):
+        name = ["pelvis", "hip", "lower_waist", "waist",
+                "lower_chest", "chest", "neck"][i]
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        rings[name] = ring
+        ring_groups.append((ring, bone_name))
+
+    # Bridge adjacent rings
+    ring_names = ["pelvis", "hip", "lower_waist", "waist",
+                  "lower_chest", "chest", "neck"]
+    for i in range(len(ring_names) - 1):
+        _bridge_rings(bm, rings[ring_names[i]], rings[ring_names[i + 1]])
+
+    return rings, ring_groups
+
+
+def _build_leg(bm, cfg, side, hip_ring):
+    """Build one leg from hip joint to ankle.
+
+    The leg branches from the hip ring. We extract the relevant half of
+    the hip ring (4 verts on the appropriate side) and create a transition
+    ring at the hip joint, then build leg rings down to the ankle.
+
+    Args:
+        bm: bmesh instance
+        cfg: body config
+        side: "L" or "R"
+        hip_ring: the hip ring vertices from torso
+
+    Returns:
+        (ankle_ring, ring_groups) where ring_groups is list of
+        (ring_verts, bone_name) for vertex group assignment.
+    """
+    hw = cfg["hip_width"]
+    leg_len = cfg["leg_length"]
+    lt = cfg.get("limb_thickness", 1.0)
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    thigh_z = hip_z - (hip_z - (foot_top + leg_len * 0.48)) * 0.35
+    knee_z = foot_top + leg_len * 0.48
+    calf_z = knee_z - (knee_z - foot_top) * 0.30
+    ankle_z = foot_top
+
+    x_sign = 1 if side == "L" else -1
+    x = x_sign * hw
+
+    # Leg ring radii (rx, ry) — thicker at thigh, narrow at ankle
+    leg_rings_spec = [
+        # (z, rx, ry, bone_name)
+        (hip_z,    0.105 * lt, 0.095 * lt, f"UpperLeg.{side}"),   # hip joint
+        (thigh_z,  0.112 * lt, 0.098 * lt, f"UpperLeg.{side}"),   # thigh peak
+        (knee_z,   0.074 * lt, 0.072 * lt, f"LowerLeg.{side}"),   # knee
+        (calf_z,   0.082 * lt, 0.074 * lt, f"LowerLeg.{side}"),   # calf peak
+        (ankle_z,  0.058 * lt, 0.056 * lt, f"LowerLeg.{side}"),   # ankle
+    ]
+
+    rings = []
+    ring_groups = []
+
+    for z, rx, ry, bone_name in leg_rings_spec:
+        ring = _make_ring(bm, (x, 0, z), rx, ry)
+        rings.append(ring)
+        ring_groups.append((ring, bone_name))
+
+    # Bridge leg rings
+    for i in range(len(rings) - 1):
+        _bridge_rings(bm, rings[i], rings[i + 1])
+
+    # Connect top leg ring to hip ring via junction faces
+    _build_leg_junction(bm, hip_ring, rings[0], side)
+
+    ankle_ring = rings[-1]
+    return ankle_ring, ring_groups
+
+
+def _build_leg_junction(bm, hip_ring, leg_top_ring, side):
+    """Connect a leg's top ring to the torso hip ring.
+
+    Creates triangular junction faces bridging from the torso to the leg.
+    The hip ring has 8 verts; we use the 4 on the correct side to
+    connect to the leg's 8-vert ring.
+    """
+    # Determine which hip ring verts are on this side
+    # Hip ring verts go around the torso. For "L" side, we want verts
+    # with positive X; for "R" side, negative X.
+    x_sign = 1 if side == "L" else -1
+
+    # Sort hip ring verts by angle relative to the leg center
+    leg_center = Vector((0, 0, 0))
+    for v in leg_top_ring:
+        leg_center += v.co
+    leg_center /= len(leg_top_ring)
+
+    # Find the 4 closest hip verts to the leg center
+    hip_dists = [(v, (v.co - leg_center).length) for v in hip_ring]
+    hip_dists.sort(key=lambda x: x[1])
+    closest_hip = [v for v, d in hip_dists[:4]]
+
+    # Sort both sets by angle around the leg center for consistent winding
+    def angle_around(v, center):
+        dx = v.co.x - center.x
+        dy = v.co.y - center.y
+        return math.atan2(dy, dx)
+
+    closest_hip.sort(key=lambda v: angle_around(v, leg_center))
+    leg_sorted = sorted(leg_top_ring, key=lambda v: angle_around(v, leg_center))
+
+    # Bridge the 4 hip verts to 8 leg verts using a mix of quads and tris
+    # Each hip vert connects to 2 leg verts
+    n_hip = len(closest_hip)
+    n_leg = len(leg_sorted)
+    ratio = n_leg // n_hip  # should be 2
+
+    for i in range(n_hip):
+        h0 = closest_hip[i]
+        h1 = closest_hip[(i + 1) % n_hip]
+        l_base = i * ratio
+        for j in range(ratio):
+            l0 = leg_sorted[(l_base + j) % n_leg]
+            l1 = leg_sorted[(l_base + j + 1) % n_leg]
+            if j == 0:
+                # Quad connecting hip edge to first leg pair
+                try:
+                    bm.faces.new([h0, h1, l1, l0])
+                except ValueError:
+                    pass  # face may already exist
+            else:
+                # Triangle filling the gap
+                try:
+                    bm.faces.new([h0, l1, l0])
+                except ValueError:
+                    pass
+
+
+def _build_arm(bm, cfg, side, chest_ring):
+    """Build one arm from shoulder to wrist.
+
+    Args:
+        bm: bmesh instance
+        cfg: body config
+        side: "L" or "R"
+        chest_ring: the chest ring vertices from torso
+
+    Returns:
+        (wrist_ring, ring_groups)
+    """
+    sw = cfg["shoulder_width"]
+    arm_len = cfg["arm_length"]
+    lt = cfg.get("limb_thickness", 1.0)
+    torso_len = cfg["torso_length"]
+    leg_len = cfg["leg_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    chest_z = hip_z + torso_len
+
+    x_sign = 1 if side == "L" else -1
+    shoulder_x = x_sign * (sw + 0.04)
+
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    wrist_z = elbow_z - lower_arm_len
+
+    deltoid_z = arm_top_z - upper_arm_len * 0.25
+    bicep_z = arm_top_z - upper_arm_len * 0.60
+    forearm_z = elbow_z - lower_arm_len * 0.30
+
+    arm_rings_spec = [
+        # (z, rx, ry, bone_name)
+        (arm_top_z,   0.068 * lt, 0.060 * lt, f"UpperArm.{side}"),   # shoulder
+        (deltoid_z,   0.072 * lt, 0.064 * lt, f"UpperArm.{side}"),   # deltoid
+        (bicep_z,     0.062 * lt, 0.058 * lt, f"UpperArm.{side}"),   # bicep
+        (elbow_z,     0.046 * lt, 0.046 * lt, f"LowerArm.{side}"),   # elbow
+        (forearm_z,   0.052 * lt, 0.048 * lt, f"LowerArm.{side}"),   # forearm
+        (wrist_z,     0.038 * lt, 0.034 * lt, f"Hand.{side}"),       # wrist
+    ]
+
+    rings = []
+    ring_groups = []
+
+    for z, rx, ry, bone_name in arm_rings_spec:
+        ring = _make_ring(bm, (shoulder_x, 0, z), rx, ry)
+        rings.append(ring)
+        ring_groups.append((ring, bone_name))
+
+    # Bridge arm rings
+    for i in range(len(rings) - 1):
+        _bridge_rings(bm, rings[i], rings[i + 1])
+
+    # Connect shoulder ring to chest ring via junction
+    _build_arm_junction(bm, chest_ring, rings[0], side)
+
+    wrist_ring = rings[-1]
+    return wrist_ring, ring_groups
+
+
+def _build_arm_junction(bm, chest_ring, arm_top_ring, side):
+    """Connect an arm's top ring to the torso chest ring.
+
+    Similar approach to leg junction — find closest chest verts and bridge.
+    """
+    arm_center = Vector((0, 0, 0))
+    for v in arm_top_ring:
+        arm_center += v.co
+    arm_center /= len(arm_top_ring)
+
+    # Find the 4 closest chest verts to the arm center
+    chest_dists = [(v, (v.co - arm_center).length) for v in chest_ring]
+    chest_dists.sort(key=lambda x: x[1])
+    closest_chest = [v for v, d in chest_dists[:4]]
+
+    def angle_around(v, center):
+        dx = v.co.x - center.x
+        dy = v.co.y - center.y
+        return math.atan2(dy, dx)
+
+    closest_chest.sort(key=lambda v: angle_around(v, arm_center))
+    arm_sorted = sorted(arm_top_ring, key=lambda v: angle_around(v, arm_center))
+
+    n_chest = len(closest_chest)
+    n_arm = len(arm_sorted)
+    ratio = n_arm // n_chest
+
+    for i in range(n_chest):
+        c0 = closest_chest[i]
+        c1 = closest_chest[(i + 1) % n_chest]
+        a_base = i * ratio
+        for j in range(ratio):
+            a0 = arm_sorted[(a_base + j) % n_arm]
+            a1 = arm_sorted[(a_base + j + 1) % n_arm]
+            if j == 0:
+                try:
+                    bm.faces.new([c0, c1, a1, a0])
+                except ValueError:
+                    pass
+            else:
+                try:
+                    bm.faces.new([c0, a1, a0])
+                except ValueError:
+                    pass
+
+
+def _build_head_rings(bm, cfg, neck_ring):
+    """Build head as a series of rings from neck to crown.
+
+    Uses the neck ring as the base and builds upward with expanding
+    then contracting rings to form a head shape.
+
+    Returns ring_groups for vertex group assignment.
+    """
+    head_r = cfg["head_size"]
+    neck_len = cfg["neck_length"]
+    torso_len = cfg["torso_length"]
+    leg_len = cfg["leg_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    chest_z = hip_z + torso_len
+    neck_z = chest_z + neck_len
+    head_z = neck_z + head_r  # center of head
+
+    # Head rings from bottom to top
+    head_rings_spec = [
+        # (z, rx, ry) — elliptical head shape
+        (neck_z + head_r * 0.15, head_r * 0.72, head_r * 0.70),   # jaw base
+        (neck_z + head_r * 0.50, head_r * 0.88, head_r * 0.86),   # cheek level
+        (head_z,                 head_r * 0.94, head_r * 0.96),   # ear level (widest)
+        (head_z + head_r * 0.40, head_r * 0.90, head_r * 0.88),   # brow level
+        (head_z + head_r * 0.75, head_r * 0.70, head_r * 0.68),   # upper head
+        (head_z + head_r * 0.95, head_r * 0.35, head_r * 0.34),   # crown approach
+    ]
+
+    rings = []
+    ring_groups = []
+
+    for z, rx, ry in head_rings_spec:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        rings.append(ring)
+        ring_groups.append((ring, "Head"))
+
+    # Bridge neck to first head ring
+    _bridge_rings(bm, neck_ring, rings[0])
+
+    # Bridge head rings
+    for i in range(len(rings) - 1):
+        _bridge_rings(bm, rings[i], rings[i + 1])
+
+    # Cap the top of the head
+    cap_vert, _ = _cap_ring(bm, rings[-1], top=True)
+    ring_groups.append(([cap_vert], "Head"))
+
+    return ring_groups
+
+
+def _build_hand(bm, cfg, side, wrist_ring):
+    """Build a simplified hand from the wrist ring.
+
+    Creates a palm (bridging from wrist) and a finger block that tapers.
+
+    Returns ring_groups for vertex group assignment.
+    """
+    sw = cfg["shoulder_width"]
+    hand_size = cfg["hand_size"]
+    arm_len = cfg["arm_length"]
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    chest_z = hip_z + torso_len
+
+    x_sign = 1 if side == "L" else -1
+    shoulder_x = x_sign * (sw + 0.04)
+
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    wrist_z = elbow_z - lower_arm_len
+
+    s = hand_size
+    palm_len = s * 1.0
+    finger_len = s * 0.80
+
+    # Palm ring (slightly wider than wrist)
+    palm_z = wrist_z - palm_len
+    palm_ring = _make_ring(bm, (shoulder_x, 0, palm_z),
+                           s * 0.45, s * 0.25)
+
+    # Finger tip ring (tapered)
+    finger_z = palm_z - finger_len
+    finger_ring = _make_ring(bm, (shoulder_x, 0, finger_z),
+                             s * 0.30, s * 0.15)
+
+    # Bridge wrist -> palm -> fingers
+    _bridge_rings(bm, wrist_ring, palm_ring)
+    _bridge_rings(bm, palm_ring, finger_ring)
+
+    # Cap finger tips
+    cap_vert, _ = _cap_ring(bm, finger_ring, top=False)
+
+    ring_groups = [
+        (palm_ring, f"Hand.{side}"),
+        (finger_ring, f"Hand.{side}"),
+        ([cap_vert], f"Hand.{side}"),
+    ]
+    return ring_groups
+
+
+def _build_foot(bm, cfg, side, ankle_ring):
+    """Build a foot from the ankle ring.
+
+    Creates a wedge-shaped foot pointing forward (-Y direction).
+    The foot is built as rings along the Y axis rather than Z.
+
+    Returns ring_groups for vertex group assignment.
+    """
+    hw = cfg["hip_width"]
+    foot_len = cfg["foot_length"]
+    foot_w = cfg["foot_width"]
+
+    x_sign = 1 if side == "L" else -1
+    x = x_sign * hw
+
+    foot_h = 0.06  # foot height
+    half_w = foot_w / 2
+
+    # Heel ring (at ankle Y, ground level to ankle height)
+    heel_y = foot_len * 0.3
+    heel_ring = _make_ring(bm, (x, heel_y, foot_h / 2),
+                           half_w, foot_h / 2)
+
+    # Ball ring (forward from ankle)
+    ball_y = -foot_len * 0.2
+    ball_ring = _make_ring(bm, (x, ball_y, foot_h / 2),
+                           half_w * 0.95, foot_h * 0.45)
+
+    # Toe ring (tapered)
+    toe_y = -foot_len * 0.7
+    toe_ring = _make_ring(bm, (x, toe_y, foot_h * 0.35),
+                          half_w * 0.65, foot_h * 0.35)
+
+    # Bridge ankle -> heel -> ball -> toe
+    _bridge_rings(bm, ankle_ring, heel_ring)
+    _bridge_rings(bm, heel_ring, ball_ring)
+    _bridge_rings(bm, ball_ring, toe_ring)
+
+    # Cap the toe
+    cap_vert, _ = _cap_ring(bm, toe_ring, top=False)
+
+    # Add ground plane faces (bottom of foot) — close the sole
+    # We do this by creating a bottom ring at Z=0 and bridging
+    sole_heel = []
+    for v in heel_ring:
+        sv = bm.verts.new((v.co.x, v.co.y, 0))
+        sole_heel.append(sv)
+
+    sole_toe = []
+    for v in toe_ring:
+        sv = bm.verts.new((v.co.x, v.co.y, 0))
+        sole_toe.append(sv)
+
+    # Bridge sole rings
+    _bridge_rings(bm, sole_heel, sole_toe)
+    # Connect sole to foot sides
+    _bridge_rings(bm, sole_heel, heel_ring)
+
+    ring_groups = [
+        (heel_ring, f"Foot.{side}"),
+        (ball_ring, f"Foot.{side}"),
+        (toe_ring, f"Foot.{side}"),
+        ([cap_vert], f"Foot.{side}"),
+        (sole_heel, f"Foot.{side}"),
+        (sole_toe, f"Foot.{side}"),
+    ]
+    return ring_groups
+
+
+def _build_eyes_and_nose(bm, cfg):
+    """Build simple eye spheres and nose bump as part of the mesh.
+
+    Returns list of (verts, group_name) for vertex groups.
+    """
+    head_r = cfg["head_size"]
+    neck_len = cfg["neck_length"]
+    torso_len = cfg["torso_length"]
+    leg_len = cfg["leg_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    chest_z = hip_z + torso_len
+    neck_z = chest_z + neck_len
+    head_z = neck_z + head_r
+
+    # Eye positions (front face, -Y direction)
+    eye_r = head_r * 0.06
+    eye_spacing = head_r * 0.28
+    eye_y = -(head_r * 0.82)
+    eye_z = head_z + head_r * 0.12
+
+    ring_groups = []
+
+    for side, x_sign in [("L", 1), ("R", -1)]:
+        # Small 4-vert ring for each eye
+        eye_ring = _make_ring(bm, (x_sign * eye_spacing, eye_y, eye_z),
+                              eye_r, eye_r, n=6)
+        # Cap front and back
+        front_cap, _ = _cap_ring(bm, eye_ring, top=True)
+        ring_groups.append((eye_ring + [front_cap], "Head"))
+
+    # Nose — small bump
+    nose_r = head_r * 0.07
+    nose_y = -(head_r * 0.86)
+    nose_z = head_z - head_r * 0.06
+    nose_ring = _make_ring(bm, (0, nose_y, nose_z), nose_r, nose_r, n=6)
+    nose_cap, _ = _cap_ring(bm, nose_ring, top=True)
+    ring_groups.append((nose_ring + [nose_cap], "Head"))
+
+    return ring_groups
+
+
+def build_base_mesh(cfg=None):
+    """Build the complete humanoid base mesh.
+
+    Args:
+        cfg: body config dict. If None, uses neutral average defaults.
+
+    Returns:
+        (bm, vertex_groups) where:
+            bm: bmesh with the complete body
+            vertex_groups: dict mapping bone names to lists of
+                (vertex_index, weight) tuples
+    """
+    import bmesh
+
+    if cfg is None:
+        from .presets import PRESETS
+        cfg = dict(PRESETS["average"])
+        cfg["gender"] = "neutral"
+
+    bm = bmesh.new()
+
+    # Track all vertex->bone assignments
+    all_ring_groups = []
+
+    # --- Torso ---
+    torso_rings, torso_groups = _build_torso_rings(bm, cfg)
+    all_ring_groups.extend(torso_groups)
+
+    # --- Legs ---
+    for side in ["L", "R"]:
+        ankle_ring, leg_groups = _build_leg(bm, cfg, side, torso_rings["hip"])
+        all_ring_groups.extend(leg_groups)
+
+        # --- Feet ---
+        foot_groups = _build_foot(bm, cfg, side, ankle_ring)
+        all_ring_groups.extend(foot_groups)
+
+    # --- Arms ---
+    for side in ["L", "R"]:
+        wrist_ring, arm_groups = _build_arm(bm, cfg, side, torso_rings["chest"])
+        all_ring_groups.extend(arm_groups)
+
+        # --- Hands ---
+        hand_groups = _build_hand(bm, cfg, side, wrist_ring)
+        all_ring_groups.extend(hand_groups)
+
+    # --- Head ---
+    head_groups = _build_head_rings(bm, cfg, torso_rings["neck"])
+    all_ring_groups.extend(head_groups)
+
+    # --- Eyes and Nose ---
+    face_groups = _build_eyes_and_nose(bm, cfg)
+    all_ring_groups.extend(face_groups)
+
+    # Ensure consistent normals
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+
+    # Build vertex groups dict: bone_name -> [(vert_index, weight)]
+    bm.verts.ensure_lookup_table()
+    vertex_groups = {}
+    for ring_verts, bone_name in all_ring_groups:
+        if bone_name not in vertex_groups:
+            vertex_groups[bone_name] = []
+        for v in ring_verts:
+            vertex_groups[bone_name].append((v.index, 1.0))
+
+    return bm, vertex_groups
+
+
+def build_base_mesh_positions(cfg):
+    """Build base mesh and return just the vertex positions.
+
+    This is a pure-data variant used by the morph system to compute
+    vertex deltas without creating Blender objects.
+
+    Args:
+        cfg: body config dict
+
+    Returns:
+        List of (x, y, z) tuples, one per vertex, in index order.
+    """
+    import bmesh
+
+    bm, _ = build_base_mesh(cfg)
+    bm.verts.ensure_lookup_table()
+    positions = [(v.co.x, v.co.y, v.co.z) for v in bm.verts]
+    bm.free()
+    return positions

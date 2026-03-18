@@ -140,13 +140,22 @@ def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
     bpy.ops.object.mode_set(mode='OBJECT')
 
     # ------------------------------------------------------------------ #
-    # Parent mesh to armature with automatic weights
+    # Parent mesh to armature
     # ------------------------------------------------------------------ #
-    bpy.ops.object.select_all(action='DESELECT')
-    body_obj.select_set(True)
-    armature_obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+    # If the body already has vertex groups (from base_mesh.py), use them
+    # directly with an Armature modifier instead of automatic weights.
+    # This gives deterministic, reliable skinning.
+    if body_obj.vertex_groups:
+        body_obj.parent = armature_obj
+        mod = body_obj.modifiers.new(name="Armature", type='ARMATURE')
+        mod.object = armature_obj
+    else:
+        # Fallback to automatic weights for backward compatibility
+        bpy.ops.object.select_all(action='DESELECT')
+        body_obj.select_set(True)
+        armature_obj.select_set(True)
+        bpy.context.view_layer.objects.active = armature_obj
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
 
     # ------------------------------------------------------------------ #
     # Parent hair to Head bone (rigid — moves as one piece with the head)

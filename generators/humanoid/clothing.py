@@ -1,12 +1,13 @@
 """Low-poly clothing generation for humanoid characters.
 
-Clothing is generated using the same Skin modifier skeleton as the body mesh,
-but with inflated per-vertex radii so the clothing shell perfectly follows
-the body's contours. Different clothing types use different subsets of the
-skeleton vertices (e.g., t-shirt = spine + upper arms, pants = hips + legs).
+Uses BVH surface projection inspired by MB-Lab's proxy engine:
+1. Build a clothing template mesh using ring-based construction
+   (same technique as the body base mesh)
+2. Project clothing vertices onto the body surface using BVH tree
+3. Offset outward along surface normals for clothing thickness
 
-Per-joint radius multipliers let each clothing type express its style —
-a puffy jacket has larger shoulder radii while tight pants have smaller ones.
+This replaces the old Skin-modifier + bisect approach, giving better
+fit and predictable topology.
 
 Available clothing types:
     - "tshirt":    Simple t-shirt covering torso and upper arms
@@ -19,6 +20,8 @@ Available clothing types:
 Data constants (CLOTHING_TYPES, CLOTHING_COLORS) are importable without bpy.
 Builder functions require Blender's Python environment.
 """
+
+import math
 
 # ─── Data constants (no bpy dependency) ────────────────────────────────────
 
@@ -64,8 +67,88 @@ CLOTHING_DEFAULT_COLORS = {
     "robe":    "brown",
 }
 
+# Ring vertex count (matches base_mesh.py)
+RING_VERTS = 8
 
-# ─── Skin-modifier clothing builder ──────────────────────────────────────
+
+# ─── Ring-based clothing template builders ─────────────────────────────────
+
+def _make_ring(bm, center, rx, ry, n=RING_VERTS):
+    """Create a ring of vertices in an elliptical cross-section."""
+    verts = []
+    cx, cy, cz = center
+    for i in range(n):
+        angle = 2 * math.pi * i / n
+        lx = cx + rx * math.sin(angle)
+        ly = cy - ry * math.cos(angle)
+        verts.append(bm.verts.new((lx, ly, cz)))
+    return verts
+
+
+def _bridge_rings(bm, ring_a, ring_b):
+    """Connect two rings with quad faces."""
+    n = len(ring_a)
+    assert len(ring_b) == n
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        f = bm.faces.new([ring_a[i], ring_a[j], ring_b[j], ring_b[i]])
+        faces.append(f)
+    return faces
+
+
+def _project_to_body(clothing_bm, body_obj, offset=0.008):
+    """Project clothing vertices onto body surface using BVH tree.
+
+    For each clothing vertex, finds the nearest point on the body surface
+    and snaps the vertex to that point + offset along the surface normal.
+
+    Args:
+        clothing_bm: bmesh with clothing template geometry
+        body_obj: Blender object with body mesh
+        offset: distance to push outward along normals
+    """
+    import bmesh
+    from mathutils.bvhtree import BVHTree
+
+    # Build BVH from body mesh
+    body_bm = bmesh.new()
+    body_bm.from_mesh(body_obj.data)
+    body_bm.transform(body_obj.matrix_world)
+    bmesh.ops.recalc_face_normals(body_bm, faces=body_bm.faces[:])
+    bvh = BVHTree.FromBMesh(body_bm)
+
+    # Project each clothing vertex
+    clothing_bm.verts.ensure_lookup_table()
+    for v in clothing_bm.verts:
+        location, normal, index, distance = bvh.find_nearest(v.co)
+        if location is not None:
+            v.co = location + normal * offset
+
+    body_bm.free()
+
+
+def _clothing_bmesh_to_object(bm, name):
+    """Convert clothing bmesh to a Blender object."""
+    import bpy
+    import bmesh as bmesh_mod
+
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces[:])
+
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    bm.to_mesh(mesh)
+    mesh.update()
+
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    # Smooth shading
+    bpy.ops.object.shade_smooth()
+
+    return obj
+
 
 def _apply_clothing_material(obj, rgba, roughness=0.85):
     """Apply a solid-color material to a clothing object."""
@@ -79,301 +162,488 @@ def _apply_clothing_material(obj, rgba, roughness=0.85):
     obj.data.materials.append(mat)
 
 
-def _build_skin_clothing(cfg, name, vertex_mask, radii_multipliers,
-                         branch_smoothing=1.0, extra_parts_fn=None,
-                         offset=0.008, use_x_bisect=True):
-    """Build a clothing piece by duplicating the body's Skin mesh and offsetting.
+def _get_body_object():
+    """Find the body mesh object in the current scene."""
+    import bpy
+    for obj in bpy.context.scene.objects:
+        if obj.type == 'MESH' and "Humanoid_Body" in obj.name:
+            return obj
+    return None
 
-    Instead of generating an independent Skin mesh from a skeleton subset
-    (which produces a different shape), this builds the FULL body mesh using
-    the exact same skeleton and radii, then:
-      1. Deletes faces outside the clothing Z-range
-      2. Optionally trims arm geometry via X-range bisects (for lower-body garments)
-      3. Offsets remaining vertices along their normals
 
-    This guarantees clothing perfectly follows the body contour.
+# ─── Clothing template builders ────────────────────────────────────────────
+
+def _build_tshirt_template(cfg):
+    """Build t-shirt template: torso tube + short sleeve tubes."""
+    import bmesh
+
+    bm = bmesh.new()
+
+    sw = cfg["shoulder_width"]
+    hw = cfg["hip_width"]
+    td = cfg.get("torso_depth", 0.20)
+    lt = cfg.get("limb_thickness", 1.0)
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+    arm_len = cfg["arm_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    lower_chest_z = hip_z + torso_len * 0.68
+    chest_z = hip_z + torso_len
+
+    # Torso rings (slightly oversized for clothing shell)
+    scale = 1.05  # 5% larger than body
+    torso_specs = [
+        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
+        (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
+    ]
+
+    torso_rings = []
+    for z, rx, ry in torso_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        torso_rings.append(ring)
+
+    for i in range(len(torso_rings) - 1):
+        _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+
+    # Sleeve tubes (from chest to elbow)
+    shoulder_x = sw + 0.04
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+
+    for side_sign in [1, -1]:
+        sx = side_sign * shoulder_x
+        sleeve_specs = [
+            (arm_top_z,                    0.072 * lt * scale, 0.064 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.5, 0.064 * lt * scale, 0.058 * lt * scale),
+            (elbow_z,                      0.050 * lt * scale, 0.050 * lt * scale),
+        ]
+        sleeve_rings = []
+        for z, rx, ry in sleeve_specs:
+            ring = _make_ring(bm, (sx, 0, z), rx, ry)
+            sleeve_rings.append(ring)
+
+        # Connect first sleeve ring to chest ring
+        _bridge_rings(bm, torso_rings[-1], sleeve_rings[0])
+        for i in range(len(sleeve_rings) - 1):
+            _bridge_rings(bm, sleeve_rings[i], sleeve_rings[i + 1])
+
+    return bm
+
+
+def _build_jacket_template(cfg):
+    """Build jacket template: torso + full arm tubes + collar."""
+    import bmesh
+
+    bm = bmesh.new()
+
+    sw = cfg["shoulder_width"]
+    hw = cfg["hip_width"]
+    td = cfg.get("torso_depth", 0.20)
+    lt = cfg.get("limb_thickness", 1.0)
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+    arm_len = cfg["arm_length"]
+    neck_len = cfg["neck_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    lower_chest_z = hip_z + torso_len * 0.68
+    chest_z = hip_z + torso_len
+
+    scale = 1.08
+
+    # Torso rings
+    torso_specs = [
+        (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
+        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
+        (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
+    ]
+
+    torso_rings = []
+    for z, rx, ry in torso_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        torso_rings.append(ring)
+
+    for i in range(len(torso_rings) - 1):
+        _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+
+    # Collar ring
+    collar_ring = _make_ring(bm, (0, 0, chest_z + neck_len * 0.3),
+                             0.07 * lt, 0.07 * lt)
+    _bridge_rings(bm, torso_rings[-1], collar_ring)
+
+    # Full arm tubes
+    shoulder_x = sw + 0.04
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    wrist_z = elbow_z - lower_arm_len
+
+    for side_sign in [1, -1]:
+        sx = side_sign * shoulder_x
+        arm_specs = [
+            (arm_top_z,                          0.072 * lt * scale, 0.064 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.5,    0.064 * lt * scale, 0.058 * lt * scale),
+            (elbow_z,                            0.050 * lt * scale, 0.050 * lt * scale),
+            (elbow_z - lower_arm_len * 0.3,      0.054 * lt * scale, 0.050 * lt * scale),
+            (wrist_z,                            0.042 * lt * scale, 0.038 * lt * scale),
+        ]
+        arm_rings = []
+        for z, rx, ry in arm_specs:
+            ring = _make_ring(bm, (sx, 0, z), rx, ry)
+            arm_rings.append(ring)
+
+        _bridge_rings(bm, torso_rings[-1], arm_rings[0])
+        for i in range(len(arm_rings) - 1):
+            _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
+
+    return bm
+
+
+def _build_pants_template(cfg):
+    """Build pants template: waist tube that splits into two leg tubes."""
+    import bmesh
+
+    bm = bmesh.new()
+
+    hw = cfg["hip_width"]
+    sw = cfg["shoulder_width"]
+    td = cfg.get("torso_depth", 0.20)
+    lt = cfg.get("limb_thickness", 1.0)
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    knee_z = foot_top + leg_len * 0.48
+
+    scale = 1.05
+
+    # Waistband rings (shared torso section)
+    waist_specs = [
+        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
+    ]
+
+    waist_rings = []
+    for z, rx, ry in waist_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        waist_rings.append(ring)
+
+    for i in range(len(waist_rings) - 1):
+        _bridge_rings(bm, waist_rings[i], waist_rings[i + 1])
+
+    # Leg tubes (from hip to ankle)
+    thigh_z = hip_z - (hip_z - knee_z) * 0.35
+    calf_z = knee_z - (knee_z - foot_top) * 0.30
+
+    for side_sign in [1, -1]:
+        x = side_sign * hw
+        leg_specs = [
+            (hip_z,    0.108 * lt * scale, 0.098 * lt * scale),
+            (thigh_z,  0.115 * lt * scale, 0.100 * lt * scale),
+            (knee_z,   0.078 * lt * scale, 0.076 * lt * scale),
+            (calf_z,   0.085 * lt * scale, 0.078 * lt * scale),
+            (foot_top, 0.062 * lt * scale, 0.060 * lt * scale),
+        ]
+        leg_rings = []
+        for z, rx, ry in leg_specs:
+            ring = _make_ring(bm, (x, 0, z), rx, ry)
+            leg_rings.append(ring)
+
+        # Connect top leg ring to bottom waist ring
+        _bridge_rings(bm, waist_rings[-1], leg_rings[0])
+        for i in range(len(leg_rings) - 1):
+            _bridge_rings(bm, leg_rings[i], leg_rings[i + 1])
+
+    return bm
+
+
+def _build_shorts_template(cfg):
+    """Build shorts template: waist tube + short leg tubes to knee."""
+    import bmesh
+
+    bm = bmesh.new()
+
+    hw = cfg["hip_width"]
+    sw = cfg["shoulder_width"]
+    td = cfg.get("torso_depth", 0.20)
+    lt = cfg.get("limb_thickness", 1.0)
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    knee_z = foot_top + leg_len * 0.48
+
+    scale = 1.06
+
+    waist_specs = [
+        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
+    ]
+
+    waist_rings = []
+    for z, rx, ry in waist_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        waist_rings.append(ring)
+
+    for i in range(len(waist_rings) - 1):
+        _bridge_rings(bm, waist_rings[i], waist_rings[i + 1])
+
+    # Short leg tubes (hip to knee only)
+    thigh_z = hip_z - (hip_z - knee_z) * 0.35
+
+    for side_sign in [1, -1]:
+        x = side_sign * hw
+        leg_specs = [
+            (hip_z,    0.108 * lt * scale, 0.098 * lt * scale),
+            (thigh_z,  0.115 * lt * scale, 0.100 * lt * scale),
+            (knee_z,   0.078 * lt * scale, 0.076 * lt * scale),
+        ]
+        leg_rings = []
+        for z, rx, ry in leg_specs:
+            ring = _make_ring(bm, (x, 0, z), rx, ry)
+            leg_rings.append(ring)
+
+        _bridge_rings(bm, waist_rings[-1], leg_rings[0])
+        for i in range(len(leg_rings) - 1):
+            _bridge_rings(bm, leg_rings[i], leg_rings[i + 1])
+
+    return bm
+
+
+def _build_armor_template(cfg):
+    """Build armor template: thick chest plate with shoulder pads."""
+    import bmesh
+
+    bm = bmesh.new()
+
+    sw = cfg["shoulder_width"]
+    hw = cfg["hip_width"]
+    td = cfg.get("torso_depth", 0.20)
+    lt = cfg.get("limb_thickness", 1.0)
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    lower_chest_z = hip_z + torso_len * 0.68
+    chest_z = hip_z + torso_len
+
+    scale = 1.12  # armor is thicker
+
+    torso_specs = [
+        (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
+        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
+        (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
+    ]
+
+    torso_rings = []
+    for z, rx, ry in torso_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        torso_rings.append(ring)
+
+    for i in range(len(torso_rings) - 1):
+        _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+
+    # Shoulder pads (short wide tubes at shoulder level)
+    shoulder_x = sw + 0.04
+    arm_top_z = chest_z - 0.04
+
+    for side_sign in [1, -1]:
+        sx = side_sign * shoulder_x
+        pad_specs = [
+            (arm_top_z,                0.085 * lt * scale, 0.075 * lt * scale),
+            (arm_top_z - 0.08,         0.078 * lt * scale, 0.068 * lt * scale),
+        ]
+        pad_rings = []
+        for z, rx, ry in pad_specs:
+            ring = _make_ring(bm, (sx, 0, z), rx, ry)
+            pad_rings.append(ring)
+
+        _bridge_rings(bm, torso_rings[-1], pad_rings[0])
+        for i in range(len(pad_rings) - 1):
+            _bridge_rings(bm, pad_rings[i], pad_rings[i + 1])
+
+    return bm
+
+
+def _build_robe_template(cfg):
+    """Build robe template: torso + sleeves + long skirt."""
+    import bmesh
+
+    bm = bmesh.new()
+
+    sw = cfg["shoulder_width"]
+    hw = cfg["hip_width"]
+    td = cfg.get("torso_depth", 0.20)
+    lt = cfg.get("limb_thickness", 1.0)
+    leg_len = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+    arm_len = cfg["arm_length"]
+
+    foot_top = 0.06
+    hip_z = foot_top + leg_len
+    lower_waist_z = hip_z + torso_len * 0.20
+    waist_z = hip_z + torso_len * 0.42
+    lower_chest_z = hip_z + torso_len * 0.68
+    chest_z = hip_z + torso_len
+
+    scale = 1.06
+
+    # Upper body
+    torso_specs = [
+        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
+        (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
+    ]
+
+    torso_rings = []
+    for z, rx, ry in torso_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        torso_rings.append(ring)
+
+    for i in range(len(torso_rings) - 1):
+        _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+
+    # Skirt section (waist down to ankles, flaring out)
+    skirt_specs = [
+        (hip_z,            hw + 0.06,     td * 0.55),
+        (hip_z * 0.7,      hw + 0.12,     td * 0.60),
+        (foot_top + 0.10,  hw + 0.18,     td * 0.65),
+    ]
+
+    skirt_rings = [torso_rings[0]]  # start from bottom torso ring
+    for z, rx, ry in skirt_specs:
+        ring = _make_ring(bm, (0, 0, z), rx, ry)
+        skirt_rings.append(ring)
+
+    for i in range(len(skirt_rings) - 1):
+        _bridge_rings(bm, skirt_rings[i], skirt_rings[i + 1])
+
+    # Sleeves (to forearm)
+    shoulder_x = sw + 0.04
+    arm_top_z = chest_z - 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    forearm_z = elbow_z - lower_arm_len * 0.3
+
+    for side_sign in [1, -1]:
+        sx = side_sign * shoulder_x
+        arm_specs = [
+            (arm_top_z,                       0.075 * lt * scale, 0.068 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.5, 0.068 * lt * scale, 0.062 * lt * scale),
+            (elbow_z,                         0.055 * lt * scale, 0.055 * lt * scale),
+            (forearm_z,                       0.058 * lt * scale, 0.054 * lt * scale),
+        ]
+        arm_rings = []
+        for z, rx, ry in arm_specs:
+            ring = _make_ring(bm, (sx, 0, z), rx, ry)
+            arm_rings.append(ring)
+
+        _bridge_rings(bm, torso_rings[-1], arm_rings[0])
+        for i in range(len(arm_rings) - 1):
+            _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
+
+    return bm
+
+
+# ─── Clothing builders (public interface) ──────────────────────────────────
+
+def _build_clothing_piece(cfg, name, template_fn, color, offset=0.008,
+                          roughness=0.85):
+    """Build a clothing piece using template + BVH projection.
 
     Args:
         cfg: body config dict
-        name: object name for the clothing piece
-        vertex_mask: set of skeleton vertex indices defining the clothing region
-            (used to determine the Z-range for face deletion)
-        radii_multipliers: kept for API compat but no longer used for shape —
-            offset parameter controls clothing thickness instead
-        branch_smoothing: smoothness at branch junctions
-        extra_parts_fn: optional callable(bpy, cfg, clothing_obj) that adds
-            extra geometry (e.g., collar, skirt cone) and returns a list of
-            extra objects to join with the clothing
-        offset: distance to push vertices outward along normals (clothing thickness)
-        use_x_bisect: if True, trim arm geometry via X-range bisects. Set False
-            for upper-body garments that include arm/shoulder geometry.
+        name: clothing object name
+        template_fn: function that returns a bmesh template
+        color: RGBA tuple
+        offset: normal offset distance
+        roughness: material roughness
 
     Returns:
-        The clothing mesh object (modifiers applied, material not yet set).
+        Blender object with material applied.
     """
-    import bpy
-    import bmesh
-    from .mesh import build_body_skeleton, _apply_skin_modifier
+    bm = template_fn(cfg)
 
-    verts, edges, radii = build_body_skeleton(cfg)
+    # Get the body object for projection
+    body_obj = _get_body_object()
+    if body_obj is not None:
+        _project_to_body(bm, body_obj, offset=offset)
 
-    # Determine the Z-range of the clothing from skeleton vertex positions
-    z_values = [verts[idx][2] for idx in vertex_mask]
-    z_min = min(z_values) - 0.02
-    z_max = max(z_values) + 0.03
-
-    # Determine the X-range to exclude arm geometry at overlapping Z heights
-    # Account for Skin modifier radius inflation beyond skeleton positions
-    x_max_values = []
-    for idx in vertex_mask:
-        x = abs(verts[idx][0])
-        rx, _ry = radii[idx]
-        x_max_values.append(x + rx)
-    x_max = max(x_max_values) + 0.02 if x_max_values else 0.5
-
-    # Build FULL body mesh with exact same radii (identical shape to body)
-    clothing_obj = _apply_skin_modifier(
-        verts, edges, radii,
-        name=name, branch_smoothing=branch_smoothing, subsurf_level=2,
-    )
-
-    # Cleanly trim mesh to the clothing region using bisect planes
-    bm = bmesh.new()
-    bm.from_mesh(clothing_obj.data)
-
-    # Cut at z_max — remove everything above
-    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-    bmesh.ops.bisect_plane(
-        bm, geom=geom,
-        plane_co=(0, 0, z_max),
-        plane_no=(0, 0, 1),
-        clear_inner=False,
-        clear_outer=True,
-    )
-
-    # Cut at z_min — remove everything below
-    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-    bmesh.ops.bisect_plane(
-        bm, geom=geom,
-        plane_co=(0, 0, z_min),
-        plane_no=(0, 0, 1),
-        clear_inner=True,
-        clear_outer=False,
-    )
-
-    # Optionally trim arm geometry (only for lower-body garments like pants)
-    if use_x_bisect:
-        # Cut at +x_max — remove arm geometry extending beyond clothing X range
-        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-        bmesh.ops.bisect_plane(
-            bm, geom=geom,
-            plane_co=(x_max, 0, 0),
-            plane_no=(1, 0, 0),
-            clear_inner=False,
-            clear_outer=True,
-        )
-
-        # Cut at -x_max — mirror side
-        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-        bmesh.ops.bisect_plane(
-            bm, geom=geom,
-            plane_co=(-x_max, 0, 0),
-            plane_no=(1, 0, 0),
-            clear_inner=True,
-            clear_outer=False,
-        )
-
-    # Offset remaining vertices along their normals for clothing thickness
-    bm.verts.ensure_lookup_table()
-    bm.normal_update()
-    for v in bm.verts:
-        v.co += v.normal * offset
-
-    bm.to_mesh(clothing_obj.data)
+    obj = _clothing_bmesh_to_object(bm, name)
     bm.free()
-    clothing_obj.data.update()
 
-    # Add extra geometry if needed (collar, skirt, etc.)
-    if extra_parts_fn:
-        extra_objs = extra_parts_fn(bpy, cfg, clothing_obj)
-        if extra_objs:
-            all_objs = [clothing_obj] + extra_objs
-            bpy.ops.object.select_all(action='DESELECT')
-            for obj in all_objs:
-                obj.select_set(True)
-            bpy.context.view_layer.objects.active = clothing_obj
-            bpy.ops.object.join()
-            clothing_obj = bpy.context.active_object
+    _apply_clothing_material(obj, color, roughness)
+    return obj
 
-    # Smooth shading
-    bpy.context.view_layer.objects.active = clothing_obj
-    bpy.ops.object.shade_smooth()
-    clothing_obj.name = name
-
-    return clothing_obj
-
-
-# ─── Clothing builders ────────────────────────────────────────────────────
 
 def _build_tshirt(cfg, color):
     """T-shirt: torso + upper arms (sleeves to elbow)."""
-    from .mesh import (V_LOWER_WAIST, V_WAIST,
-                       V_LOWER_CHEST, V_CHEST,
-                       V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-                       V_L_BICEP, V_L_ELBOW,
-                       V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
-                       V_R_BICEP, V_R_ELBOW)
-
-    # Torso spine (lower waist to chest) + sleeves extending to elbow
-    # Shirt hem sits at V_LOWER_WAIST (belly button) — above the pants waistband
-    vertex_mask = {
-        V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID, V_L_BICEP, V_L_ELBOW,
-        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID, V_R_BICEP, V_R_ELBOW,
-    }
-
-    # use_x_bisect=False: shirt wraps shoulders and arms, don't cut X range
-    shirt = _build_skin_clothing(cfg, "TShirt", vertex_mask, {},
-                                 offset=0.008, use_x_bisect=False)
-    _apply_clothing_material(shirt, color)
-    return [(shirt, "Spine")]
+    obj = _build_clothing_piece(cfg, "TShirt", _build_tshirt_template,
+                                color, offset=0.008)
+    return [(obj, "Spine")]
 
 
 def _build_jacket(cfg, color):
     """Jacket: torso + full arms + collar."""
-    from .mesh import (V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-                       V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-                       V_L_BICEP, V_L_ELBOW, V_L_FOREARM, V_L_WRIST,
-                       V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
-                       V_R_BICEP, V_R_ELBOW, V_R_FOREARM, V_R_WRIST)
-    import bpy
-
-    vertex_mask = {
-        V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-        V_L_BICEP, V_L_ELBOW, V_L_FOREARM, V_L_WRIST,
-        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
-        V_R_BICEP, V_R_ELBOW, V_R_FOREARM, V_R_WRIST,
-    }
-
-    def _add_collar(bpy_mod, _cfg, _clothing):
-        """Add a collar cylinder above the chest."""
-        neck_len = _cfg["neck_length"]
-        lt = _cfg.get("limb_thickness", 1.0)
-        chest_z = 0.06 + _cfg["leg_length"] + _cfg["torso_length"]
-        bpy_mod.ops.mesh.primitive_cylinder_add(
-            vertices=10, radius=0.07 * lt,
-            depth=neck_len * 0.4,
-            location=(0, 0, chest_z + neck_len * 0.2),
-        )
-        collar = bpy_mod.context.active_object
-        collar.name = "Jacket_Collar"
-        return [collar]
-
-    jacket = _build_skin_clothing(cfg, "Jacket", vertex_mask, {},
-                                  extra_parts_fn=_add_collar, offset=0.012,
-                                  use_x_bisect=False)
-    _apply_clothing_material(jacket, color)
-    return [(jacket, "Spine")]
+    obj = _build_clothing_piece(cfg, "Jacket", _build_jacket_template,
+                                color, offset=0.012)
+    return [(obj, "Spine")]
 
 
 def _build_pants(cfg, color):
-    """Pants: waist/hip area + full legs to ankles."""
-    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
-                       V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE, V_L_CALF, V_L_ANKLE,
-                       V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE)
-
-    # Include V_LOWER_CHEST so waistband extends high enough to tuck under shirt
-    vertex_mask = {
-        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
-        V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE, V_L_CALF, V_L_ANKLE,
-        V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE, V_R_CALF, V_R_ANKLE,
-    }
-
-    pants = _build_skin_clothing(cfg, "Pants", vertex_mask, {},
-                                 offset=0.008)
-    _apply_clothing_material(pants, color)
-    return [(pants, "Hips")]
+    """Pants: waist to ankles."""
+    obj = _build_clothing_piece(cfg, "Pants", _build_pants_template,
+                                color, offset=0.008)
+    return [(obj, "Hips")]
 
 
 def _build_shorts(cfg, color):
-    """Shorts: waist/hip + upper legs only (to knee area)."""
-    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
-                       V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE,
-                       V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE)
-
-    vertex_mask = {
-        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST,
-        V_L_HIP_JOINT, V_L_THIGH, V_L_KNEE,
-        V_R_HIP_JOINT, V_R_THIGH, V_R_KNEE,
-    }
-
-    shorts = _build_skin_clothing(cfg, "Shorts", vertex_mask, {},
-                                  offset=0.010)
-    _apply_clothing_material(shorts, color)
-    return [(shorts, "Hips")]
+    """Shorts: waist to knee."""
+    obj = _build_clothing_piece(cfg, "Shorts", _build_shorts_template,
+                                color, offset=0.010)
+    return [(obj, "Hips")]
 
 
 def _build_armor(cfg, color):
     """Armor: thick chest plate with shoulder pads."""
-    from .mesh import (V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-                       V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-                       V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID)
-
-    vertex_mask = {
-        V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
-    }
-
-    armor = _build_skin_clothing(cfg, "Armor", vertex_mask, {},
-                                 offset=0.018, use_x_bisect=False)
-    _apply_clothing_material(armor, color, roughness=0.4)
-    return [(armor, "Spine")]
+    obj = _build_clothing_piece(cfg, "Armor", _build_armor_template,
+                                color, offset=0.018, roughness=0.4)
+    return [(obj, "Spine")]
 
 
 def _build_robe(cfg, color):
-    """Robe: full torso + long sleeves + skirt cone."""
-    from .mesh import (V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST,
-                       V_LOWER_CHEST, V_CHEST,
-                       V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-                       V_L_BICEP, V_L_ELBOW, V_L_FOREARM,
-                       V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
-                       V_R_BICEP, V_R_ELBOW, V_R_FOREARM)
-    import bpy
-
-    vertex_mask = {
-        V_PELVIS, V_HIP, V_LOWER_WAIST, V_WAIST, V_LOWER_CHEST, V_CHEST,
-        V_L_INNER_SHOULDER, V_L_SHOULDER, V_L_DELTOID,
-        V_L_BICEP, V_L_ELBOW, V_L_FOREARM,
-        V_R_INNER_SHOULDER, V_R_SHOULDER, V_R_DELTOID,
-        V_R_BICEP, V_R_ELBOW, V_R_FOREARM,
-    }
-
-    def _add_skirt(bpy_mod, _cfg, _clothing):
-        """Add a cone skirt from waist to ankles."""
-        hw = _cfg["hip_width"]
-        leg_len = _cfg["leg_length"]
-        hip_z = 0.06 + leg_len
-        waist_half_w = min(_cfg["shoulder_width"], hw) * 0.85
-        skirt_h = leg_len * 0.85
-        skirt_bottom_r = hw + 0.18
-        bpy_mod.ops.mesh.primitive_cone_add(
-            vertices=12,
-            radius1=skirt_bottom_r,
-            radius2=waist_half_w + 0.015,
-            depth=skirt_h,
-            location=(0, 0, hip_z - skirt_h / 2),
-        )
-        skirt = bpy_mod.context.active_object
-        skirt.name = "Robe_Skirt"
-        return [skirt]
-
-    robe = _build_skin_clothing(cfg, "Robe", vertex_mask, {},
-                                extra_parts_fn=_add_skirt, offset=0.010,
-                                use_x_bisect=False)
-    _apply_clothing_material(robe, color)
-    return [(robe, "Spine")]
+    """Robe: full torso + sleeves + long skirt."""
+    obj = _build_clothing_piece(cfg, "Robe", _build_robe_template,
+                                color, offset=0.010)
+    return [(obj, "Spine")]
 
 
 # ─── Dispatch ──────────────────────────────────────────────────────────────
