@@ -761,36 +761,50 @@ def _build_foot(bm, cfg, side, ankle_ring):
     foot_w = cfg["foot_width"]
 
     x_sign = 1 if side == "L" else -1
-    x = x_sign * hw
+    # Feet are slightly narrower stance than hip width (~85%)
+    x = x_sign * hw * 0.85
 
-    foot_h = 0.06  # foot height
+    # Derive foot height from the ankle ring's actual Z position rather than
+    # hardcoding 0.06.  The ankle ring arrives at foot_top (0.06 by default)
+    # but using the ring itself keeps the foot consistent if leg proportions change.
+    ankle_z = ankle_ring[0].co.z  # all ankle ring verts share the same Z
+    foot_h = ankle_z              # foot spans from Z=0 (ground) up to ankle_z
+
     half_w = foot_w / 2
 
-    # Heel ring (at ankle Y, ground level to ankle height)
-    heel_y = foot_len * 0.3
+    # Heel ring — heel extends back (+Y, character faces -Y) from ankle centre.
+    # Adjusted from 0.30 → 0.40 to match reference anatomy (40% of foot length
+    # sits behind the ankle centre).
+    heel_y = foot_len * 0.40
+    heel_half_w = half_w * 0.85  # heel is narrower than ball
     heel_ring = _make_ring(bm, (x, heel_y, foot_h / 2),
-                           half_w, foot_h / 2)
+                           heel_half_w, foot_h / 2)
 
-    # Ball ring (forward from ankle)
-    ball_y = -foot_len * 0.2
+    # Ball ring — the widest part of the foot, just behind the toes.
+    # Moved slightly further forward from -0.20 → -0.25.
+    ball_y = -foot_len * 0.25
+    ball_half_w = half_w          # full width at ball
     ball_ring = _make_ring(bm, (x, ball_y, foot_h / 2),
-                           half_w * 0.95, foot_h * 0.45)
+                           ball_half_w, foot_h * 0.45)
 
-    # Toe ring (tapered)
-    toe_y = -foot_len * 0.7
+    # Toe ring — tapered tip, extended further forward from -0.70 → -0.60
+    # (60% of foot length in front of ankle centre).
+    toe_y = -foot_len * 0.60
+    toe_half_w = half_w * 0.65   # toes taper in
     toe_ring = _make_ring(bm, (x, toe_y, foot_h * 0.35),
-                          half_w * 0.65, foot_h * 0.35)
+                          toe_half_w, foot_h * 0.35)
 
     # Bridge ankle -> heel -> ball -> toe
     _bridge_rings(bm, ankle_ring, heel_ring)
     _bridge_rings(bm, heel_ring, ball_ring)
     _bridge_rings(bm, ball_ring, toe_ring)
 
-    # Cap the toe
+    # Cap the toe tip
     cap_vert, _ = _cap_ring(bm, toe_ring, top=False)
 
-    # Add ground plane faces (bottom of foot) — close the sole
-    # We do this by creating a bottom ring at Z=0 and bridging
+    # Add ground plane faces (bottom of foot) — close the sole.
+    # Create sole rings at Z=0 mirroring the heel and toe ring XY positions,
+    # then bridge and cap to form a closed sole.
     sole_heel = []
     for v in heel_ring:
         sv = bm.verts.new((v.co.x, v.co.y, 0))
@@ -801,10 +815,12 @@ def _build_foot(bm, cfg, side, ankle_ring):
         sv = bm.verts.new((v.co.x, v.co.y, 0))
         sole_toe.append(sv)
 
-    # Bridge sole rings
+    # Bridge sole rings (bottom face strip connecting heel sole to toe sole)
     _bridge_rings(bm, sole_heel, sole_toe)
-    # Connect sole to foot sides
+    # Connect heel sole ring up to the heel ring (side walls of the heel)
     _bridge_rings(bm, sole_heel, heel_ring)
+    # Cap the heel bottom so the underside of the heel is fully closed
+    _cap_ring(bm, sole_heel, top=False)
 
     ring_groups = [
         (heel_ring, f"Foot.{side}"),
