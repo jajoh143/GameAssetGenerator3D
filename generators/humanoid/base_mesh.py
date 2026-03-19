@@ -360,16 +360,28 @@ def _build_arm(bm, cfg, side, chest_ring):
     bicep_z = arm_top_z - upper_arm_len * 0.60
     forearm_z = elbow_z - lower_arm_len * 0.30
 
+    # Arm ring radii calibrated against Synty reference OBJ analysis
+    # (Characters_Matt.obj h=1.401m, Characters_Shaun.obj h=1.419m),
+    # scaled to the default average body height of ~2.0m (lt=1.0):
+    #
+    #   upper-arm avg radius / body height  ≈ 4.9%  → rx ≈ 0.098m at 2.0m
+    #   forearm avg radius   / body height  ≈ 4.0%  → rx ≈ 0.080m at 2.0m
+    #   wrist    avg radius  / body height  ≈ 2.3%  → rx ≈ 0.046m at 2.0m
+    #   upper-arm:forearm taper ratio       ≈ 1.25:1
+    #   elbow is narrowest point of lower arm (thinner than forearm belly)
+    #   deltoid is widest point of upper arm (peaks ~25% down from shoulder)
+    #
+    # ry/rx held at ≈ 0.88 (arms are slightly flattened front-to-back).
     arm_rings_spec = [
         # (z, rx, ry, bone_name)
         # Pronounced deltoid cap then taper to elbow — gives the natural
         # shoulder-cap silhouette visible on real and stylized human arms.
-        (arm_top_z,   0.070 * lt, 0.062 * lt, f"UpperArm.{side}"),   # shoulder attachment
-        (deltoid_z,   0.088 * lt, 0.076 * lt, f"UpperArm.{side}"),   # deltoid peak (wider)
-        (bicep_z,     0.072 * lt, 0.064 * lt, f"UpperArm.{side}"),   # bicep (fuller)
-        (elbow_z,     0.050 * lt, 0.048 * lt, f"LowerArm.{side}"),   # elbow (narrow)
-        (forearm_z,   0.056 * lt, 0.050 * lt, f"LowerArm.{side}"),   # forearm (slight taper)
-        (wrist_z,     0.038 * lt, 0.034 * lt, f"Hand.{side}"),       # wrist (narrow)
+        (arm_top_z,   0.082 * lt, 0.072 * lt, f"UpperArm.{side}"),   # shoulder attachment (~4.1%)
+        (deltoid_z,   0.099 * lt, 0.087 * lt, f"UpperArm.{side}"),   # deltoid peak (~4.9%, widest)
+        (bicep_z,     0.088 * lt, 0.077 * lt, f"UpperArm.{side}"),   # bicep (~4.4%, tapers toward elbow)
+        (elbow_z,     0.068 * lt, 0.060 * lt, f"LowerArm.{side}"),   # elbow (~3.4%, narrowest point)
+        (forearm_z,   0.080 * lt, 0.070 * lt, f"LowerArm.{side}"),   # forearm belly (~4.0%)
+        (wrist_z,     0.046 * lt, 0.040 * lt, f"Hand.{side}"),       # wrist (~2.3%)
     ]
 
     rings = []
