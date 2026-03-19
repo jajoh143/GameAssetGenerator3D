@@ -113,7 +113,7 @@ def create_body(cfg):
 
     # Build the base mesh with the target config directly
     # (for neutral configs, no morphs needed)
-    bm, vertex_groups = build_base_mesh(cfg)
+    bm, vertex_groups, eye_face_indices = build_base_mesh(cfg)
 
     # Convert to Blender object
     body = _bmesh_to_object(bm, "Humanoid_Body", vertex_groups)
@@ -129,7 +129,16 @@ def create_body(cfg):
     mod = body.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
     mod.split_angle = math.radians(50)
 
+    # Slot 0: skin material
     _apply_material(body, skin_tone)
+    # Slot 1: dark eye material — assign to eye face polygons
+    _apply_eye_material(body)
+    if eye_face_indices:
+        eye_set = set(eye_face_indices)
+        for poly in body.data.polygons:
+            if poly.index in eye_set:
+                poly.material_index = 1
+        body.data.update()
 
     # --- Hair (separate object, will be parented to Head bone) ---
     hair_obj = None

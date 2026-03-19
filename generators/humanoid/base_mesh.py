@@ -473,11 +473,11 @@ def _build_head_rings(bm, cfg, neck_ring):
     rings.append(chin_ring)
     ring_groups.append((chin_ring, "Head"))
 
-    # --- Ring 1: Mouth / lower face level ---
-    # Wider jaw, very subtle mouth area — flat-face low-poly style
-    mouth_z = neck_z + head_r * 0.26
+    # --- Ring 1: Mouth / lower jaw ---
+    # Raised to the lower-quarter of the face (classic 1/4 face proportion).
+    mouth_z = neck_z + head_r * 0.32
     mouth_ring = _make_head_ring(bm, (0, 0, mouth_z),
-                                 head_r * 0.64, head_r * 0.60,
+                                 head_r * 0.66, head_r * 0.62,
                                  front_offsets={
                                      0: (0, -head_r * 0.04, 0),   # gentle lip plane
                                      1: (0, -head_r * 0.02, 0),   # mouth corner L
@@ -486,29 +486,30 @@ def _build_head_rings(bm, cfg, neck_ring):
     rings.append(mouth_ring)
     ring_groups.append((mouth_ring, "Head"))
 
-    # --- Ring 2: Nose / cheek level ---
-    # Cheeks at maximum width; nose is very subtle (Synty flat-face style)
-    nose_z = neck_z + head_r * 0.48
+    # --- Ring 2: Nose base / cheek level ---
+    # 1/3 up from chin — cheeks at maximum width here.
+    nose_z = neck_z + head_r * 0.57
     nose_ring = _make_head_ring(bm, (0, 0, nose_z),
-                                head_r * 0.76, head_r * 0.72,
+                                head_r * 0.78, head_r * 0.74,
                                 front_offsets={
-                                    0: (0, -head_r * 0.08, 0),   # very subtle nose bump
+                                    0: (0, -head_r * 0.08, 0),   # very subtle nose base
                                     1: (0, -head_r * 0.03, 0),   # nostril edge L
                                     7: (0, -head_r * 0.03, 0),   # nostril edge R
-                                    2: (head_r * 0.04, 0, 0),    # cheekbone L
-                                    6: (-head_r * 0.04, 0, 0),   # cheekbone R
+                                    2: (head_r * 0.05, 0, 0),    # cheekbone L
+                                    6: (-head_r * 0.05, 0, 0),   # cheekbone R
                                 })
     rings.append(nose_ring)
     ring_groups.append((nose_ring, "Head"))
 
     # --- Ring 3: Eye level ---
-    # Widest part of face; flat face plane, gentle nose bridge
-    eye_z = neck_z + head_r * 0.70
+    # 2/3 up from chin (classic "rule of thirds" face proportion).
+    # This puts eyes at exactly half the total head height — the key fix.
+    eye_z = neck_z + head_r * 0.82
     eye_ring = _make_head_ring(bm, (0, 0, eye_z),
-                               head_r * 0.86, head_r * 0.84,
+                               head_r * 0.86, head_r * 0.82,
                                front_offsets={
-                                   0: (0, -head_r * 0.06, 0),    # nose bridge (subtle)
-                                   1: (head_r * 0.02, head_r * 0.02, 0),  # eye plane L (barely inward)
+                                   0: (0, -head_r * 0.05, 0),    # nose bridge (subtle)
+                                   1: (head_r * 0.02, head_r * 0.02, 0),  # eye plane L
                                    7: (-head_r * 0.02, head_r * 0.02, 0), # eye plane R
                                    2: (head_r * 0.08, 0, 0),     # temple / ear bump L
                                    6: (-head_r * 0.08, 0, 0),    # temple / ear bump R
@@ -516,9 +517,9 @@ def _build_head_rings(bm, cfg, neck_ring):
     rings.append(eye_ring)
     ring_groups.append((eye_ring, "Head"))
 
-    # --- Ring 4: Brow / upper face ---
-    # Forehead starts narrowing; very slight brow ridge
-    brow_z = neck_z + head_r * 0.90
+    # --- Ring 4: Brow ridge ---
+    # Just above eye level — subtle brow ridge where forehead begins.
+    brow_z = neck_z + head_r * 1.00
     brow_ring = _make_head_ring(bm, (0, 0, brow_z),
                                 head_r * 0.88, head_r * 0.84,
                                 front_offsets={
@@ -532,8 +533,8 @@ def _build_head_rings(bm, cfg, neck_ring):
     ring_groups.append((brow_ring, "Head"))
 
     # --- Ring 5: Forehead ---
-    # Slight forward bulge for natural forehead curve
-    forehead_z = head_z + head_r * 0.22
+    # Upper face — gentle forward bulge, head starts rounding toward crown.
+    forehead_z = head_z + head_r * 0.28
     forehead_ring = _make_head_ring(bm, (0, 0, forehead_z),
                                     head_r * 0.86, head_r * 0.80,
                                     front_offsets={
@@ -754,7 +755,9 @@ def _build_facial_details(bm, cfg, head_rings):
         cfg: body config
         head_rings: list of head ring vertex lists from _build_head_rings
 
-    Returns list of (verts, group_name) for vertex groups.
+    Returns:
+        (ring_groups, eye_face_indices) where eye_face_indices is a list of
+        bmesh face indices for the eye geometry (used to assign eye material).
     """
     head_r = cfg["head_size"]
     neck_len = cfg["neck_length"]
@@ -768,38 +771,45 @@ def _build_facial_details(bm, cfg, head_rings):
     head_z = neck_z + head_r
 
     ring_groups = []
+    eye_face_indices = []
 
     # --- Eyes ---
-    # Simple oval eye pads sitting flush on the face plane — Synty flat-face style.
-    # Eyes are positioned relative to the eye ring level.
-    eye_z = neck_z + head_r * 0.70
-    eye_rx = head_r * 0.09    # horizontal half-width
-    eye_ry = head_r * 0.055   # vertical half-height
-    eye_spacing = head_r * 0.28
-    # Face front at eye level = ring ry (head_r * 0.84) + small bridge offset (head_r * 0.06)
-    eye_y = -(head_r * 0.84)  # sit on the face surface
+    # Oval eye pads at the anatomically correct level: 2/3 up from chin
+    # (matching Ring 3 at neck_z + head_r * 0.82).
+    # Eyes sit flush on the face plane and get a separate dark material.
+    eye_z = neck_z + head_r * 0.80       # between nose ring and eye ring
+    eye_rx = head_r * 0.10               # horizontal half-width (slightly larger for visibility)
+    eye_ry = head_r * 0.065              # vertical half-height
+    eye_spacing = head_r * 0.27          # distance from face centre to each eye
+    eye_y = -(head_r * 0.82)             # face surface at eye-ring ry level
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing
-        # Front disc (visible eye surface)
+        # Snapshot face count so we can identify the new eye faces
+        face_before = len(bm.faces)
+
+        # Front disc (visible eye surface — gets the dark eye material)
         eye_front = _make_ring(bm, (ex, eye_y, eye_z),
                                eye_rx, eye_ry, n=8)
-        # Shallow back ring (gives the eye a slight inset depth)
-        eye_back = _make_ring(bm, (ex, eye_y + head_r * 0.04, eye_z),
-                              eye_rx * 0.65, eye_ry * 0.65, n=8)
+        # Shallow back ring (slight inset gives a recessed look)
+        eye_back = _make_ring(bm, (ex, eye_y + head_r * 0.035, eye_z),
+                              eye_rx * 0.60, eye_ry * 0.60, n=8)
         _bridge_rings(bm, eye_front, eye_back)
         front_cap, _ = _cap_ring(bm, eye_front, top=True)
+
+        # Record face indices for this eye (used for dark material assignment)
+        eye_face_indices.extend(range(face_before, len(bm.faces)))
         ring_groups.append((eye_front + eye_back + [front_cap], "Head"))
 
     # --- Nose ---
     # Very subtle nose panel — just enough geometry to read as a nose in low-poly.
-    # Kept minimal so the face stays flat (Synty style).
-    nose_bridge_z = neck_z + head_r * 0.60
-    nose_tip_z = neck_z + head_r * 0.46
+    # Positioned to match the raised cheek/nose ring (Ring 2 at 0.57 * head_r).
+    nose_bridge_z = neck_z + head_r * 0.72   # upper nose, between Ring 2 and eye ring
+    nose_tip_z = neck_z + head_r * 0.55      # nose base, at Ring 2 level
     nose_w = head_r * 0.07
-    # Face front at cheek level ~head_r * 0.72 + small offset 0.08
-    nose_bridge_y = -(head_r * 0.78)
-    nose_tip_y = -(head_r * 0.82)
+    # Face front at cheek level: ring ry (head_r * 0.74) + small offset
+    nose_bridge_y = -(head_r * 0.80)
+    nose_tip_y = -(head_r * 0.76)
 
     nb_verts = [
         bm.verts.new(( nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.03)),
@@ -828,8 +838,8 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups.append((nb_verts + nt_verts, "Head"))
 
     # --- Ears ---
-    # C-shaped ears with two rings forming a visible 3D shape
-    ear_z = neck_z + head_r * 0.68
+    # C-shaped ears positioned at eye level (matching the raised eye ring).
+    ear_z = neck_z + head_r * 0.80
     ear_h = head_r * 0.18   # ear height
     ear_w = head_r * 0.06   # ear thickness
     ear_depth = head_r * 0.08
@@ -878,7 +888,7 @@ def _build_facial_details(bm, cfg, head_rings):
 
         ring_groups.append((inner_ear + outer_ear, "Head"))
 
-    return ring_groups
+    return ring_groups, eye_face_indices
 
 
 def build_base_mesh(cfg=None):
@@ -932,7 +942,7 @@ def build_base_mesh(cfg=None):
     all_ring_groups.extend(head_groups)
 
     # --- Facial details (eyes, ears) ---
-    face_groups = _build_facial_details(bm, cfg, head_rings)
+    face_groups, eye_face_indices = _build_facial_details(bm, cfg, head_rings)
     all_ring_groups.extend(face_groups)
 
     # Ensure consistent normals
@@ -947,7 +957,7 @@ def build_base_mesh(cfg=None):
         for v in ring_verts:
             vertex_groups[bone_name].append((v.index, 1.0))
 
-    return bm, vertex_groups
+    return bm, vertex_groups, eye_face_indices
 
 
 def build_base_mesh_positions(cfg):
