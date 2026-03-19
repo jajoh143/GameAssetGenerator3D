@@ -66,6 +66,8 @@ def generate(config=None):
     cfg["clothing"] = clothing
     cfg["clothing_color"] = clothing_color
 
+    # Clothing is merged into the body mesh (single unified object matching
+    # reference blend files).  The third return value is always [] now.
     body, hair_obj, clothing_objs = mesh.create_body(cfg)
     armature = rig.create_rig(cfg, body, hair_obj, clothing_objs)
 

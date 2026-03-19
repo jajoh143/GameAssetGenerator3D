@@ -36,6 +36,19 @@ def _apply_material(obj, skin_tone=None):
     obj.data.materials.append(mat)
 
 
+def _add_clothing_material(obj, name, rgba, roughness=0.85):
+    """Append a new material slot to obj and return its slot index."""
+    import bpy
+    mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = rgba
+        bsdf.inputs["Roughness"].default_value = roughness
+    obj.data.materials.append(mat)
+    return len(obj.data.materials) - 1
+
+
 def _apply_eye_material(obj):
     """Apply dark material for eyes."""
     import bpy
@@ -86,20 +99,22 @@ def _bmesh_to_object(bm, name, vertex_groups=None):
 def create_body(cfg):
     """Build the complete humanoid mesh from config values.
 
-    Uses the base-mesh + morph architecture:
-    1. Build fixed-topology base mesh
-    2. Apply morph deltas for body variation
-    3. Convert to Blender object with vertex groups
+    Clothing is merged into the single body bmesh BEFORE Blender object
+    creation, matching the reference blend file approach (Characters_Matt /
+    Characters_Shaun): one mesh object, multiple material slots.
 
-    The character is built standing upright with feet at Z=0.
-    Head, hands, feet, and facial features are integrated into the
-    unified base mesh.
+    Material slot layout:
+        Slot 0: skin (Humanoid_Base)
+        Slot 1: eyes (Eye_Material)
+        Slot 2+: one slot per clothing type (in spec order)
 
     Args:
         cfg: dict with body proportion values.
 
     Returns:
-        Tuple of (body_obj, hair_obj_or_None, clothing_list).
+        Tuple of (body_obj, hair_obj_or_None, []).
+        The empty list preserves the old (body, hair, clothing_objs) API so
+        callers that unpack the tuple continue to work unchanged.
     """
     import bpy
 
@@ -107,40 +122,84 @@ def create_body(cfg):
 
     skin_tone = cfg.get("skin_tone", None)
 
-    # --- Build base mesh with morphs ---
+    # --- Build base body bmesh ---
     from .base_mesh import build_base_mesh
-    from .morphs import config_to_morphs, apply_morphs, is_neutral_config
 
-    # Build the base mesh with the target config directly
-    # (for neutral configs, no morphs needed)
     bm, vertex_groups, eye_face_indices = build_base_mesh(cfg)
 
-    # Convert to Blender object
+    # --- Merge clothing geometry into the body bmesh ---
+    # This keeps one unified mesh (matching reference blend files) instead of
+    # separate projected objects.  No BVH — rings are pre-sized to sit
+    # outside the body surface.
+    from . import clothing as clothing_module
+
+    clothing_type = cfg.get("clothing", "tshirt,pants")
+    clothing_color_override = cfg.get("clothing_color", None)
+
+    # clothing_face_ranges: list of (ctype, rgba, face_start, face_end)
+    clothing_face_ranges = []
+
+    if clothing_type and clothing_type != "none":
+        types = ([t.strip() for t in clothing_type.split(",")]
+                 if isinstance(clothing_type, str) else list(clothing_type))
+
+        for ctype in types:
+            clothing_bm = clothing_module.build_clothing_bmesh_for_type(cfg, ctype)
+            if clothing_bm is None:
+                continue
+
+            face_start = len(bm.faces)
+
+            # Copy verts and faces from clothing_bm into body bm
+            vert_map = {}
+            for v in clothing_bm.verts:
+                nv = bm.verts.new(v.co)
+                vert_map[v.index] = nv
+            for f in clothing_bm.faces:
+                try:
+                    bm.faces.new([vert_map[v.index] for v in f.verts])
+                except ValueError:
+                    pass  # duplicate face (shouldn't occur but safe to skip)
+
+            clothing_bm.free()
+            face_end = len(bm.faces)
+
+            rgba = clothing_module.resolve_clothing_rgba(ctype, clothing_color_override)
+            clothing_face_ranges.append((ctype, rgba, face_start, face_end))
+
+    # --- Convert unified bmesh to Blender object ---
     body = _bmesh_to_object(bm, "Humanoid_Body", vertex_groups)
     bm.free()
 
-    # Set origin to world center
     bpy.context.scene.cursor.location = (0, 0, 0)
     bpy.context.view_layer.objects.active = body
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
-    # Smooth shading
     bpy.ops.object.shade_smooth()
     mod = body.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
     mod.split_angle = math.radians(50)
 
-    # Slot 0: skin material
+    # --- Assign materials ---
+    # Slot 0: skin
     _apply_material(body, skin_tone)
-    # Slot 1: dark eye material — assign to eye face polygons
+    # Slot 1: eyes — assign to eye face polygons
     _apply_eye_material(body)
-    if eye_face_indices:
-        eye_set = set(eye_face_indices)
-        for poly in body.data.polygons:
-            if poly.index in eye_set:
-                poly.material_index = 1
-        body.data.update()
+    eye_set = set(eye_face_indices) if eye_face_indices else set()
+    for poly in body.data.polygons:
+        if poly.index in eye_set:
+            poly.material_index = 1
 
-    # --- Hair (separate object, will be parented to Head bone) ---
+    # Slots 2+: one per clothing type
+    for ctype, rgba, face_start, face_end in clothing_face_ranges:
+        roughness = 0.40 if ctype == "armor" else 0.85
+        mat_idx = _add_clothing_material(body, f"Clothing_{ctype}", rgba, roughness)
+        for poly in body.data.polygons:
+            if face_start <= poly.index < face_end:
+                poly.material_index = mat_idx
+
+    body.data.update()
+
+    # --- Hair (separate object, parented to Head bone by rig.py) ---
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
@@ -157,16 +216,8 @@ def create_body(cfg):
         head_z = neck_z + head_r
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
-    # --- Clothing (separate objects, skinned to armature) ---
-    clothing_objs = []
-    clothing_type = cfg.get("clothing", "tshirt,pants")
-    if clothing_type and clothing_type != "none":
-        from . import clothing as clothing_module
-        clothing_color = cfg.get("clothing_color", None)
-        clothing_objs = clothing_module.create_clothing(cfg, clothing_type,
-                                                        clothing_color)
-
-    return body, hair_obj, clothing_objs
+    # Return empty list as third element to preserve the (body, hair, clothing) API
+    return body, hair_obj, []
 
 
 # ─── Backward compatibility ────────────────────────────────────────────────
