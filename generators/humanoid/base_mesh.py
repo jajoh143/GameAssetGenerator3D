@@ -182,31 +182,53 @@ def _build_leg(bm, cfg, side, hip_ring):
 
     foot_top = 0.06
     hip_z = foot_top + leg_len
-    thigh_z = hip_z - (hip_z - (foot_top + leg_len * 0.48)) * 0.35
+    # Thigh peak sits ~18% below hip junction — clearly above the mid-thigh
+    thigh_z = hip_z - leg_len * 0.18
+    # Mid-thigh ring provides a smooth taper from thigh peak down to knee
+    mid_thigh_z = hip_z - leg_len * 0.35
+    # Knee at 48% of leg height from floor — classic anatomical knee position
     knee_z = foot_top + leg_len * 0.48
+    # Calf muscle peak ~30% of the shin-to-knee span below the knee
     calf_z = knee_z - (knee_z - foot_top) * 0.30
     ankle_z = foot_top
 
     x_sign = 1 if side == "L" else -1
     x = x_sign * hw
 
-    # Leg ring radii (rx, ry) — prominent thigh, narrow knee, defined calf
-    # This thigh-to-calf-to-ankle taper is the most recognisably human
-    # leg shape and reads clearly even at low polygon counts.
+    # Knee protrudes forward (in -Y, the face direction) relative to the
+    # straight-leg axis.  A small Y offset on the knee and calf rings
+    # mimics the slight forward angle of the lower leg and the kneecap bump.
+    knee_y_fwd = -0.018 * lt   # knees pushed forward (-Y = face direction)
+
+    # Leg ring radii derived from Synty reference OBJ analysis (Matt + Lis,
+    # scaled to code body height and corrected for clothing thickness):
+    #
+    #   hip junction  rx≈0.115  ry≈0.095  (wide hip attachment, slightly flat front-back)
+    #   thigh peak    rx≈0.130  ry≈0.112  (full thigh, rounder cross-section)
+    #   mid-thigh     rx≈0.110  ry≈0.098  (tapers toward knee)
+    #   knee          rx≈0.090  ry≈0.098  (kneecap makes knee deeper than wide)
+    #   calf peak     rx≈0.096  ry≈0.090  (calf muscle, nearly round)
+    #   ankle         rx≈0.062  ry≈0.058  (tapered but not bony)
+    #
+    # Key reference ratios (from OBJ, post clothing deduction):
+    #   thigh/knee rx  ≈ 1.44  (thigh clearly thicker than knee)
+    #   thigh/ankle rx ≈ 2.10  (strong taper from thigh to ankle)
+    #   knee ry > rx   (kneecap depth makes knee deeper than wide)
     leg_rings_spec = [
-        # (z, rx, ry, bone_name)
-        (hip_z,    0.115 * lt, 0.102 * lt, f"UpperLeg.{side}"),   # hip joint (wide)
-        (thigh_z,  0.122 * lt, 0.106 * lt, f"UpperLeg.{side}"),   # thigh peak (widest)
-        (knee_z,   0.070 * lt, 0.068 * lt, f"LowerLeg.{side}"),   # knee (narrow — clear joint)
-        (calf_z,   0.092 * lt, 0.080 * lt, f"LowerLeg.{side}"),   # calf peak (defined)
-        (ankle_z,  0.055 * lt, 0.052 * lt, f"LowerLeg.{side}"),   # ankle (tapered)
+        # (z, y_offset, rx, ry, bone_name)
+        (hip_z,       0,          0.115 * lt, 0.095 * lt, f"UpperLeg.{side}"),  # hip junction
+        (thigh_z,     0,          0.130 * lt, 0.112 * lt, f"UpperLeg.{side}"),  # thigh peak (widest)
+        (mid_thigh_z, 0,          0.110 * lt, 0.098 * lt, f"UpperLeg.{side}"),  # mid-thigh taper
+        (knee_z,      knee_y_fwd, 0.090 * lt, 0.098 * lt, f"LowerLeg.{side}"),  # knee (deeper than wide)
+        (calf_z,      knee_y_fwd, 0.096 * lt, 0.090 * lt, f"LowerLeg.{side}"),  # calf peak
+        (ankle_z,     0,          0.062 * lt, 0.058 * lt, f"LowerLeg.{side}"),  # ankle
     ]
 
     rings = []
     ring_groups = []
 
-    for z, rx, ry, bone_name in leg_rings_spec:
-        ring = _make_ring(bm, (x, 0, z), rx, ry)
+    for z, y_off, rx, ry, bone_name in leg_rings_spec:
+        ring = _make_ring(bm, (x, y_off, z), rx, ry)
         rings.append(ring)
         ring_groups.append((ring, bone_name))
 
