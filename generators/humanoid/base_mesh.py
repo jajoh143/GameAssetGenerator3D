@@ -159,9 +159,9 @@ def _build_torso_rings(bm, cfg):
         (hip_z,        sw * 1.00 * hip_rx_mult,    sw * 0.53, "Hips"),   # hip centre
         (lower_waist_z, sw * 0.94,                 sw * 0.53, "Hips"),   # lower abdomen
         (waist_z,      sw * 0.76 * waist_rx_mult,  sw * 0.51, "Spine"),  # waist (hourglass)
-        (lower_chest_z, sw * 0.68,                 sw * 0.63, "Chest"),  # lower chest / rib cage
-        (chest_z,      sw * 0.87 * chest_rx_mult,  sw * 0.75, "Chest"),  # chest top
-        (neck_z,       head_r * 0.35,               head_r * 0.32, "Neck"),  # neck base (scaled to head)
+        (lower_chest_z, sw * 0.72,                 sw * 0.65, "Chest"),  # lower chest / rib cage
+        (chest_z,      sw * 0.92 * chest_rx_mult,  sw * 0.80, "Chest"),  # chest top (wider for arm merge)
+        (neck_z,       head_r * 0.40,               head_r * 0.36, "Neck"),  # neck base
     ]
 
     rings = {}
@@ -407,71 +407,62 @@ def _build_arm(bm, cfg, side, chest_ring):
 
 
 def _build_arm_junction(bm, chest_ring, arm_top_ring, side):
-    """Connect an arm's top ring to the torso with a clean shoulder cap.
+    """Connect an arm's top ring to the torso with full face coverage.
 
-    The arm ring has 8 verts.  Half face toward the torso (inner side) and
-    half face away (outer / lateral side = the shoulder cap).
+    The arm ring has 8 verts split into inner (toward torso) and outer
+    (shoulder side) halves.  We always take exactly 4 inner verts so the
+    quad strip maps cleanly 4:4 to the 4 nearest chest ring verts.
 
-      inner verts  → connected to the 4 nearest chest ring verts with quads
-      outer verts  → capped with a triangle fan to a raised central vert,
-                     forming a visible domed shoulder cap
-
-    This replaces the previous mixed quad/triangle fan that produced uneven
-    topology at the shoulder seam.
+      inner 4 verts → quad strip bridging to 4 nearest chest verts
+      outer 4 verts → triangle fan to a raised shoulder dome vert
     """
     x_sign = 1 if side == "L" else -1
 
-    # Arm ring centre
     arm_cx = sum(v.co.x for v in arm_top_ring) / len(arm_top_ring)
     arm_cy = sum(v.co.y for v in arm_top_ring) / len(arm_top_ring)
-    arm_cz = sum(v.co.z for v in arm_top_ring) / len(arm_top_ring)
+    arm_cz = arm_top_ring[0].co.z
 
-    def angle_xy(v, cx, cy):
-        return math.atan2(v.co.y - cy, v.co.x - cx)
+    def arm_angle(v):
+        return math.atan2(v.co.y - arm_cy, v.co.x - arm_cx)
 
-    # Split arm verts: inner (toward torso centre) vs outer (shoulder side)
-    # Condition: x_sign * v.co.x < x_sign * arm_cx → inner (toward centre)
-    inner_arm = sorted(
-        [v for v in arm_top_ring if (v.co.x * x_sign) < (arm_cx * x_sign)],
-        key=lambda v: angle_xy(v, arm_cx, arm_cy),
-    )
-    outer_arm = sorted(
-        [v for v in arm_top_ring if (v.co.x * x_sign) >= (arm_cx * x_sign)],
-        key=lambda v: angle_xy(v, arm_cx, arm_cy),
-    )
+    # Split arm ring into exactly 4 inner (toward torso) and 4 outer.
+    # Primary sort: x*x_sign ascending (innermost first).
+    # Tie-break on -v.co.y so verts on the back/side of the arm (i=4, angle=90°)
+    # rank before the front vert (i=0, angle=-90°) — keeping the correct half.
+    arm_by_x = sorted(arm_top_ring,
+                      key=lambda v: (v.co.x * x_sign, -v.co.y))
+    inner_arm = sorted(arm_by_x[:4], key=arm_angle)
+    outer_arm = sorted(arm_by_x[4:], key=arm_angle)
 
-    # 4 closest chest verts, sorted by angle from arm centre
+    # 4 chest verts closest to the arm ring centre, sorted by arm_angle
     chest_by_dist = sorted(chest_ring,
                            key=lambda v: (v.co.x - arm_cx) ** 2 + (v.co.y - arm_cy) ** 2)
-    closest_chest = sorted(chest_by_dist[:4],
-                           key=lambda v: angle_xy(v, arm_cx, arm_cy))
+    near_chest = sorted(chest_by_dist[:4], key=arm_angle)
 
-    # Inner arm → chest: quad strip
-    n = min(len(closest_chest), len(inner_arm))
+    # Quad strip: 4 chest → 4 inner arm (1:1, same angular order)
+    n = 4
     for i in range(n):
-        c0 = closest_chest[i]
-        c1 = closest_chest[(i + 1) % len(closest_chest)]
-        a0 = inner_arm[i % len(inner_arm)]
-        a1 = inner_arm[(i + 1) % len(inner_arm)]
+        c0 = near_chest[i]
+        c1 = near_chest[(i + 1) % n]
+        a0 = inner_arm[i]
+        a1 = inner_arm[(i + 1) % n]
+        verts = [c0, c1, a1, a0] if x_sign > 0 else [c1, c0, a0, a1]
         try:
-            bm.faces.new([c0, c1, a1, a0])
+            if len({id(v) for v in verts}) == 4:
+                bm.faces.new(verts)
         except ValueError:
             pass
 
-    # Outer arm → shoulder cap: triangle fan to a slightly raised centre vert
-    if outer_arm:
-        cap_cx = sum(v.co.x for v in outer_arm) / len(outer_arm)
-        cap_cy = sum(v.co.y for v in outer_arm) / len(outer_arm)
-        cap_v  = bm.verts.new((cap_cx, cap_cy, arm_cz + 0.015))
-        for i in range(len(outer_arm)):
-            j = (i + 1) % len(outer_arm)
-            try:
-                if x_sign > 0:
-                    bm.faces.new([outer_arm[i], outer_arm[j], cap_v])
-                else:
-                    bm.faces.new([outer_arm[j], outer_arm[i], cap_v])
-            except ValueError:
-                pass
+    # Shoulder dome cap: triangle fan over the 4 outer arm verts
+    cap_v = bm.verts.new((arm_cx + x_sign * 0.02, arm_cy, arm_cz + 0.020))
+    for i in range(len(outer_arm)):
+        j = (i + 1) % len(outer_arm)
+        verts = ([outer_arm[i], outer_arm[j], cap_v] if x_sign > 0
+                 else [outer_arm[j], outer_arm[i], cap_v])
+        try:
+            bm.faces.new(verts)
+        except ValueError:
+            pass
 
 
 def _make_head_ring(bm, center, rx, ry, n=RING_VERTS, front_offsets=None):
@@ -687,7 +678,7 @@ def _build_hand(bm, cfg, side, wrist_ring):
     x_sign = 1 if side == "L" else -1
     shoulder_x = x_sign * (sw + 0.04)
 
-    arm_top_z = chest_z - 0.04
+    arm_top_z = chest_z              # match _build_arm so hand connects to wrist
     upper_arm_len = arm_len * 0.48
     elbow_z = arm_top_z - upper_arm_len
     lower_arm_len = arm_len * 0.52
@@ -883,17 +874,17 @@ def _build_facial_details(bm, cfg, head_rings):
     # Eye ring (ring 4 in _build_head_rings) sits at neck_z + head_r * 0.82
     # with ry = 0.83 * head_r. Face surface at that level ≈ y = -0.83*head_r.
     eye_z       = neck_z + head_r * 0.82
-    eye_spacing = head_r * 0.38
-    face_y_eye  = -(head_r * 0.83)   # approximate face surface at eye level
+    eye_spacing = head_r * 0.36      # slightly closer together for big eyes
+    face_y_eye  = -(head_r * 0.86)   # pushed more forward for prominence
 
-    # Recessed socket design:
-    #   outer_ring — at face surface, larger (socket rim, skin material)
-    #   inner_ring — recessed 0.06*head_r behind face, the dark eyeball disc
-    eye_outer_rx = head_r * 0.16
-    eye_outer_ry = head_r * 0.12
-    eye_rx       = head_r * 0.11
-    eye_ry       = head_r * 0.08
-    eye_recess   = head_r * 0.06    # depth of socket
+    # Recessed socket design — Synty-style large cartoony eyes:
+    #   outer_ring — socket rim at face surface (skin material)
+    #   inner_ring — recessed behind face, the dark eyeball disc
+    eye_outer_rx = head_r * 0.26   # was 0.16 — much larger cartoony eye
+    eye_outer_ry = head_r * 0.20   # was 0.12
+    eye_rx       = head_r * 0.20   # was 0.11
+    eye_ry       = head_r * 0.15   # was 0.08
+    eye_recess   = head_r * 0.04   # shallower recess for cartoony flat look
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing

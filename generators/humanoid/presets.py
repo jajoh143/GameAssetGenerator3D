@@ -26,10 +26,10 @@ from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color
 
 PRESETS = {
     "average": {
-        "height": 2.00,          # actual mesh height ~2.0m (5-head cartoon proportion)
+        "height": 2.00,          # actual mesh height ~2.0m
         "shoulder_width": 0.42,
         "hip_width": 0.27,
-        "head_size": 0.20,       # 5-head cartoon proportion (head_r = height/10)
+        "head_size": 0.25,       # 4-head cartoon proportion matching Synty style
         "arm_length": 0.68,
         "leg_length": 0.88,
         "torso_length": 0.64,
@@ -44,7 +44,7 @@ PRESETS = {
         "height": 2.25,          # actual mesh height ~2.25m
         "shoulder_width": 0.44,
         "hip_width": 0.26,
-        "head_size": 0.22,       # 5-head cartoon proportion
+        "head_size": 0.26,       # 4-head cartoon proportion
         "arm_length": 0.78,
         "leg_length": 1.02,
         "torso_length": 0.72,
@@ -59,7 +59,7 @@ PRESETS = {
         "height": 1.65,          # actual mesh height ~1.65m
         "shoulder_width": 0.36,
         "hip_width": 0.26,
-        "head_size": 0.17,       # 5-head cartoon proportion
+        "head_size": 0.21,       # 4-head cartoon proportion
         "arm_length": 0.55,
         "leg_length": 0.72,
         "torso_length": 0.54,
@@ -104,7 +104,7 @@ PRESETS = {
         "height": 2.10,          # actual mesh height ~2.1m
         "shoulder_width": 0.34,
         "hip_width": 0.22,
-        "head_size": 0.21,       # 5-head cartoon proportion
+        "head_size": 0.25,       # 4-head cartoon proportion
         "arm_length": 0.75,
         "leg_length": 0.98,
         "torso_length": 0.62,

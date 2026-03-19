@@ -241,14 +241,18 @@ def create_body(cfg):
 
             face_start = len(bm.faces)
 
-            # Copy verts and faces from clothing_bm into body bm
-            vert_map = {}
+            # Copy verts and faces from clothing_bm into body bm.
+            # Use vert objects as dict keys (v.index is unreliable without
+            # ensure_lookup_table() and is always -1 on fresh bmeshes).
+            clothing_bm.verts.ensure_lookup_table()
+            clothing_bm.faces.ensure_lookup_table()
+            vert_map = {}  # clothing BMVert → body BMVert
             for v in clothing_bm.verts:
                 nv = bm.verts.new(v.co)
-                vert_map[v.index] = nv
+                vert_map[v] = nv
             for f in clothing_bm.faces:
                 try:
-                    bm.faces.new([vert_map[v.index] for v in f.verts])
+                    bm.faces.new([vert_map[v] for v in f.verts])
                 except ValueError:
                     pass  # duplicate face (shouldn't occur but safe to skip)
 
