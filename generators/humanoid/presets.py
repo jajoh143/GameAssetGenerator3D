@@ -25,95 +25,110 @@ from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color
 # ─── Named presets ──────────────────────────────────────────────────────────
 
 PRESETS = {
+    # ── Dimensions reverse-engineered from Characters_Matt.blend ──────────
+    # Reference character is 1.5 m tall (scale 1,1,1).  All measurements
+    # taken directly from bone positions and mesh cross-sections in that file.
+    #
+    # Key reference values (unscaled):
+    #   hip_z        = 0.518   (= foot_top 0.06 + leg_length 0.458 ≈ 0.46)
+    #   chest_z      = 0.945   (= hip_z + torso_length 0.427 ≈ 0.43)
+    #   neck_z       = 1.008   (= chest_z + neck_length 0.063 ≈ 0.06)
+    #   head_top     ≈ 1.50    (= neck_z + 2 × head_size 0.207 ≈ 0.20)
+    #   arm_start_x  = 0.185   (≈ shoulder_width 0.23 × 0.80)
+    #   wrist_x      = 0.741   (arm_start + arm_length 0.556 ≈ 0.56)
+    #   torso half-w ≈ ±0.23   (chest cross-section)
+    #   leg centre x = 0.125   (hip_width)
+    #   arm centre z = 0.883   (= hip_z + torso_len × 0.855)
+
     "average": {
-        "height": 2.00,          # actual mesh height ~2.0m
-        "shoulder_width": 0.36,
-        "hip_width": 0.25,
-        "head_size": 0.25,       # 4-head cartoon proportion matching Synty style
-        "arm_length": 0.68,
-        "leg_length": 0.88,
-        "torso_length": 0.64,
-        "neck_length": 0.10,     # longer neck for clearer neck silhouette
-        "hand_size": 0.08,
-        "foot_length": 0.24,
-        "foot_width": 0.10,
+        "height": 1.50,          # matched to Characters_Matt.blend
+        "shoulder_width": 0.23,  # torso chest half-width; arm joint at 80 % = 0.184
+        "hip_width": 0.125,      # leg centre x (ref UpperLeg head x ≈ 0.122)
+        "head_size": 0.20,       # head radius (ref head spans ≈ 0.41 m)
+        "arm_length": 0.56,      # shoulder joint → wrist (ref 0.185 → 0.741 = 0.556)
+        "leg_length": 0.46,      # hip_z = foot_top(0.06) + 0.46 = 0.52 ≈ ref 0.518
+        "torso_length": 0.43,    # chest_z − hip_z (ref 0.427)
+        "neck_length": 0.06,     # neck bone length (ref 0.063)
+        "hand_size": 0.065,
+        "foot_length": 0.19,
+        "foot_width": 0.08,
         "limb_thickness": 1.0,
-        "torso_depth": 0.22,     # slightly deeper torso for better front profile
+        "torso_depth": 0.16,     # torso ry at chest (ref depth ≈ 0.36 m → half 0.18)
     },
     "tall": {
-        "height": 2.25,          # actual mesh height ~2.25m
-        "shoulder_width": 0.38,
-        "hip_width": 0.24,
-        "head_size": 0.26,       # 4-head cartoon proportion
-        "arm_length": 0.78,
-        "leg_length": 1.02,
-        "torso_length": 0.72,
-        "neck_length": 0.12,
-        "hand_size": 0.09,
-        "foot_length": 0.27,
-        "foot_width": 0.10,
+        "height": 1.70,          # ~1.13× average
+        "shoulder_width": 0.26,
+        "hip_width": 0.14,
+        "head_size": 0.22,
+        "arm_length": 0.63,
+        "leg_length": 0.54,
+        "torso_length": 0.48,
+        "neck_length": 0.07,
+        "hand_size": 0.07,
+        "foot_length": 0.22,
+        "foot_width": 0.09,
         "limb_thickness": 0.95,
-        "torso_depth": 0.22,
+        "torso_depth": 0.18,
     },
     "short": {
-        "height": 1.65,          # actual mesh height ~1.65m
-        "shoulder_width": 0.31,
-        "hip_width": 0.24,
-        "head_size": 0.21,       # 4-head cartoon proportion
-        "arm_length": 0.55,
-        "leg_length": 0.72,
-        "torso_length": 0.54,
-        "neck_length": 0.08,
-        "hand_size": 0.07,
-        "foot_length": 0.20,
-        "foot_width": 0.09,
+        "height": 1.25,          # ~0.83× average
+        "shoulder_width": 0.19,
+        "hip_width": 0.10,
+        "head_size": 0.18,
+        "arm_length": 0.46,
+        "leg_length": 0.38,
+        "torso_length": 0.36,
+        "neck_length": 0.05,
+        "hand_size": 0.055,
+        "foot_length": 0.16,
+        "foot_width": 0.07,
         "limb_thickness": 1.05,
-        "torso_depth": 0.21,
+        "torso_depth": 0.13,
     },
     "child": {
-        "height": 1.40,          # actual mesh height ~1.4m
-        "shoulder_width": 0.26,
-        "hip_width": 0.22,
-        "head_size": 0.22,       # ~3.2-head proportion — chibi/cartoon child style
-        "arm_length": 0.42,
-        "leg_length": 0.52,
-        "torso_length": 0.44,
-        "neck_length": 0.06,
-        "hand_size": 0.06,
-        "foot_length": 0.16,
-        "foot_width": 0.08,
+        "height": 1.05,          # ~0.70× average; big head for cartoon style
+        "shoulder_width": 0.16,
+        "hip_width": 0.085,
+        "head_size": 0.20,       # deliberately large — chibi proportion
+        "arm_length": 0.37,
+        "leg_length": 0.30,
+        "torso_length": 0.33,
+        "neck_length": 0.05,
+        "hand_size": 0.045,
+        "foot_length": 0.13,
+        "foot_width": 0.06,
         "limb_thickness": 0.85,
-        "torso_depth": 0.16,
+        "torso_depth": 0.12,
     },
     "brute": {
-        "height": 2.20,          # actual mesh height ~2.2m
-        "shoulder_width": 0.58,
-        "hip_width": 0.35,
-        "head_size": 0.20,       # slightly below 5-head — massive body reads bigger
-        "arm_length": 0.82,
-        "leg_length": 1.00,
-        "torso_length": 0.76,
-        "neck_length": 0.07,     # thick, short neck
-        "hand_size": 0.12,
-        "foot_length": 0.30,
-        "foot_width": 0.14,
+        "height": 1.65,          # ~1.10× average but stockier
+        "shoulder_width": 0.37,  # much wider chest
+        "hip_width": 0.175,
+        "head_size": 0.18,       # smaller head → massive body reads bigger
+        "arm_length": 0.68,
+        "leg_length": 0.54,
+        "torso_length": 0.54,
+        "neck_length": 0.05,     # short thick neck
+        "hand_size": 0.10,
+        "foot_length": 0.24,
+        "foot_width": 0.12,
         "limb_thickness": 1.4,
-        "torso_depth": 0.30,
+        "torso_depth": 0.24,
     },
     "slender": {
-        "height": 2.10,          # actual mesh height ~2.1m
-        "shoulder_width": 0.29,
-        "hip_width": 0.20,
-        "head_size": 0.25,       # 4-head cartoon proportion
-        "arm_length": 0.75,
-        "leg_length": 0.98,
-        "torso_length": 0.62,
-        "neck_length": 0.12,     # long elegant neck
-        "hand_size": 0.07,
-        "foot_length": 0.23,
-        "foot_width": 0.08,
+        "height": 1.58,          # ~1.05× average but lean
+        "shoulder_width": 0.19,
+        "hip_width": 0.10,
+        "head_size": 0.22,
+        "arm_length": 0.60,
+        "leg_length": 0.52,
+        "torso_length": 0.46,
+        "neck_length": 0.08,     # longer elegant neck
+        "hand_size": 0.06,
+        "foot_length": 0.19,
+        "foot_width": 0.07,
         "limb_thickness": 0.75,
-        "torso_depth": 0.18,
+        "torso_depth": 0.13,
     },
 }
 

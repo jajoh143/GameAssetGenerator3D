@@ -52,12 +52,31 @@ def _make_ring(bm, center, rx, ry, n=RING_VERTS, z_up=True):
     return verts
 
 
-def _make_arm_ring(bm, center, rx, ry, n=RING_VERTS):
-    """Create a ring of vertices for an arm cross-section (XY plane at given Z).
+def _make_ring_side(bm, x, cy, cz, ry, rz, n=RING_VERTS):
+    """Create a cross-section ring in the YZ plane at a given X position.
 
-    Same as _make_ring but explicitly for limbs that run vertically.
+    Used for T-pose arms and hands whose tubes run along the X axis.
+    Vertices are ordered CCW when viewed from the +X direction:
+      i=0 → bottom (z=cz-rz), i=2 → back (+Y), i=4 → top, i=6 → front (-Y).
+
+    Args:
+        bm: bmesh instance
+        x: X position of the ring plane
+        cy, cz: Y and Z centre of the ring
+        ry: radius in the Y direction (front-back)
+        rz: radius in the Z direction (up-down)
+        n: number of vertices
+
+    Returns:
+        List of bmesh vertices forming the ring.
     """
-    return _make_ring(bm, center, rx, ry, n)
+    verts = []
+    for i in range(n):
+        angle = 2 * math.pi * i / n
+        y = cy + ry * math.sin(angle)
+        z = cz - rz * math.cos(angle)
+        verts.append(bm.verts.new((x, y, z)))
+    return verts
 
 
 def _bridge_rings(bm, ring_a, ring_b):
@@ -327,41 +346,48 @@ def _build_leg_junction(bm, hip_ring, leg_top_ring, side):
 
 
 def _build_arm(bm, cfg, side, chest_ring):
-    """Build one arm from shoulder to wrist.
+    """Build one arm in T-pose extending horizontally along the X axis.
 
-    The arm ring is centred at the torso's outer shoulder edge so the arm
-    tube naturally overlaps into the torso body.  The inner half of the arm
-    is hidden inside the torso; the outer half and the shoulder dome cap are
-    visible.  No explicit junction geometry is needed — the torso is a
-    complete closed surface, and so is the arm+dome.
+    The arm tube is made of YZ-plane cross-section rings (_make_ring_side)
+    spaced along X from the shoulder joint outward to the wrist.  The
+    shoulder joint is placed at 80 % of the chest half-width (sw), which
+    matches the reference character anatomy where the arm socket sits
+    slightly inside the torso width.
+
+    The inner end of the arm tube is capped with a slightly-inset dome
+    vertex that overlaps into the torso body, hiding the junction cleanly
+    without requiring any explicit bridging faces to the torso rings.
+
+    Arm heights are calibrated from the reference blend file:
+      arm centre Z ≈ hip_z + torso_len × 0.855  (about 85 % up the torso)
+
+    Ring radii are taken directly from the reference cross-section analysis
+    of Characters_Matt.blend (rz / ry values at each X slice), scaled by
+    limb_thickness.
 
     Args:
         bm: bmesh instance
-        cfg: body config
+        cfg: body config dict
         side: "L" or "R"
-        chest_ring: the chest ring vertices from torso (unused here, kept for
-                    API compatibility with build_base_mesh)
+        chest_ring: torso chest ring (unused; kept for API compatibility)
 
     Returns:
         (wrist_ring, ring_groups)
     """
-    sw = cfg["shoulder_width"]
+    sw      = cfg["shoulder_width"]
     arm_len = cfg["arm_length"]
-    lt = cfg.get("limb_thickness", 1.0)
+    lt      = cfg.get("limb_thickness", 1.0)
     torso_len = cfg["torso_length"]
-    leg_len = cfg["leg_length"]
+    leg_len   = cfg["leg_length"]
 
     foot_top = 0.06
-    hip_z = foot_top + leg_len
-    chest_z = hip_z + torso_len
+    hip_z    = foot_top + leg_len
+    chest_z  = hip_z + torso_len
 
     x_sign = 1 if side == "L" else -1
 
-    # Mirror the chest_rx formula from _build_torso_rings.
-    # Arm centre is placed AT the chest outer vert so that the inner half
-    # of the arm tube overlaps into the torso (hidden) and the outer half
-    # is the visible shoulder/arm geometry.  This avoids any gap between
-    # torso and arm without needing junction faces.
+    # Gender multiplier mirrors _build_torso_rings so arm_start aligns
+    # correctly with the chest ring edge.
     gender = cfg.get("gender", "neutral")
     if gender == "male":
         chest_rx_mult = 1.05
@@ -370,49 +396,54 @@ def _build_arm(bm, cfg, side, chest_ring):
     else:
         chest_rx_mult = 1.00
     chest_rx = sw * chest_rx_mult
-    shoulder_x = x_sign * chest_rx
 
-    arm_top_z = chest_z
-    upper_arm_len = arm_len * 0.48
-    elbow_z = arm_top_z - upper_arm_len
-    lower_arm_len = arm_len * 0.52
-    wrist_z = elbow_z - lower_arm_len
+    # Shoulder joint is at 80 % of chest half-width — arm socket sits
+    # slightly inside the torso, matching the reference character.
+    arm_start_x = x_sign * chest_rx * 0.80
 
-    deltoid_z = arm_top_z - upper_arm_len * 0.20
-    bicep_z   = arm_top_z - upper_arm_len * 0.60
-    forearm_z = elbow_z   - lower_arm_len * 0.30
+    # Arm tube runs at 85.5 % of torso height (reference: z ≈ 0.883 with
+    # chest_z ≈ 0.945 on a 1.5 m character).
+    arm_cz = hip_z + torso_len * 0.855
+    arm_cy = 0.0   # centred on Y axis (same as torso)
+
+    # Elbow sits at 42 % along the arm (reference bone ratio).
+    elbow_frac = 0.42
 
     arm_rings_spec = [
-        # (z, rx, ry, bone_name)
-        (arm_top_z,  0.092 * lt,  0.080 * lt,  f"UpperArm.{side}"),
-        (deltoid_z,  0.108 * lt,  0.094 * lt,  f"UpperArm.{side}"),
-        (bicep_z,    0.090 * lt,  0.079 * lt,  f"UpperArm.{side}"),
-        (elbow_z,    0.068 * lt,  0.060 * lt,  f"LowerArm.{side}"),
-        (forearm_z,  0.082 * lt,  0.072 * lt,  f"LowerArm.{side}"),
-        (wrist_z,    0.046 * lt,  0.040 * lt,  f"Hand.{side}"),
+        # (x_frac, ry, rz, bone_name)   x_frac = fraction of arm_len from shoulder
+        (0.00, 0.090 * lt, 0.100 * lt, f"UpperArm.{side}"),  # shoulder attach
+        (0.06, 0.115 * lt, 0.110 * lt, f"UpperArm.{side}"),  # deltoid flare
+        (0.21, 0.090 * lt, 0.085 * lt, f"UpperArm.{side}"),  # upper arm
+        (0.31, 0.080 * lt, 0.075 * lt, f"UpperArm.{side}"),  # lower upper arm
+        (elbow_frac, 0.068 * lt, 0.064 * lt, f"LowerArm.{side}"),  # elbow
+        (0.57, 0.078 * lt, 0.072 * lt, f"LowerArm.{side}"),  # forearm
+        (0.75, 0.075 * lt, 0.069 * lt, f"LowerArm.{side}"),  # lower forearm
+        (1.00, 0.048 * lt, 0.052 * lt, f"LowerArm.{side}"),  # wrist
     ]
 
-    rings = []
+    rings       = []
     ring_groups = []
 
-    for z, rx, ry, bone_name in arm_rings_spec:
-        ring = _make_ring(bm, (shoulder_x, 0, z), rx, ry)
+    for frac, ry, rz, bone_name in arm_rings_spec:
+        x    = arm_start_x + x_sign * arm_len * frac
+        ring = _make_ring_side(bm, x, arm_cy, arm_cz, ry, rz)
         rings.append(ring)
         ring_groups.append((ring, bone_name))
 
-    # Bridge arm rings
+    # Bridge all arm rings shoulder → wrist
     for i in range(len(rings) - 1):
         _bridge_rings(bm, rings[i], rings[i + 1])
 
-    # Shoulder dome: raised triangle fan sealing the top of the arm tube.
-    # cap_v is elevated to give a rounded cartoony shoulder silhouette.
-    arm_top_ring = rings[0]
-    cap_v = bm.verts.new((shoulder_x, 0, arm_top_z + 0.045))
-    n = len(arm_top_ring)
+    # Inner shoulder cap: dome vertex placed ~4 cm INTO the torso so the
+    # arm tube's open shoulder end is sealed and overlaps the torso body.
+    shoulder_ring = rings[0]
+    inner_x = arm_start_x - x_sign * 0.04
+    cap_v   = bm.verts.new((inner_x, arm_cy, arm_cz))
+    n       = len(shoulder_ring)
     for i in range(n):
         j = (i + 1) % n
         try:
-            bm.faces.new([arm_top_ring[j], arm_top_ring[i], cap_v])
+            bm.faces.new([shoulder_ring[i], shoulder_ring[j], cap_v])
         except ValueError:
             pass
     ring_groups.append(([cap_v], f"UpperArm.{side}"))
@@ -613,29 +644,37 @@ def _build_head_rings(bm, cfg, neck_ring):
 
 
 def _build_hand(bm, cfg, side, wrist_ring):
-    """Build a hand with palm, finger block, and thumb.
+    """Build a hand in T-pose extending further along the X axis from the wrist.
 
-    The hand extends downward from the wrist with:
-    - A wider palm section
-    - A tapered finger block
-    - A thumb extending to the side
+    Finger block extends outward along X (same direction as the arm tube).
+    Cross-sections are YZ-plane rings (_make_ring_side), matching the arm tube.
 
-    Returns ring_groups for vertex group assignment.
+    The palm is wider in Y (finger spread) than the wrist.  The finger block
+    tapers to a rounded cap.  A thumb stub branches from the palm toward the
+    front of the character (−Y direction, slightly below arm centre Z).
+
+    Args:
+        bm: bmesh instance
+        cfg: body config dict
+        side: "L" or "R"
+        wrist_ring: last arm ring (YZ-plane ring) returned by _build_arm
+
+    Returns:
+        ring_groups list for vertex group assignment
     """
-    sw = cfg["shoulder_width"]
+    sw        = cfg["shoulder_width"]
     hand_size = cfg["hand_size"]
-    arm_len = cfg["arm_length"]
-    leg_len = cfg["leg_length"]
+    arm_len   = cfg["arm_length"]
+    leg_len   = cfg["leg_length"]
     torso_len = cfg["torso_length"]
+    lt        = cfg.get("limb_thickness", 1.0)
 
     foot_top = 0.06
-    hip_z = foot_top + leg_len
-    chest_z = hip_z + torso_len
+    hip_z    = foot_top + leg_len
 
     x_sign = 1 if side == "L" else -1
 
-    # Must match _build_arm's shoulder_x so the hand column is centred correctly.
-    lt = cfg.get("limb_thickness", 1.0)
+    # Mirror _build_arm formulas to derive wrist X and arm centre YZ.
     gender = cfg.get("gender", "neutral")
     if gender == "male":
         chest_rx_mult = 1.05
@@ -643,82 +682,91 @@ def _build_hand(bm, cfg, side, wrist_ring):
         chest_rx_mult = 0.97
     else:
         chest_rx_mult = 1.00
-    chest_rx = sw * chest_rx_mult
-    shoulder_x = x_sign * chest_rx
-
-    arm_top_z = chest_z              # match _build_arm so hand connects to wrist
-    upper_arm_len = arm_len * 0.48
-    elbow_z = arm_top_z - upper_arm_len
-    lower_arm_len = arm_len * 0.52
-    wrist_z = elbow_z - lower_arm_len
+    chest_rx    = sw * chest_rx_mult
+    arm_start_x = x_sign * chest_rx * 0.80
+    wrist_x     = arm_start_x + x_sign * arm_len
+    arm_cz      = hip_z + torso_len * 0.855
+    arm_cy      = 0.0
 
     s = hand_size
-    palm_len = s * 1.1
-    finger_len = s * 0.90
 
-    # Palm ring — wider than wrist, flattened (wider in X, narrow in Y)
-    palm_z = wrist_z - palm_len
-    palm_ring = _make_ring(bm, (shoulder_x, 0, palm_z),
-                           s * 0.55, s * 0.20)
+    # ── Finger block (extends in X beyond wrist) ────────────────────────────
+    palm_len   = s * 1.0
+    finger_len = s * 0.85
 
-    # Knuckle ring — slightly wider than palm
-    knuckle_z = palm_z - s * 0.15
-    knuckle_ring = _make_ring(bm, (shoulder_x, 0, knuckle_z),
-                              s * 0.52, s * 0.18)
+    # Palm ring — wider in Y (finger spread) and taller in Z than wrist.
+    palm_x    = wrist_x + x_sign * palm_len
+    palm_ring = _make_ring_side(bm, palm_x, arm_cy, arm_cz,
+                                s * 0.45, s * 0.32)
 
-    # Finger mid ring
-    finger_mid_z = knuckle_z - finger_len * 0.50
-    finger_mid_ring = _make_ring(bm, (shoulder_x, 0, finger_mid_z),
-                                 s * 0.42, s * 0.15)
+    # Knuckle ring (slight transition)
+    knuckle_x    = palm_x + x_sign * s * 0.12
+    knuckle_ring = _make_ring_side(bm, knuckle_x, arm_cy, arm_cz,
+                                   s * 0.42, s * 0.28)
+
+    # Finger mid ring (narrowing)
+    finger_mid_x    = knuckle_x + x_sign * finger_len * 0.50
+    finger_mid_ring = _make_ring_side(bm, finger_mid_x, arm_cy, arm_cz,
+                                      s * 0.34, s * 0.22)
 
     # Finger tip ring (tapered)
-    finger_z = knuckle_z - finger_len
-    finger_ring = _make_ring(bm, (shoulder_x, 0, finger_z),
-                             s * 0.28, s * 0.10)
+    finger_x    = knuckle_x + x_sign * finger_len
+    finger_ring = _make_ring_side(bm, finger_x, arm_cy, arm_cz,
+                                  s * 0.22, s * 0.14)
 
-    # Bridge wrist -> palm -> knuckles -> finger_mid -> finger tips
-    _bridge_rings(bm, wrist_ring, palm_ring)
-    _bridge_rings(bm, palm_ring, knuckle_ring)
-    _bridge_rings(bm, knuckle_ring, finger_mid_ring)
+    _bridge_rings(bm, wrist_ring,    palm_ring)
+    _bridge_rings(bm, palm_ring,     knuckle_ring)
+    _bridge_rings(bm, knuckle_ring,  finger_mid_ring)
     _bridge_rings(bm, finger_mid_ring, finger_ring)
 
-    # Cap finger tips
-    cap_vert, _ = _cap_ring(bm, finger_ring, top=False)
+    # Cap finger tips — outer end of the hand in X direction.
+    finger_cap_x = finger_x + x_sign * s * 0.05
+    finger_cap_v = bm.verts.new((finger_cap_x, arm_cy, arm_cz))
+    n = len(finger_ring)
+    for i in range(n):
+        j = (i + 1) % n
+        try:
+            bm.faces.new([finger_ring[i], finger_ring[j], finger_cap_v])
+        except ValueError:
+            pass
 
     ring_groups = [
-        (palm_ring, f"Hand.{side}"),
-        (knuckle_ring, f"Hand.{side}"),
+        (palm_ring,       f"Hand.{side}"),
+        (knuckle_ring,    f"Hand.{side}"),
         (finger_mid_ring, f"Hand.{side}"),
-        (finger_ring, f"Hand.{side}"),
-        ([cap_vert], f"Hand.{side}"),
+        (finger_ring,     f"Hand.{side}"),
+        ([finger_cap_v],  f"Hand.{side}"),
     ]
 
-    # --- Thumb ---
-    # Thumb extends from the palm toward the front of the body (-Y)
-    # and slightly outward (in X direction based on side)
-    thumb_base_z = wrist_z - palm_len * 0.30
-    thumb_r = s * 0.14
+    # ── Thumb ───────────────────────────────────────────────────────────────
+    # In T-pose the thumb points toward the front of the body (−Y) and
+    # slightly downward (−Z).  Thumb base sits at the palm/wrist junction;
+    # tube runs along −Y.  Using YZ-plane rings for thumb won't work here
+    # (thumb runs along Y not X), so we use Z-axis rings (_make_ring) for
+    # the thumb and let recalc_face_normals sort the winding.
+    thumb_r    = s * 0.13 * lt
+    tb_x       = wrist_x + x_sign * palm_len * 0.25   # along palm
+    tb_y_start = arm_cy - s * 0.20                     # toward front (−Y)
+    tb_z       = arm_cz - s * 0.10                     # slightly below arm cz
 
-    # Thumb base (at palm level, offset toward body front)
-    tb_x = shoulder_x + x_sign * s * 0.40
-    tb_y = -s * 0.20
-
-    thumb_base = _make_ring(bm, (tb_x, tb_y, thumb_base_z),
+    # Thumb base (6-sided ring in XY plane, at z = tb_z)
+    thumb_base = _make_ring(bm, (tb_x, tb_y_start, tb_z),
                             thumb_r, thumb_r, n=6)
 
-    # Thumb tip (angled outward and forward)
-    tt_x = shoulder_x + x_sign * s * 0.55
-    tt_y = -s * 0.35
-    thumb_tip_z = thumb_base_z - s * 0.55
-    thumb_tip = _make_ring(bm, (tt_x, tt_y, thumb_tip_z),
+    # Thumb tip (angled further toward front and down)
+    tt_y = tb_y_start - s * 0.45
+    tt_z = tb_z       - s * 0.30
+    thumb_tip = _make_ring(bm, (tb_x, tt_y, tt_z),
                            thumb_r * 0.70, thumb_r * 0.70, n=6)
 
     _bridge_rings(bm, thumb_base, thumb_tip)
-    thumb_cap, _ = _cap_ring(bm, thumb_tip, top=False)
+    thumb_cap_v, _ = _cap_ring(bm, thumb_tip, top=False)
 
-    ring_groups.append((thumb_base, f"Hand.{side}"))
-    ring_groups.append((thumb_tip, f"Hand.{side}"))
-    ring_groups.append(([thumb_cap], f"Hand.{side}"))
+    ring_groups.extend([
+        (thumb_base,      f"Hand.{side}"),
+        (thumb_tip,       f"Hand.{side}"),
+        ([thumb_cap_v],   f"Hand.{side}"),
+    ])
 
     return ring_groups
 
