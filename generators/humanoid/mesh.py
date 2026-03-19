@@ -36,110 +36,6 @@ def _apply_material(obj, skin_tone=None):
     obj.data.materials.append(mat)
 
 
-def _assign_clothing_vertex_groups(obj, clothing_face_ranges, cfg):
-    """Assign clothing vertices to bone vertex groups based on world position.
-
-    Clothing geometry merged into the body mesh has no vertex group
-    assignments.  This assigns each clothing vert to the anatomically
-    correct bone by testing its Z and X coordinates against the known
-    body ring positions — a lightweight substitute for automatic weight
-    painting that works without a live armature.
-
-    Args:
-        obj: Blender mesh object (body + clothing unified mesh)
-        clothing_face_ranges: list of (ctype, rgba, face_start, face_end)
-        cfg: body config dict
-    """
-    import bpy
-
-    sw   = cfg["shoulder_width"]
-    hw   = cfg["hip_width"]
-    leg_len  = cfg["leg_length"]
-    torso_len = cfg["torso_length"]
-    arm_len  = cfg["arm_length"]
-
-    foot_top = 0.06
-    hip_z    = foot_top + leg_len
-    waist_z  = hip_z + torso_len * 0.42
-    chest_z  = hip_z + torso_len
-    shoulder_x = sw + 0.04
-    upper_arm_len = arm_len * 0.48
-    elbow_z  = chest_z - 0.04 - upper_arm_len
-
-    # Collect clothing vertex indices from face ranges
-    clothing_vert_indices = set()
-    for _ctype, _rgba, face_start, face_end in clothing_face_ranges:
-        for poly in obj.data.polygons:
-            if face_start <= poly.index < face_end:
-                for vi in poly.vertices:
-                    clothing_vert_indices.add(vi)
-
-    if not clothing_vert_indices:
-        return
-
-    # Helper to get or create a vertex group
-    def get_vg(name):
-        vg = obj.vertex_groups.get(name)
-        if vg is None:
-            vg = obj.vertex_groups.new(name=name)
-        return vg
-
-    # Bucket verts by bone region
-    buckets = {
-        "Chest": [], "Spine": [], "Hips": [],
-        "UpperLeg.L": [], "UpperLeg.R": [],
-        "LowerLeg.L": [], "LowerLeg.R": [],
-        "UpperArm.L": [], "UpperArm.R": [],
-        "LowerArm.L": [], "LowerArm.R": [],
-    }
-
-    verts = obj.data.vertices
-    for vi in clothing_vert_indices:
-        v = verts[vi]
-        x, y, z = v.co.x, v.co.y, v.co.z
-
-        # Arm regions: X significantly outside shoulder position
-        if abs(x) > shoulder_x * 0.70:
-            side = "L" if x > 0 else "R"
-            if z > elbow_z:
-                buckets[f"UpperArm.{side}"].append(vi)
-            else:
-                buckets[f"LowerArm.{side}"].append(vi)
-        # Torso regions
-        elif z >= chest_z:
-            buckets["Chest"].append(vi)
-        elif z >= waist_z:
-            buckets["Spine"].append(vi)
-        elif z >= hip_z:
-            buckets["Hips"].append(vi)
-        # Leg regions
-        else:
-            side = "L" if x >= 0 else "R"
-            knee_z = foot_top + leg_len * 0.48
-            if z >= knee_z:
-                buckets[f"UpperLeg.{side}"].append(vi)
-            else:
-                buckets[f"LowerLeg.{side}"].append(vi)
-
-    for bone_name, vis in buckets.items():
-        if vis:
-            vg = get_vg(bone_name)
-            vg.add(vis, 1.0, 'REPLACE')
-
-
-def _add_clothing_material(obj, name, rgba, roughness=0.85):
-    """Append a new material slot to obj and return its slot index."""
-    import bpy
-    mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        bsdf.inputs["Base Color"].default_value = rgba
-        bsdf.inputs["Roughness"].default_value = roughness
-    obj.data.materials.append(mat)
-    return len(obj.data.materials) - 1
-
-
 def _apply_eye_material(obj):
     """Apply dark material for eyes."""
     import bpy
@@ -190,15 +86,6 @@ def _bmesh_to_object(bm, name, vertex_groups=None):
 def create_body(cfg):
     """Build the complete humanoid mesh from config values.
 
-    Clothing is merged into the single body bmesh BEFORE Blender object
-    creation, matching the reference blend file approach (Characters_Matt /
-    Characters_Shaun): one mesh object, multiple material slots.
-
-    Material slot layout:
-        Slot 0: skin (Humanoid_Base)
-        Slot 1: eyes (Eye_Material)
-        Slot 2+: one slot per clothing type (in spec order)
-
     Args:
         cfg: dict with body proportion values.
 
@@ -217,50 +104,6 @@ def create_body(cfg):
     from .base_mesh import build_base_mesh
 
     bm, vertex_groups, eye_face_indices = build_base_mesh(cfg)
-
-    # --- Merge clothing geometry into the body bmesh ---
-    # This keeps one unified mesh (matching reference blend files) instead of
-    # separate projected objects.  No BVH — rings are pre-sized to sit
-    # outside the body surface.
-    from . import clothing as clothing_module
-
-    clothing_type = cfg.get("clothing", "tshirt,pants")
-    clothing_color_override = cfg.get("clothing_color", None)
-
-    # clothing_face_ranges: list of (ctype, rgba, face_start, face_end)
-    clothing_face_ranges = []
-
-    if clothing_type and clothing_type != "none":
-        types = ([t.strip() for t in clothing_type.split(",")]
-                 if isinstance(clothing_type, str) else list(clothing_type))
-
-        for ctype in types:
-            clothing_bm = clothing_module.build_clothing_bmesh_for_type(cfg, ctype)
-            if clothing_bm is None:
-                continue
-
-            face_start = len(bm.faces)
-
-            # Copy verts and faces from clothing_bm into body bm.
-            # Use vert objects as dict keys (v.index is unreliable without
-            # ensure_lookup_table() and is always -1 on fresh bmeshes).
-            clothing_bm.verts.ensure_lookup_table()
-            clothing_bm.faces.ensure_lookup_table()
-            vert_map = {}  # clothing BMVert → body BMVert
-            for v in clothing_bm.verts:
-                nv = bm.verts.new(v.co)
-                vert_map[v] = nv
-            for f in clothing_bm.faces:
-                try:
-                    bm.faces.new([vert_map[v] for v in f.verts])
-                except ValueError:
-                    pass  # duplicate face (shouldn't occur but safe to skip)
-
-            clothing_bm.free()
-            face_end = len(bm.faces)
-
-            rgba = clothing_module.resolve_clothing_rgba(ctype, clothing_color_override)
-            clothing_face_ranges.append((ctype, rgba, face_start, face_end))
 
     # --- Convert unified bmesh to Blender object ---
     body = _bmesh_to_object(bm, "Humanoid_Body", vertex_groups)
@@ -284,19 +127,7 @@ def create_body(cfg):
         if poly.index in eye_set:
             poly.material_index = 1
 
-    # Slots 2+: one per clothing type
-    for ctype, rgba, face_start, face_end in clothing_face_ranges:
-        roughness = 0.40 if ctype == "armor" else 0.85
-        mat_idx = _add_clothing_material(body, f"Clothing_{ctype}", rgba, roughness)
-        for poly in body.data.polygons:
-            if face_start <= poly.index < face_end:
-                poly.material_index = mat_idx
-
     body.data.update()
-
-    # --- Assign vertex groups to clothing verts for correct armature deformation ---
-    if clothing_face_ranges:
-        _assign_clothing_vertex_groups(body, clothing_face_ranges, cfg)
 
     # --- Hair (separate object, parented to Head bone by rig.py) ---
     hair_obj = None

@@ -54,14 +54,6 @@ def parse_args():
     parser.add_argument("--hair-color", default="brown",
                         help="Hair color name or R,G,B,A values")
 
-    # Clothing
-    parser.add_argument("--clothing", default="tshirt,pants",
-                        help="Clothing type or comma-separated list "
-                             "(none, tshirt, jacket, pants, shorts, armor, robe)")
-    parser.add_argument("--clothing-color", default=None,
-                        help="Clothing color name or R,G,B,A values "
-                             "(default: per-type, e.g. grey shirt, navy pants)")
-
     # Direct proportion overrides
     parser.add_argument("--height", type=float, default=None)
     parser.add_argument("--shoulder-width", type=float, default=None)
@@ -111,8 +103,6 @@ def main():
         "skin_tone": _parse_color_value(args.skin_tone),
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
-        "clothing": args.clothing,
-        "clothing_color": _parse_color_value(args.clothing_color) if args.clothing_color else None,
         "randomize": args.randomize,
     }
 

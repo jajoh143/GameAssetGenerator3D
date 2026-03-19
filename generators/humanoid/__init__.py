@@ -9,8 +9,6 @@ from .hair import (
     HAIR_STYLES, HAIR_COLORS,
     get_hair_style_names, get_hair_color_names,
 )
-from .clothing import CLOTHING_TYPES, get_clothing_type_names
-
 # Available animations (importable without bpy)
 AVAILABLE_ANIMATIONS = ("idle", "walk", "run", "jump", "attack")
 
@@ -43,8 +41,6 @@ def generate(config=None):
     skin_tone = config.pop("skin_tone", "medium")
     hair_style = config.pop("hair_style", "short")
     hair_color = config.pop("hair_color", "brown")
-    clothing = config.pop("clothing", "tshirt,pants")
-    clothing_color = config.pop("clothing_color", None)
     anim_selection = config.pop("animations", "all")
     randomize = config.pop("randomize", False)
     seed = config.pop("seed", None)
@@ -62,12 +58,6 @@ def generate(config=None):
         seed=seed,
     )
 
-    # Store clothing in resolved config so mesh.py can use it
-    cfg["clothing"] = clothing
-    cfg["clothing_color"] = clothing_color
-
-    # Clothing is merged into the body mesh (single unified object matching
-    # reference blend files).  The third return value is always [] now.
     body, hair_obj, clothing_objs = mesh.create_body(cfg)
     armature = rig.create_rig(cfg, body, hair_obj, clothing_objs)
 
