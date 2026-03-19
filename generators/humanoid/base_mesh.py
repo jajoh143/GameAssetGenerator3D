@@ -932,19 +932,20 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups.append((nb_verts + nt_verts, "Head"))
 
     # --- Ears ---
-    # Ears centred at eye level (neck_z + head_r * 0.82) per Synty reference.
-    # The ear is a small C-shaped bump on the lateral head surface. Base X
-    # aligns with the eye-ring rx (0.83*head_r). Outer edge protrudes 0.05*head_r
-    # beyond the skull surface. ear_h = 0.06*head_r radius per spec (small bump).
-    ear_z = neck_z + head_r * 0.82   # exactly at eye level (matches eye_z above)
-    ear_h = head_r * 0.18            # ear height (visible but low-poly modest)
-    ear_depth = head_r * 0.06        # ear front-to-back thickness (C-shape depth)
+    # Ear position calibrated from Synty OBJ data (Matt_Cube.035, Lis, Shaun):
+    # OBJ shows ear protrusion at Y≈1.26-1.27, which maps to cheekbone level
+    # (neck_z + head_r * 0.62), between the cheekbone ring (0.57) and eye (0.82).
+    # Ear base X aligns with the cheekbone ring rx (0.88*head_r). Outer edge
+    # protrudes ~13% beyond skull surface. ear_h = 0.20*head_r for visibility.
+    ear_z = neck_z + head_r * 0.62   # cheekbone level (OBJ-measured)
+    ear_h = head_r * 0.20            # ear height
+    ear_depth = head_r * 0.08        # ear front-to-back thickness
 
     for x_sign in [1, -1]:
-        # Base X aligns with eye-ring rx (0.83*head_r) — the lateral skull surface
-        ear_base_x = x_sign * (head_r * 0.83)
-        # Outer ear protrudes 0.05*head_r beyond skull surface
-        ear_outer_x = x_sign * (head_r * 0.83 + head_r * 0.05)
+        # Base X aligned with cheekbone ring rx (0.88*head_r)
+        ear_base_x = x_sign * (head_r * 0.88)
+        # Outer ear protrudes ~13% beyond skull (OBJ-measured ~10-13%)
+        ear_outer_x = x_sign * (head_r * 0.88 + head_r * 0.13)
         ear_y = head_r * 0.04   # slight frontal offset (face is in -Y direction)
 
         # Inner ear ring (against head)
