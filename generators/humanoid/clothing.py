@@ -174,7 +174,12 @@ def _get_body_object():
 # ─── Clothing template builders ────────────────────────────────────────────
 
 def _build_tshirt_template(cfg):
-    """Build t-shirt template: torso tube + short sleeve tubes."""
+    """Build t-shirt template: torso tube + separate sleeve tubes.
+
+    Sleeves are independent tubes that overlap with the torso at the
+    shoulder area, avoiding the broken geometry from bridging centered
+    torso rings to offset arm rings.
+    """
     import bmesh
 
     bm = bmesh.new()
@@ -189,50 +194,45 @@ def _build_tshirt_template(cfg):
 
     foot_top = 0.06
     hip_z = foot_top + leg_len
-    lower_waist_z = hip_z + torso_len * 0.20
     waist_z = hip_z + torso_len * 0.42
     lower_chest_z = hip_z + torso_len * 0.68
     chest_z = hip_z + torso_len
 
-    # Torso rings (slightly oversized for clothing shell)
-    # Shirt hem sits at lower_waist — just above where pants waistband ends
-    scale = 1.05  # 5% larger than body
-    shirt_hem_z = hip_z + torso_len * 0.25  # slightly above lower_waist
+    scale = 1.05
+    shirt_hem_z = hip_z + torso_len * 0.25
+
+    # Torso tube
     torso_specs = [
         (shirt_hem_z,   hw * 0.78 * scale, td * 0.43 * scale),
         (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
         (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
         (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
     ]
-
     torso_rings = []
     for z, rx, ry in torso_specs:
         ring = _make_ring(bm, (0, 0, z), rx, ry)
         torso_rings.append(ring)
-
     for i in range(len(torso_rings) - 1):
         _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
 
-    # Sleeve tubes (from chest to elbow)
+    # Sleeve tubes — separate from torso, overlapping at shoulder height
     shoulder_x = sw + 0.04
-    arm_top_z = chest_z - 0.04
+    arm_top_z = chest_z - 0.02  # start slightly inside chest for overlap
     upper_arm_len = arm_len * 0.48
     elbow_z = arm_top_z - upper_arm_len
 
     for side_sign in [1, -1]:
         sx = side_sign * shoulder_x
         sleeve_specs = [
-            (arm_top_z,                    0.072 * lt * scale, 0.064 * lt * scale),
-            (arm_top_z - upper_arm_len * 0.5, 0.064 * lt * scale, 0.058 * lt * scale),
-            (elbow_z,                      0.050 * lt * scale, 0.050 * lt * scale),
+            (arm_top_z,                       0.078 * lt * scale, 0.068 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.35, 0.072 * lt * scale, 0.064 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.70, 0.062 * lt * scale, 0.058 * lt * scale),
+            (elbow_z,                         0.054 * lt * scale, 0.052 * lt * scale),
         ]
         sleeve_rings = []
         for z, rx, ry in sleeve_specs:
             ring = _make_ring(bm, (sx, 0, z), rx, ry)
             sleeve_rings.append(ring)
-
-        # Connect first sleeve ring to chest ring
-        _bridge_rings(bm, torso_rings[-1], sleeve_rings[0])
         for i in range(len(sleeve_rings) - 1):
             _bridge_rings(bm, sleeve_rings[i], sleeve_rings[i + 1])
 
@@ -263,7 +263,6 @@ def _build_jacket_template(cfg):
 
     scale = 1.08
 
-    # Torso rings
     torso_specs = [
         (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
         (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
@@ -271,23 +270,21 @@ def _build_jacket_template(cfg):
         (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
         (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
     ]
-
     torso_rings = []
     for z, rx, ry in torso_specs:
         ring = _make_ring(bm, (0, 0, z), rx, ry)
         torso_rings.append(ring)
-
     for i in range(len(torso_rings) - 1):
         _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
 
-    # Collar ring
+    # Collar
     collar_ring = _make_ring(bm, (0, 0, chest_z + neck_len * 0.3),
                              0.07 * lt, 0.07 * lt)
     _bridge_rings(bm, torso_rings[-1], collar_ring)
 
-    # Full arm tubes
+    # Separate arm tubes
     shoulder_x = sw + 0.04
-    arm_top_z = chest_z - 0.04
+    arm_top_z = chest_z - 0.02
     upper_arm_len = arm_len * 0.48
     elbow_z = arm_top_z - upper_arm_len
     lower_arm_len = arm_len * 0.52
@@ -296,18 +293,16 @@ def _build_jacket_template(cfg):
     for side_sign in [1, -1]:
         sx = side_sign * shoulder_x
         arm_specs = [
-            (arm_top_z,                          0.072 * lt * scale, 0.064 * lt * scale),
-            (arm_top_z - upper_arm_len * 0.5,    0.064 * lt * scale, 0.058 * lt * scale),
-            (elbow_z,                            0.050 * lt * scale, 0.050 * lt * scale),
-            (elbow_z - lower_arm_len * 0.3,      0.054 * lt * scale, 0.050 * lt * scale),
-            (wrist_z,                            0.042 * lt * scale, 0.038 * lt * scale),
+            (arm_top_z,                       0.078 * lt * scale, 0.068 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.5, 0.068 * lt * scale, 0.062 * lt * scale),
+            (elbow_z,                         0.054 * lt * scale, 0.054 * lt * scale),
+            (elbow_z - lower_arm_len * 0.3,   0.058 * lt * scale, 0.054 * lt * scale),
+            (wrist_z,                         0.044 * lt * scale, 0.040 * lt * scale),
         ]
         arm_rings = []
         for z, rx, ry in arm_specs:
             ring = _make_ring(bm, (sx, 0, z), rx, ry)
             arm_rings.append(ring)
-
-        _bridge_rings(bm, torso_rings[-1], arm_rings[0])
         for i in range(len(arm_rings) - 1):
             _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
 
@@ -315,7 +310,11 @@ def _build_jacket_template(cfg):
 
 
 def _build_pants_template(cfg):
-    """Build pants template: waist tube that splits into two leg tubes."""
+    """Build pants template: waist tube + separate leg tubes.
+
+    Leg tubes overlap with the waist tube at the hip area rather
+    than bridging between incompatible centered/offset rings.
+    """
     import bmesh
 
     bm = bmesh.new()
@@ -330,36 +329,35 @@ def _build_pants_template(cfg):
     foot_top = 0.06
     hip_z = foot_top + leg_len
     lower_waist_z = hip_z + torso_len * 0.20
-    waist_z = hip_z + torso_len * 0.42
     knee_z = foot_top + leg_len * 0.48
 
     scale = 1.05
 
-    # Waistband rings — top sits at lower_waist (just above hips),
-    # below where the shirt hem ends, so they don't overlap
-    belt_z = hip_z + torso_len * 0.12  # belt line, just above hip
+    # Waistband / hip section
+    belt_z = hip_z + torso_len * 0.12
+    crotch_z = hip_z - (hip_z - knee_z) * 0.15  # where waist ends, legs begin
+
     waist_specs = [
         (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
         (belt_z,        hw * 0.90 * scale, td * 0.48 * scale),
-        (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
+        (hip_z,         (hw + 0.05) * scale, td * 0.52 * scale),
+        (crotch_z,      (hw + 0.04) * scale, td * 0.50 * scale),
     ]
-
     waist_rings = []
     for z, rx, ry in waist_specs:
         ring = _make_ring(bm, (0, 0, z), rx, ry)
         waist_rings.append(ring)
-
     for i in range(len(waist_rings) - 1):
         _bridge_rings(bm, waist_rings[i], waist_rings[i + 1])
 
-    # Leg tubes (from hip to ankle)
+    # Separate leg tubes — overlap with waist at hip_z
     thigh_z = hip_z - (hip_z - knee_z) * 0.35
     calf_z = knee_z - (knee_z - foot_top) * 0.30
 
     for side_sign in [1, -1]:
         x = side_sign * hw
         leg_specs = [
-            (hip_z,    0.108 * lt * scale, 0.098 * lt * scale),
+            (hip_z,    0.112 * lt * scale, 0.100 * lt * scale),
             (thigh_z,  0.115 * lt * scale, 0.100 * lt * scale),
             (knee_z,   0.078 * lt * scale, 0.076 * lt * scale),
             (calf_z,   0.085 * lt * scale, 0.078 * lt * scale),
@@ -369,9 +367,6 @@ def _build_pants_template(cfg):
         for z, rx, ry in leg_specs:
             ring = _make_ring(bm, (x, 0, z), rx, ry)
             leg_rings.append(ring)
-
-        # Connect top leg ring to bottom waist ring
-        _bridge_rings(bm, waist_rings[-1], leg_rings[0])
         for i in range(len(leg_rings) - 1):
             _bridge_rings(bm, leg_rings[i], leg_rings[i + 1])
 
@@ -379,7 +374,7 @@ def _build_pants_template(cfg):
 
 
 def _build_shorts_template(cfg):
-    """Build shorts template: waist tube + short leg tubes to knee."""
+    """Build shorts template: waist tube + short separate leg tubes."""
     import bmesh
 
     bm = bmesh.new()
@@ -394,42 +389,40 @@ def _build_shorts_template(cfg):
     foot_top = 0.06
     hip_z = foot_top + leg_len
     lower_waist_z = hip_z + torso_len * 0.20
-    waist_z = hip_z + torso_len * 0.42
     knee_z = foot_top + leg_len * 0.48
 
     scale = 1.06
 
     belt_z = hip_z + torso_len * 0.12
+    crotch_z = hip_z - (hip_z - knee_z) * 0.15
+
     waist_specs = [
         (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
         (belt_z,        hw * 0.90 * scale, td * 0.48 * scale),
-        (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
+        (hip_z,         (hw + 0.05) * scale, td * 0.52 * scale),
+        (crotch_z,      (hw + 0.04) * scale, td * 0.50 * scale),
     ]
-
     waist_rings = []
     for z, rx, ry in waist_specs:
         ring = _make_ring(bm, (0, 0, z), rx, ry)
         waist_rings.append(ring)
-
     for i in range(len(waist_rings) - 1):
         _bridge_rings(bm, waist_rings[i], waist_rings[i + 1])
 
-    # Short leg tubes (hip to knee only)
+    # Short leg tubes
     thigh_z = hip_z - (hip_z - knee_z) * 0.35
 
     for side_sign in [1, -1]:
         x = side_sign * hw
         leg_specs = [
-            (hip_z,    0.108 * lt * scale, 0.098 * lt * scale),
+            (hip_z,    0.112 * lt * scale, 0.100 * lt * scale),
             (thigh_z,  0.115 * lt * scale, 0.100 * lt * scale),
-            (knee_z,   0.078 * lt * scale, 0.076 * lt * scale),
+            (knee_z,   0.082 * lt * scale, 0.078 * lt * scale),
         ]
         leg_rings = []
         for z, rx, ry in leg_specs:
             ring = _make_ring(bm, (x, 0, z), rx, ry)
             leg_rings.append(ring)
-
-        _bridge_rings(bm, waist_rings[-1], leg_rings[0])
         for i in range(len(leg_rings) - 1):
             _bridge_rings(bm, leg_rings[i], leg_rings[i + 1])
 
@@ -437,7 +430,7 @@ def _build_shorts_template(cfg):
 
 
 def _build_armor_template(cfg):
-    """Build armor template: thick chest plate with shoulder pads."""
+    """Build armor template: thick chest plate with separate shoulder pads."""
     import bmesh
 
     bm = bmesh.new()
@@ -456,7 +449,7 @@ def _build_armor_template(cfg):
     lower_chest_z = hip_z + torso_len * 0.68
     chest_z = hip_z + torso_len
 
-    scale = 1.12  # armor is thicker
+    scale = 1.12
 
     torso_specs = [
         (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
@@ -465,31 +458,27 @@ def _build_armor_template(cfg):
         (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
         (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
     ]
-
     torso_rings = []
     for z, rx, ry in torso_specs:
         ring = _make_ring(bm, (0, 0, z), rx, ry)
         torso_rings.append(ring)
-
     for i in range(len(torso_rings) - 1):
         _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
 
-    # Shoulder pads (short wide tubes at shoulder level)
+    # Shoulder pads as separate tubes
     shoulder_x = sw + 0.04
-    arm_top_z = chest_z - 0.04
+    arm_top_z = chest_z - 0.02
 
     for side_sign in [1, -1]:
         sx = side_sign * shoulder_x
         pad_specs = [
-            (arm_top_z,                0.085 * lt * scale, 0.075 * lt * scale),
-            (arm_top_z - 0.08,         0.078 * lt * scale, 0.068 * lt * scale),
+            (arm_top_z,        0.090 * lt * scale, 0.080 * lt * scale),
+            (arm_top_z - 0.10, 0.078 * lt * scale, 0.068 * lt * scale),
         ]
         pad_rings = []
         for z, rx, ry in pad_specs:
             ring = _make_ring(bm, (sx, 0, z), rx, ry)
             pad_rings.append(ring)
-
-        _bridge_rings(bm, torso_rings[-1], pad_rings[0])
         for i in range(len(pad_rings) - 1):
             _bridge_rings(bm, pad_rings[i], pad_rings[i + 1])
 
@@ -497,7 +486,7 @@ def _build_armor_template(cfg):
 
 
 def _build_robe_template(cfg):
-    """Build robe template: torso + sleeves + long skirt."""
+    """Build robe template: torso + skirt + separate sleeve tubes."""
     import bmesh
 
     bm = bmesh.new()
@@ -519,40 +508,26 @@ def _build_robe_template(cfg):
 
     scale = 1.06
 
-    # Upper body
-    torso_specs = [
-        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
-        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
-        (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
-        (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
+    # Upper body + skirt as one continuous tube
+    body_specs = [
+        (foot_top + 0.10,  hw + 0.18,         td * 0.65),   # skirt bottom
+        (hip_z * 0.7,      hw + 0.12,         td * 0.60),   # skirt mid
+        (hip_z,            hw + 0.06,         td * 0.55),   # hip
+        (lower_waist_z,    hw * 0.80 * scale, td * 0.44 * scale),
+        (waist_z,          sw * 0.65 * scale, td * 0.40 * scale),
+        (lower_chest_z,    sw * 0.90 * scale, td * 0.54 * scale),
+        (chest_z,          sw * 1.05 * scale, td * 0.58 * scale),
     ]
-
-    torso_rings = []
-    for z, rx, ry in torso_specs:
+    body_rings = []
+    for z, rx, ry in body_specs:
         ring = _make_ring(bm, (0, 0, z), rx, ry)
-        torso_rings.append(ring)
+        body_rings.append(ring)
+    for i in range(len(body_rings) - 1):
+        _bridge_rings(bm, body_rings[i], body_rings[i + 1])
 
-    for i in range(len(torso_rings) - 1):
-        _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
-
-    # Skirt section (waist down to ankles, flaring out)
-    skirt_specs = [
-        (hip_z,            hw + 0.06,     td * 0.55),
-        (hip_z * 0.7,      hw + 0.12,     td * 0.60),
-        (foot_top + 0.10,  hw + 0.18,     td * 0.65),
-    ]
-
-    skirt_rings = [torso_rings[0]]  # start from bottom torso ring
-    for z, rx, ry in skirt_specs:
-        ring = _make_ring(bm, (0, 0, z), rx, ry)
-        skirt_rings.append(ring)
-
-    for i in range(len(skirt_rings) - 1):
-        _bridge_rings(bm, skirt_rings[i], skirt_rings[i + 1])
-
-    # Sleeves (to forearm)
+    # Separate sleeve tubes
     shoulder_x = sw + 0.04
-    arm_top_z = chest_z - 0.04
+    arm_top_z = chest_z - 0.02
     upper_arm_len = arm_len * 0.48
     elbow_z = arm_top_z - upper_arm_len
     lower_arm_len = arm_len * 0.52
@@ -561,17 +536,15 @@ def _build_robe_template(cfg):
     for side_sign in [1, -1]:
         sx = side_sign * shoulder_x
         arm_specs = [
-            (arm_top_z,                       0.075 * lt * scale, 0.068 * lt * scale),
-            (arm_top_z - upper_arm_len * 0.5, 0.068 * lt * scale, 0.062 * lt * scale),
-            (elbow_z,                         0.055 * lt * scale, 0.055 * lt * scale),
-            (forearm_z,                       0.058 * lt * scale, 0.054 * lt * scale),
+            (arm_top_z,                       0.078 * lt * scale, 0.070 * lt * scale),
+            (arm_top_z - upper_arm_len * 0.5, 0.070 * lt * scale, 0.064 * lt * scale),
+            (elbow_z,                         0.058 * lt * scale, 0.058 * lt * scale),
+            (forearm_z,                       0.060 * lt * scale, 0.056 * lt * scale),
         ]
         arm_rings = []
         for z, rx, ry in arm_specs:
             ring = _make_ring(bm, (sx, 0, z), rx, ry)
             arm_rings.append(ring)
-
-        _bridge_rings(bm, torso_rings[-1], arm_rings[0])
         for i in range(len(arm_rings) - 1):
             _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
 

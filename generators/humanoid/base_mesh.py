@@ -563,9 +563,12 @@ def _build_head_rings(bm, cfg, neck_ring):
 
 
 def _build_hand(bm, cfg, side, wrist_ring):
-    """Build a simplified hand from the wrist ring.
+    """Build a hand with palm, finger block, and thumb.
 
-    Creates a palm (bridging from wrist) and a finger block that tapers.
+    The hand extends downward from the wrist with:
+    - A wider palm section
+    - A tapered finger block
+    - A thumb extending to the side
 
     Returns ring_groups for vertex group assignment.
     """
@@ -589,31 +592,73 @@ def _build_hand(bm, cfg, side, wrist_ring):
     wrist_z = elbow_z - lower_arm_len
 
     s = hand_size
-    palm_len = s * 1.0
-    finger_len = s * 0.80
+    palm_len = s * 1.1
+    finger_len = s * 0.90
 
-    # Palm ring (slightly wider than wrist)
+    # Palm ring — wider than wrist, flattened (wider in X, narrow in Y)
     palm_z = wrist_z - palm_len
     palm_ring = _make_ring(bm, (shoulder_x, 0, palm_z),
-                           s * 0.45, s * 0.25)
+                           s * 0.55, s * 0.20)
+
+    # Knuckle ring — slightly wider than palm
+    knuckle_z = palm_z - s * 0.15
+    knuckle_ring = _make_ring(bm, (shoulder_x, 0, knuckle_z),
+                              s * 0.52, s * 0.18)
+
+    # Finger mid ring
+    finger_mid_z = knuckle_z - finger_len * 0.50
+    finger_mid_ring = _make_ring(bm, (shoulder_x, 0, finger_mid_z),
+                                 s * 0.42, s * 0.15)
 
     # Finger tip ring (tapered)
-    finger_z = palm_z - finger_len
+    finger_z = knuckle_z - finger_len
     finger_ring = _make_ring(bm, (shoulder_x, 0, finger_z),
-                             s * 0.30, s * 0.15)
+                             s * 0.28, s * 0.10)
 
-    # Bridge wrist -> palm -> fingers
+    # Bridge wrist -> palm -> knuckles -> finger_mid -> finger tips
     _bridge_rings(bm, wrist_ring, palm_ring)
-    _bridge_rings(bm, palm_ring, finger_ring)
+    _bridge_rings(bm, palm_ring, knuckle_ring)
+    _bridge_rings(bm, knuckle_ring, finger_mid_ring)
+    _bridge_rings(bm, finger_mid_ring, finger_ring)
 
     # Cap finger tips
     cap_vert, _ = _cap_ring(bm, finger_ring, top=False)
 
     ring_groups = [
         (palm_ring, f"Hand.{side}"),
+        (knuckle_ring, f"Hand.{side}"),
+        (finger_mid_ring, f"Hand.{side}"),
         (finger_ring, f"Hand.{side}"),
         ([cap_vert], f"Hand.{side}"),
     ]
+
+    # --- Thumb ---
+    # Thumb extends from the palm toward the front of the body (-Y)
+    # and slightly outward (in X direction based on side)
+    thumb_base_z = wrist_z - palm_len * 0.30
+    thumb_r = s * 0.14
+
+    # Thumb base (at palm level, offset toward body front)
+    tb_x = shoulder_x + x_sign * s * 0.40
+    tb_y = -s * 0.20
+
+    thumb_base = _make_ring(bm, (tb_x, tb_y, thumb_base_z),
+                            thumb_r, thumb_r, n=6)
+
+    # Thumb tip (angled outward and forward)
+    tt_x = shoulder_x + x_sign * s * 0.55
+    tt_y = -s * 0.35
+    thumb_tip_z = thumb_base_z - s * 0.55
+    thumb_tip = _make_ring(bm, (tt_x, tt_y, thumb_tip_z),
+                           thumb_r * 0.70, thumb_r * 0.70, n=6)
+
+    _bridge_rings(bm, thumb_base, thumb_tip)
+    thumb_cap, _ = _cap_ring(bm, thumb_tip, top=False)
+
+    ring_groups.append((thumb_base, f"Hand.{side}"))
+    ring_groups.append((thumb_tip, f"Hand.{side}"))
+    ring_groups.append(([thumb_cap], f"Hand.{side}"))
+
     return ring_groups
 
 
@@ -687,11 +732,11 @@ def _build_foot(bm, cfg, side, ankle_ring):
 
 
 def _build_facial_details(bm, cfg, head_rings):
-    """Build eye spheres and ear geometry using head ring positions.
+    """Build eyes, ears, and nose bridge detail using head ring positions.
 
-    Eyes are placed between the nose-tip ring and brow ring, using
-    the actual head ring positions for accurate placement.
-    Ears are small loops extruding from the ear-level ring.
+    Eyes are oval shapes placed at the eye-socket level with proper depth.
+    Ears are C-shaped 3D geometry extending from the sides of the head.
+    Nose is a 3D wedge shape built between nose-tip and eye rings.
 
     Args:
         bm: bmesh instance
@@ -714,57 +759,115 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups = []
 
     # --- Eyes ---
-    # Place between nose ring (index 2) and eye ring (index 3)
-    # Eye ring verts 1 and 7 are the eye socket positions
-    eye_ring = head_rings[3]  # eye level ring
-    nose_ring = head_rings[2]  # nose tip ring
-
-    # Eye Z is between nose and brow rings
-    eye_z = neck_z + head_r * 0.70
-    eye_r = head_r * 0.055
-    eye_spacing = head_r * 0.24
-    eye_y = -(head_r * 0.78)
+    # Larger oval eyes placed in the eye socket area
+    eye_z = neck_z + head_r * 0.72
+    eye_rx = head_r * 0.10   # wider horizontally
+    eye_ry = head_r * 0.065  # narrower vertically
+    eye_spacing = head_r * 0.26
+    eye_y = -(head_r * 0.80)  # pushed forward into face
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing
-        # Build a small 6-vert sphere for each eye
-        eye_verts = _make_ring(bm, (ex, eye_y, eye_z),
-                               eye_r, eye_r, n=6)
-        # Cap the front (visible) side
-        front_cap, _ = _cap_ring(bm, eye_verts, top=True)
-        ring_groups.append((eye_verts + [front_cap], "Head"))
+        # Oval eye from two rings (front and back depth)
+        eye_front = _make_ring(bm, (ex, eye_y - eye_ry * 0.5, eye_z),
+                               eye_rx, eye_ry, n=8)
+        eye_back = _make_ring(bm, (ex, eye_y + eye_ry * 0.3, eye_z),
+                              eye_rx * 0.7, eye_ry * 0.7, n=8)
+        _bridge_rings(bm, eye_front, eye_back)
+        # Cap the front (the visible eyeball surface)
+        front_cap, _ = _cap_ring(bm, eye_front, top=True)
+        ring_groups.append((eye_front + eye_back + [front_cap], "Head"))
 
-    # --- Ears ---
-    # Ears are small loops extruding from the widest head ring (ear level)
-    ear_z = neck_z + head_r * 0.72
-    ear_r = head_r * 0.06
-    ear_protrude = head_r * 0.14
+    # --- Nose ---
+    # 3D nose as a wedge: bridge ring + tip, connected together
+    nose_bridge_z = neck_z + head_r * 0.62
+    nose_tip_z = neck_z + head_r * 0.48
+    nose_w = head_r * 0.08
+    nose_bridge_y = -(head_r * 0.82)
+    nose_tip_y = -(head_r * 0.92)
 
-    for x_sign in [1, -1]:
-        ear_x = x_sign * (head_r * 0.82 + ear_protrude)
-        ear_y = head_r * 0.05  # slightly behind center
+    # Nose bridge (narrow, at eye level)
+    nb_verts = [
+        bm.verts.new((nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.04)),
+        bm.verts.new((nose_w, nose_bridge_y - head_r * 0.04, nose_bridge_z)),
+        bm.verts.new((-nose_w, nose_bridge_y - head_r * 0.04, nose_bridge_z)),
+        bm.verts.new((-nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.04)),
+    ]
 
-        # Ear as a small flattened ring (4 verts) + cap
-        ear_verts = []
-        ear_positions = [
-            (ear_x, ear_y, ear_z + ear_r),            # top
-            (ear_x + x_sign * ear_r * 0.3, ear_y, ear_z),  # outer middle
-            (ear_x, ear_y, ear_z - ear_r),            # bottom (lobe)
-            (ear_x - x_sign * ear_r * 0.5, ear_y, ear_z),  # inner (near head)
-        ]
-        for pos in ear_positions:
-            ear_verts.append(bm.verts.new(pos))
+    # Nose tip (wider, lower)
+    nt_verts = [
+        bm.verts.new((nose_w * 1.3, nose_tip_y + head_r * 0.02, nose_tip_z + head_r * 0.02)),
+        bm.verts.new((nose_w * 1.3, nose_tip_y, nose_tip_z - head_r * 0.02)),
+        bm.verts.new((-nose_w * 1.3, nose_tip_y, nose_tip_z - head_r * 0.02)),
+        bm.verts.new((-nose_w * 1.3, nose_tip_y + head_r * 0.02, nose_tip_z + head_r * 0.02)),
+    ]
 
-        # Create the ear face
+    # Bridge nose sections
+    for i in range(4):
+        j = (i + 1) % 4
         try:
-            if x_sign > 0:
-                bm.faces.new(ear_verts)
-            else:
-                bm.faces.new(list(reversed(ear_verts)))
+            bm.faces.new([nb_verts[i], nb_verts[j], nt_verts[j], nt_verts[i]])
         except ValueError:
             pass
 
-        ring_groups.append((ear_verts, "Head"))
+    # Cap the nose tip (front face)
+    try:
+        bm.faces.new(nt_verts)
+    except ValueError:
+        pass
+
+    ring_groups.append((nb_verts + nt_verts, "Head"))
+
+    # --- Ears ---
+    # C-shaped ears with two rings forming a visible 3D shape
+    ear_z = neck_z + head_r * 0.68
+    ear_h = head_r * 0.18   # ear height
+    ear_w = head_r * 0.06   # ear thickness
+    ear_depth = head_r * 0.08
+
+    for x_sign in [1, -1]:
+        ear_base_x = x_sign * (head_r * 0.82)
+        ear_outer_x = x_sign * (head_r * 0.82 + head_r * 0.12)
+        ear_y = head_r * 0.06
+
+        # Inner ear ring (against head)
+        inner_ear = [
+            bm.verts.new((ear_base_x, ear_y - ear_depth, ear_z + ear_h)),     # top front
+            bm.verts.new((ear_base_x, ear_y + ear_depth, ear_z + ear_h * 0.8)), # top back
+            bm.verts.new((ear_base_x, ear_y + ear_depth, ear_z - ear_h * 0.6)), # bottom back
+            bm.verts.new((ear_base_x, ear_y - ear_depth * 0.5, ear_z - ear_h)),   # lobe
+        ]
+
+        # Outer ear ring (protruding)
+        outer_ear = [
+            bm.verts.new((ear_outer_x, ear_y - ear_depth * 0.8, ear_z + ear_h * 0.90)),
+            bm.verts.new((ear_outer_x, ear_y + ear_depth * 0.6, ear_z + ear_h * 0.65)),
+            bm.verts.new((ear_outer_x, ear_y + ear_depth * 0.6, ear_z - ear_h * 0.45)),
+            bm.verts.new((ear_outer_x, ear_y - ear_depth * 0.4, ear_z - ear_h * 0.80)),
+        ]
+
+        # Bridge inner to outer
+        n = len(inner_ear)
+        for i in range(n):
+            j = (i + 1) % n
+            try:
+                if x_sign > 0:
+                    bm.faces.new([inner_ear[i], inner_ear[j], outer_ear[j], outer_ear[i]])
+                else:
+                    bm.faces.new([inner_ear[j], inner_ear[i], outer_ear[i], outer_ear[j]])
+            except ValueError:
+                pass
+
+        # Cap outer face
+        try:
+            if x_sign > 0:
+                bm.faces.new(outer_ear)
+            else:
+                bm.faces.new(list(reversed(outer_ear)))
+        except ValueError:
+            pass
+
+        ring_groups.append((inner_ear + outer_ear, "Head"))
 
     return ring_groups
 
