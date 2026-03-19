@@ -122,6 +122,7 @@ def _build_torso_rings(bm, cfg):
     torso_len = cfg["torso_length"]
     leg_len = cfg["leg_length"]
     neck_len = cfg["neck_length"]
+    head_r = cfg.get("head_size", 0.17)
     gender = cfg.get("gender", "neutral")
 
     foot_top = 0.06
@@ -160,7 +161,7 @@ def _build_torso_rings(bm, cfg):
         (waist_z,      sw * 0.76 * waist_rx_mult,  sw * 0.51, "Spine"),  # waist (hourglass)
         (lower_chest_z, sw * 0.68,                 sw * 0.63, "Chest"),  # lower chest / rib cage
         (chest_z,      sw * 0.87 * chest_rx_mult,  sw * 0.75, "Chest"),  # chest top
-        (neck_z,       0.060,                       0.055,     "Neck"),   # neck base
+        (neck_z,       head_r * 0.35,               head_r * 0.32, "Neck"),  # neck base (scaled to head)
     ]
 
     rings = {}

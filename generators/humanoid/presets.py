@@ -26,10 +26,10 @@ from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color
 
 PRESETS = {
     "average": {
-        "height": 2.00,          # actual mesh height ~2.0m (6.6-head proportion)
+        "height": 2.00,          # actual mesh height ~2.0m (5-head cartoon proportion)
         "shoulder_width": 0.42,
         "hip_width": 0.27,
-        "head_size": 0.17,       # reduced for ~6.5-head body proportion
+        "head_size": 0.20,       # 5-head cartoon proportion (head_r = height/10)
         "arm_length": 0.68,
         "leg_length": 0.88,
         "torso_length": 0.64,
@@ -44,7 +44,7 @@ PRESETS = {
         "height": 2.25,          # actual mesh height ~2.25m
         "shoulder_width": 0.44,
         "hip_width": 0.26,
-        "head_size": 0.18,       # slightly larger than average (proportionally slimmer look)
+        "head_size": 0.22,       # 5-head cartoon proportion
         "arm_length": 0.78,
         "leg_length": 1.02,
         "torso_length": 0.72,
@@ -59,7 +59,7 @@ PRESETS = {
         "height": 1.65,          # actual mesh height ~1.65m
         "shoulder_width": 0.36,
         "hip_width": 0.26,
-        "head_size": 0.15,       # smaller head for realistic short adult proportions
+        "head_size": 0.17,       # 5-head cartoon proportion
         "arm_length": 0.55,
         "leg_length": 0.72,
         "torso_length": 0.54,
@@ -74,7 +74,7 @@ PRESETS = {
         "height": 1.40,          # actual mesh height ~1.4m
         "shoulder_width": 0.26,
         "hip_width": 0.22,
-        "head_size": 0.20,       # proportionally larger head (children ~5-head proportion)
+        "head_size": 0.22,       # ~3.2-head proportion — chibi/cartoon child style
         "arm_length": 0.42,
         "leg_length": 0.52,
         "torso_length": 0.44,
@@ -89,7 +89,7 @@ PRESETS = {
         "height": 2.20,          # actual mesh height ~2.2m
         "shoulder_width": 0.58,
         "hip_width": 0.35,
-        "head_size": 0.17,       # small head emphasizes massive body
+        "head_size": 0.20,       # slightly below 5-head — massive body reads bigger
         "arm_length": 0.82,
         "leg_length": 1.00,
         "torso_length": 0.76,
@@ -104,7 +104,7 @@ PRESETS = {
         "height": 2.10,          # actual mesh height ~2.1m
         "shoulder_width": 0.34,
         "hip_width": 0.22,
-        "head_size": 0.16,
+        "head_size": 0.21,       # 5-head cartoon proportion
         "arm_length": 0.75,
         "leg_length": 0.98,
         "torso_length": 0.62,
