@@ -159,8 +159,8 @@ def _build_torso_rings(bm, cfg):
         (hip_z,        sw * 1.00 * hip_rx_mult,    sw * 0.53, "Hips"),   # hip centre
         (lower_waist_z, sw * 0.94,                 sw * 0.53, "Hips"),   # lower abdomen
         (waist_z,      sw * 0.76 * waist_rx_mult,  sw * 0.51, "Spine"),  # waist (hourglass)
-        (lower_chest_z, sw * 0.72,                 sw * 0.65, "Chest"),  # lower chest / rib cage
-        (chest_z,      sw * 0.92 * chest_rx_mult,  sw * 0.80, "Chest"),  # chest top (wider for arm merge)
+        (lower_chest_z, sw * 0.82,                 sw * 0.68, "Chest"),  # lower chest / rib cage
+        (chest_z,      sw * chest_rx_mult,          sw * 0.75, "Chest"),  # chest top = full shoulder width
         (neck_z,       head_r * 0.40,               head_r * 0.36, "Neck"),  # neck base
     ]
 
@@ -329,19 +329,18 @@ def _build_leg_junction(bm, hip_ring, leg_top_ring, side):
 def _build_arm(bm, cfg, side, chest_ring):
     """Build one arm from shoulder to wrist.
 
-    The shoulder ring shares one vertex with the chest ring for seamless
-    topology: arm_top_ring[6] (L) or arm_top_ring[2] (R) is the same
-    object as chest_ring[2] (L) or chest_ring[6] (R).  This eliminates
-    the junction gap without any separate bridging function.
-
-    A shoulder dome cap (raised triangle fan) closes the top of the arm
-    tube and forms the rounded shoulder silhouette.
+    The arm ring is centred at the torso's outer shoulder edge so the arm
+    tube naturally overlaps into the torso body.  The inner half of the arm
+    is hidden inside the torso; the outer half and the shoulder dome cap are
+    visible.  No explicit junction geometry is needed — the torso is a
+    complete closed surface, and so is the arm+dome.
 
     Args:
         bm: bmesh instance
         cfg: body config
         side: "L" or "R"
-        chest_ring: the chest ring vertices from torso
+        chest_ring: the chest ring vertices from torso (unused here, kept for
+                    API compatibility with build_base_mesh)
 
     Returns:
         (wrist_ring, ring_groups)
@@ -358,9 +357,11 @@ def _build_arm(bm, cfg, side, chest_ring):
 
     x_sign = 1 if side == "L" else -1
 
-    # Mirror the chest_rx formula from _build_torso_rings so the arm inner
-    # vert lands exactly on the chest outer vert (shared-topology join).
-    # chest_ring[2] (L) is at (+chest_rx, 0); chest_ring[6] (R) at (-chest_rx, 0).
+    # Mirror the chest_rx formula from _build_torso_rings.
+    # Arm centre is placed AT the chest outer vert so that the inner half
+    # of the arm tube overlaps into the torso (hidden) and the outer half
+    # is the visible shoulder/arm geometry.  This avoids any gap between
+    # torso and arm without needing junction faces.
     gender = cfg.get("gender", "neutral")
     if gender == "male":
         chest_rx_mult = 1.05
@@ -368,14 +369,8 @@ def _build_arm(bm, cfg, side, chest_ring):
         chest_rx_mult = 0.97
     else:
         chest_rx_mult = 1.00
-    chest_rx = sw * 0.92 * chest_rx_mult
-
-    arm_top_rx = 0.092 * lt
-    arm_top_ry = 0.080 * lt
-    # arm vert i=6 (L) / i=2 (R) is at (shoulder_x ∓ arm_top_rx, 0)
-    # → setting shoulder_x = chest_rx + arm_top_rx makes it coincide with
-    #   the chest outer vert.
-    shoulder_x = x_sign * (chest_rx + arm_top_rx)
+    chest_rx = sw * chest_rx_mult
+    shoulder_x = x_sign * chest_rx
 
     arm_top_z = chest_z
     upper_arm_len = arm_len * 0.48
@@ -389,7 +384,7 @@ def _build_arm(bm, cfg, side, chest_ring):
 
     arm_rings_spec = [
         # (z, rx, ry, bone_name)
-        (arm_top_z,  arm_top_rx,  arm_top_ry,  f"UpperArm.{side}"),
+        (arm_top_z,  0.092 * lt,  0.080 * lt,  f"UpperArm.{side}"),
         (deltoid_z,  0.108 * lt,  0.094 * lt,  f"UpperArm.{side}"),
         (bicep_z,    0.090 * lt,  0.079 * lt,  f"UpperArm.{side}"),
         (elbow_z,    0.068 * lt,  0.060 * lt,  f"LowerArm.{side}"),
@@ -400,27 +395,8 @@ def _build_arm(bm, cfg, side, chest_ring):
     rings = []
     ring_groups = []
 
-    # Which vert index in the arm top ring is the shared (inner) vert?
-    # L: i=6 → (shoulder_x - arm_rx, 0) = (chest_rx, 0) = chest_ring[2]
-    # R: i=2 → (shoulder_x + arm_rx, 0) = (-chest_rx, 0) = chest_ring[6]
-    shared_arm_idx   = 6 if side == "L" else 2
-    shared_chest_idx = 2 if side == "L" else 6
-
-    for ring_i, (z, rx, ry, bone_name) in enumerate(arm_rings_spec):
-        if ring_i == 0:
-            # Build shoulder ring manually, substituting the inner vert with
-            # the already-existing chest ring vert (shared topology).
-            ring = []
-            for i in range(RING_VERTS):
-                if i == shared_arm_idx:
-                    ring.append(chest_ring[shared_chest_idx])
-                else:
-                    angle = 2 * math.pi * i / RING_VERTS
-                    lx = shoulder_x + rx * math.sin(angle)
-                    ly = -ry * math.cos(angle)
-                    ring.append(bm.verts.new((lx, ly, z)))
-        else:
-            ring = _make_ring(bm, (shoulder_x, 0, z), rx, ry)
+    for z, rx, ry, bone_name in arm_rings_spec:
+        ring = _make_ring(bm, (shoulder_x, 0, z), rx, ry)
         rings.append(ring)
         ring_groups.append((ring, bone_name))
 
@@ -428,11 +404,10 @@ def _build_arm(bm, cfg, side, chest_ring):
     for i in range(len(rings) - 1):
         _bridge_rings(bm, rings[i], rings[i + 1])
 
-    # Shoulder dome: raised triangle fan closing the top of the arm tube.
-    # All 8 arm top verts are capped; the shared vert (chest_ring[2/6]) is
-    # included naturally — no new edges conflict with existing chest bridges.
+    # Shoulder dome: raised triangle fan sealing the top of the arm tube.
+    # cap_v is elevated to give a rounded cartoony shoulder silhouette.
     arm_top_ring = rings[0]
-    cap_v = bm.verts.new((shoulder_x, 0, arm_top_z + 0.025))
+    cap_v = bm.verts.new((shoulder_x, 0, arm_top_z + 0.045))
     n = len(arm_top_ring)
     for i in range(n):
         j = (i + 1) % n
@@ -668,9 +643,8 @@ def _build_hand(bm, cfg, side, wrist_ring):
         chest_rx_mult = 0.97
     else:
         chest_rx_mult = 1.00
-    chest_rx = sw * 0.92 * chest_rx_mult
-    arm_top_rx = 0.092 * lt
-    shoulder_x = x_sign * (chest_rx + arm_top_rx)
+    chest_rx = sw * chest_rx_mult
+    shoulder_x = x_sign * chest_rx
 
     arm_top_z = chest_z              # match _build_arm so hand connects to wrist
     upper_arm_len = arm_len * 0.48

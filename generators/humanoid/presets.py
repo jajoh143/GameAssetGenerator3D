@@ -27,8 +27,8 @@ from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color
 PRESETS = {
     "average": {
         "height": 2.00,          # actual mesh height ~2.0m
-        "shoulder_width": 0.42,
-        "hip_width": 0.27,
+        "shoulder_width": 0.36,
+        "hip_width": 0.25,
         "head_size": 0.25,       # 4-head cartoon proportion matching Synty style
         "arm_length": 0.68,
         "leg_length": 0.88,
@@ -42,8 +42,8 @@ PRESETS = {
     },
     "tall": {
         "height": 2.25,          # actual mesh height ~2.25m
-        "shoulder_width": 0.44,
-        "hip_width": 0.26,
+        "shoulder_width": 0.38,
+        "hip_width": 0.24,
         "head_size": 0.26,       # 4-head cartoon proportion
         "arm_length": 0.78,
         "leg_length": 1.02,
@@ -57,8 +57,8 @@ PRESETS = {
     },
     "short": {
         "height": 1.65,          # actual mesh height ~1.65m
-        "shoulder_width": 0.36,
-        "hip_width": 0.26,
+        "shoulder_width": 0.31,
+        "hip_width": 0.24,
         "head_size": 0.21,       # 4-head cartoon proportion
         "arm_length": 0.55,
         "leg_length": 0.72,
@@ -102,8 +102,8 @@ PRESETS = {
     },
     "slender": {
         "height": 2.10,          # actual mesh height ~2.1m
-        "shoulder_width": 0.34,
-        "hip_width": 0.22,
+        "shoulder_width": 0.29,
+        "hip_width": 0.20,
         "head_size": 0.25,       # 4-head cartoon proportion
         "arm_length": 0.75,
         "leg_length": 0.98,
