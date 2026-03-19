@@ -142,6 +142,11 @@ def main():
         if val is not None:
             config[key] = val
 
+    # Signal to template_mesh.py that height was explicitly requested.
+    # Without this flag the template mesh is imported at its natural dimensions.
+    if args.height is not None:
+        config["height_override"] = args.height
+
     mesh_src = f"template({args.lod})" if args.use_template else "procedural"
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
           f"gender={args.gender}, skin={args.skin_tone}, "

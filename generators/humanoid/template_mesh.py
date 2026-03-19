@@ -140,17 +140,21 @@ def _clear_non_mesh_objects(keep_names: set):
         bpy.data.objects.remove(obj, do_unlink=True)
 
 
-def _normalise_mesh(obj, target_height: float):
-    """Apply transforms, feet-at-Z=0, and scale to target height.
+def _normalise_mesh(obj, target_height: float = None) -> float:
+    """Apply transforms and position feet at Z=0.
 
-    Steps:
-    1. Apply all current object transforms so scale is (1,1,1).
-    2. Move the mesh so its lowest point sits at Z=0.
-    3. Scale uniformly so the total bounding-box height equals target_height.
+    Optionally scales the mesh to a specific height — only used when the user
+    has explicitly requested a non-default height via --height.  Otherwise the
+    mesh is imported at its natural dimensions so the artist's proportions are
+    preserved exactly.
 
     Args:
         obj: Blender mesh object.
-        target_height: Desired total height in metres.
+        target_height: If provided, scale the mesh uniformly to this height
+            (metres).  If None, no scaling is applied.
+
+    Returns:
+        Actual mesh height in metres after positioning (and optional scaling).
     """
     import bpy
 
@@ -158,10 +162,10 @@ def _normalise_mesh(obj, target_height: float):
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-    # Apply all transforms (location, rotation, scale)
+    # Apply all transforms (location, rotation, scale) so values are clean
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    # Re-read bounding box after apply
+    # Measure bounding box
     local_coords = [obj.matrix_world @ __import__('mathutils').Vector(v) for v in obj.bound_box]
     min_z = min(v.z for v in local_coords)
     max_z = max(v.z for v in local_coords)
@@ -170,14 +174,18 @@ def _normalise_mesh(obj, target_height: float):
     if mesh_height < 1e-6:
         raise RuntimeError("Imported mesh has zero height — cannot normalise.")
 
-    # Shift feet to Z=0
+    # Always position feet at Z=0
     obj.location.z -= min_z
     bpy.ops.object.transform_apply(location=True)
 
-    # Uniform scale to target height
-    scale_factor = target_height / mesh_height
-    obj.scale = (scale_factor, scale_factor, scale_factor)
-    bpy.ops.object.transform_apply(scale=True)
+    # Only scale if the caller explicitly requested a specific height
+    if target_height is not None:
+        scale_factor = target_height / mesh_height
+        obj.scale = (scale_factor, scale_factor, scale_factor)
+        bpy.ops.object.transform_apply(scale=True)
+        return target_height
+
+    return mesh_height
 
 
 def _clear_vertex_groups(obj):
@@ -243,7 +251,9 @@ def create_body_from_template(cfg: dict):
 
     gender = cfg.get("gender", "neutral")
     lod = cfg.get("lod", "low")
-    target_height = cfg.get("height", 1.75)
+    # Only scale if the user explicitly passed --height; never apply preset/build/gender
+    # multiplied heights to the template mesh — that would distort the artist's work.
+    height_override = cfg.get("height_override", None)
     skin_tone = cfg.get("skin_tone", None)
 
     # ── Clear scene ────────────────────────────────────────────────────────
@@ -263,8 +273,14 @@ def create_body_from_template(cfg: dict):
     keep = scene_before | {mesh_obj.name}
     _clear_non_mesh_objects(keep)
 
-    # ── Normalise geometry ─────────────────────────────────────────────────
-    _normalise_mesh(mesh_obj, target_height)
+    # ── Position (and optionally scale) ───────────────────────────────────
+    # Pass height_override only when user explicitly requested a specific height.
+    # Otherwise the mesh is imported at its natural dimensions.
+    actual_height = _normalise_mesh(mesh_obj, height_override)
+
+    # Update cfg so that rig.py positions bones against the mesh's real height,
+    # not a preset value that may not match the template mesh.
+    cfg["height"] = actual_height
 
     # ── Clear vertex groups so auto-weight works cleanly ──────────────────
     _clear_vertex_groups(mesh_obj)
@@ -277,20 +293,15 @@ def create_body_from_template(cfg: dict):
     # ── Materials ─────────────────────────────────────────────────────────
     _apply_skin_material(mesh_obj, skin_tone)
 
-    # ── Hair (uses existing procedural hair system) ────────────────────────
+    # ── Hair: derive head position from actual mesh height ─────────────────
+    # Use standard human proportions (head ~13% of height, neck at ~87%) rather
+    # than our procedural cfg values which were designed for the generated mesh.
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
     if hair_style and hair_style != "none":
-        head_r = cfg.get("head_size", 0.20)
-        leg_len = cfg.get("leg_length", 0.46)
-        torso_len = cfg.get("torso_length", 0.43)
-        neck_len = cfg.get("neck_length", 0.06)
-        foot_top = 0.06
-        hip_z = foot_top + leg_len
-        chest_z = hip_z + torso_len
-        neck_z = chest_z + neck_len
-        head_z = neck_z + head_r
+        head_r = actual_height * 0.13
+        head_z = actual_height * 0.87 + head_r
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
     return mesh_obj, hair_obj, []
