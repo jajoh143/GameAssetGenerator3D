@@ -518,120 +518,111 @@ def _build_head_rings(bm, cfg, neck_ring):
     rings = []
     ring_groups = []
 
+    # Head ring proportions calibrated from reference blend file analysis
+    # (Characters_Matt.blend / Characters_Shaun.blend):
+    #   head width ≈ head height  (near-square, width/height ≈ 1.03)
+    #   total head height ≈ head_r * 1.90 (jaw_base at +0.02 → crown at +0.90)
+    #   → widest rx ≈ head_r * 0.95  (so 2*0.95*head_r ≈ head_r*1.90 = height)
+    #
+    # Previous rings were too narrow (widest rx was head_r*0.88, making head
+    # visibly taller than wide). All rx/ry values scaled up by ~1.08x.
+
     # --- Ring 0: Jaw base (transition ring) ---
-    # Smooths the neck-to-jaw transition. Sits just above the neck ring at
-    # neck_z + head_r * 0.02, with rx ~48% of head_r — wider than the neck
-    # (0.060) but narrower than the chin ring (0.60*head_r) below, creating
-    # a gradual flare from neck into the jawline rather than an abrupt step.
     jaw_base_z = neck_z + head_r * 0.02
     jaw_base_ring = _make_head_ring(bm, (0, 0, jaw_base_z),
-                                    head_r * 0.48, head_r * 0.44)
+                                    head_r * 0.54, head_r * 0.50)
     rings.append(jaw_base_ring)
     ring_groups.append((jaw_base_ring, "Head"))
 
     # --- Ring 1: Chin ---
-    # Wide, square Synty jawline — reference shows jaw ~68% of cheekbone width.
-    # Increased from rx=0.44 to rx=0.60 to match Synty square jaw proportions.
+    # Wider square Synty jawline.
     chin_z = neck_z + head_r * 0.06
     chin_ring = _make_head_ring(bm, (0, 0, chin_z),
-                                head_r * 0.60, head_r * 0.56,
+                                head_r * 0.70, head_r * 0.64,
                                 front_offsets={
-                                    0: (0, -head_r * 0.08, -head_r * 0.02),  # subtle chin point
-                                    1: (0, -head_r * 0.03, 0),   # jaw corner L
-                                    7: (0, -head_r * 0.03, 0),   # jaw corner R
+                                    0: (0, -head_r * 0.08, -head_r * 0.02),
+                                    1: (0, -head_r * 0.03, 0),
+                                    7: (0, -head_r * 0.03, 0),
                                 })
     rings.append(chin_ring)
     ring_groups.append((chin_ring, "Head"))
 
-    # --- Ring 1: Mouth / lower jaw ---
-    # Raised to the lower-quarter of the face (classic 1/4 face proportion).
-    # Slightly widened for Synty square jaw profile.
+    # --- Ring 2: Mouth / lower jaw ---
     mouth_z = neck_z + head_r * 0.32
     mouth_ring = _make_head_ring(bm, (0, 0, mouth_z),
-                                 head_r * 0.70, head_r * 0.65,
+                                 head_r * 0.80, head_r * 0.74,
                                  front_offsets={
-                                     0: (0, -head_r * 0.04, 0),   # gentle lip plane
-                                     1: (0, -head_r * 0.02, 0),   # mouth corner L
-                                     7: (0, -head_r * 0.02, 0),   # mouth corner R
+                                     0: (0, -head_r * 0.04, 0),
+                                     1: (0, -head_r * 0.02, 0),
+                                     7: (0, -head_r * 0.02, 0),
                                  })
     rings.append(mouth_ring)
     ring_groups.append((mouth_ring, "Head"))
 
-    # --- Ring 2: Cheekbone / nose base ---
-    # Widest ring — reference OBJ confirms cheekbone is the maximum skull width.
-    # Increased from rx=0.78 to rx=0.88 making this the widest head ring.
+    # --- Ring 3: Cheekbone / nose base ---
+    # Widest ring — rx ≈ 0.95 makes the head near-square (width ≈ height).
     nose_z = neck_z + head_r * 0.57
     nose_ring = _make_head_ring(bm, (0, 0, nose_z),
-                                head_r * 0.88, head_r * 0.82,
+                                head_r * 0.95, head_r * 0.88,
                                 front_offsets={
-                                    0: (0, -head_r * 0.08, 0),   # very subtle nose base
-                                    1: (0, -head_r * 0.03, 0),   # nostril edge L
-                                    7: (0, -head_r * 0.03, 0),   # nostril edge R
-                                    2: (head_r * 0.04, 0, 0),    # cheekbone L
-                                    6: (-head_r * 0.04, 0, 0),   # cheekbone R
+                                    0: (0, -head_r * 0.08, 0),
+                                    1: (0, -head_r * 0.03, 0),
+                                    7: (0, -head_r * 0.03, 0),
+                                    2: (head_r * 0.04, 0, 0),
+                                    6: (-head_r * 0.04, 0, 0),
                                 })
     rings.append(nose_ring)
     ring_groups.append((nose_ring, "Head"))
 
-    # --- Ring 3: Eye level ---
-    # 2/3 up from chin (classic "rule of thirds" face proportion).
-    # Narrowed from rx=0.86 to rx=0.83 — eye ring is now slightly less wide
-    # than cheekbone, matching reference skull taper toward eye sockets.
+    # --- Ring 4: Eye level ---
     eye_z = neck_z + head_r * 0.82
     eye_ring = _make_head_ring(bm, (0, 0, eye_z),
-                               head_r * 0.83, head_r * 0.77,
+                               head_r * 0.90, head_r * 0.83,
                                front_offsets={
-                                   0: (0, -head_r * 0.05, 0),    # nose bridge (subtle)
-                                   1: (head_r * 0.02, head_r * 0.02, 0),  # eye plane L
-                                   7: (-head_r * 0.02, head_r * 0.02, 0), # eye plane R
-                                   2: (head_r * 0.04, 0, 0),     # subtle temple L
-                                   6: (-head_r * 0.04, 0, 0),    # subtle temple R
+                                   0: (0, -head_r * 0.05, 0),
+                                   1: (head_r * 0.02, head_r * 0.02, 0),
+                                   7: (-head_r * 0.02, head_r * 0.02, 0),
+                                   2: (head_r * 0.04, 0, 0),
+                                   6: (-head_r * 0.04, 0, 0),
                                })
     rings.append(eye_ring)
     ring_groups.append((eye_ring, "Head"))
 
-    # --- Ring 4: Brow ridge ---
-    # Just above eye level — brow ridge starts tapering toward forehead dome.
-    # Reduced from rx=0.88 to rx=0.80 to properly taper above the cheekbone.
+    # --- Ring 5: Brow ridge ---
     brow_z = neck_z + head_r * 1.00
     brow_ring = _make_head_ring(bm, (0, 0, brow_z),
-                                head_r * 0.80, head_r * 0.74,
+                                head_r * 0.88, head_r * 0.82,
                                 front_offsets={
-                                    0: (0, -head_r * 0.05, 0),   # brow center
-                                    1: (0, -head_r * 0.04, 0),   # brow L
-                                    7: (0, -head_r * 0.04, 0),   # brow R
+                                    0: (0, -head_r * 0.05, 0),
+                                    1: (0, -head_r * 0.04, 0),
+                                    7: (0, -head_r * 0.04, 0),
                                 })
     rings.append(brow_ring)
     ring_groups.append((brow_ring, "Head"))
 
-    # --- Ring 5: Forehead ---
-    # Upper face — smooth dome begins here. Significantly reduced from rx=0.86
-    # to rx=0.65 to match the upper-cranium taper seen in reference OBJ.
-    # The forehead is noticeably narrower than the brow ridge in Synty characters.
+    # --- Ring 6: Forehead ---
     forehead_z = head_z + head_r * 0.28
     forehead_ring = _make_head_ring(bm, (0, 0, forehead_z),
-                                    head_r * 0.65, head_r * 0.60,
+                                    head_r * 0.74, head_r * 0.68,
                                     front_offsets={
-                                        0: (0, -head_r * 0.04, 0),  # forehead bulge
+                                        0: (0, -head_r * 0.04, 0),
                                         1: (0, -head_r * 0.02, 0),
                                         7: (0, -head_r * 0.02, 0),
                                     })
     rings.append(forehead_ring)
     ring_groups.append((forehead_ring, "Head"))
 
-    # --- Ring 6: Upper cranium ---
-    # Dome transition — reduced from rx=0.72 to rx=0.48 for a rounder skull cap.
+    # --- Ring 7: Upper cranium ---
     upper_z = head_z + head_r * 0.58
     upper_ring = _make_ring(bm, (0, 0, upper_z),
-                            head_r * 0.48, head_r * 0.44)
+                            head_r * 0.54, head_r * 0.50)
     rings.append(upper_ring)
     ring_groups.append((upper_ring, "Head"))
 
-    # --- Ring 7: Crown approach ---
-    # Tight crown — reduced from rx=0.40 to rx=0.27 for a rounder skull dome.
+    # --- Ring 8: Crown approach ---
     crown_z = head_z + head_r * 0.90
     crown_ring = _make_ring(bm, (0, 0, crown_z),
-                            head_r * 0.27, head_r * 0.24)
+                            head_r * 0.31, head_r * 0.28)
     rings.append(crown_ring)
     ring_groups.append((crown_ring, "Head"))
 
@@ -868,15 +859,13 @@ def _build_facial_details(bm, cfg, head_rings):
     # Large oval eye pads matching Synty style: big circular/oval eyes with
     # flat colour, no iris detail. Positioned at 2/3 face height from chin
     # (neck_z + head_r * 0.82, matching the eye ring in _build_head_rings).
-    # rx=0.12*head_r, ry=0.08*head_r gives a clearly visible oval. Eyes are
-    # pushed forward 0.04*head_r relative to the face plane so they sit proud
-    # of the head surface like a subtle rounded pad (Synty characteristic).
+    # eye_y now tracks the updated (wider) eye ring ry = 0.83*head_r.
     eye_z = neck_z + head_r * 0.82       # exactly at eye-ring level
-    eye_rx = head_r * 0.12               # horizontal half-width (Synty large eye)
-    eye_ry = head_r * 0.08               # vertical half-height (oval, wider than tall)
-    eye_spacing = head_r * 0.35          # ±35% of head_r from face centre laterally
-    # Face surface at eye-ring ry level, then push the eye pad 0.04*head_r forward
-    eye_y = -(head_r * 0.77) - head_r * 0.04   # face plane + forward prominence
+    eye_rx = head_r * 0.13               # slightly wider eye for bigger head
+    eye_ry = head_r * 0.09               # vertical half-height
+    eye_spacing = head_r * 0.38          # wider spacing to match wider face
+    # Face plane at eye ring ry (0.83), push pad forward by 0.04
+    eye_y = -(head_r * 0.83) - head_r * 0.04
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing
@@ -897,14 +886,13 @@ def _build_facial_details(bm, cfg, head_rings):
         ring_groups.append((eye_front + eye_back + [front_cap], "Head"))
 
     # --- Nose ---
-    # Very subtle nose panel — just enough geometry to read as a nose in low-poly.
-    # Positioned to match the raised cheek/nose ring (Ring 2 at 0.57 * head_r).
-    nose_bridge_z = neck_z + head_r * 0.72   # upper nose, between Ring 2 and eye ring
-    nose_tip_z = neck_z + head_r * 0.55      # nose base, at Ring 2 level
+    # Nose positions updated to match the wider head rings.
+    # cheekbone ring ry = 0.88*head_r, eye ring ry = 0.83*head_r.
+    nose_bridge_z = neck_z + head_r * 0.72
+    nose_tip_z = neck_z + head_r * 0.55
     nose_w = head_r * 0.07
-    # Face front at cheek level: ring ry (head_r * 0.74) + small offset
-    nose_bridge_y = -(head_r * 0.80)
-    nose_tip_y = -(head_r * 0.76)
+    nose_bridge_y = -(head_r * 0.86)   # matches new nose ring ry (0.88) roughly
+    nose_tip_y = -(head_r * 0.84)
 
     nb_verts = [
         bm.verts.new(( nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.03)),
@@ -933,20 +921,14 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups.append((nb_verts + nt_verts, "Head"))
 
     # --- Ears ---
-    # Ear position calibrated from Synty OBJ data (Matt_Cube.035, Lis, Shaun):
-    # OBJ shows ear protrusion at Y≈1.26-1.27, which maps to cheekbone level
-    # (neck_z + head_r * 0.62), between the cheekbone ring (0.57) and eye (0.82).
-    # Ear base X aligns with the cheekbone ring rx (0.88*head_r). Outer edge
-    # protrudes ~13% beyond skull surface. ear_h = 0.20*head_r for visibility.
-    ear_z = neck_z + head_r * 0.62   # cheekbone level (OBJ-measured)
-    ear_h = head_r * 0.20            # ear height
-    ear_depth = head_r * 0.08        # ear front-to-back thickness
+    # Ear base X updated to match new wider cheekbone ring rx (0.95*head_r).
+    ear_z = neck_z + head_r * 0.62
+    ear_h = head_r * 0.20
+    ear_depth = head_r * 0.08
 
     for x_sign in [1, -1]:
-        # Base X aligned with cheekbone ring rx (0.88*head_r)
-        ear_base_x = x_sign * (head_r * 0.88)
-        # Outer ear protrudes ~13% beyond skull (OBJ-measured ~10-13%)
-        ear_outer_x = x_sign * (head_r * 0.88 + head_r * 0.13)
+        ear_base_x = x_sign * (head_r * 0.95)          # aligns with new nose ring rx
+        ear_outer_x = x_sign * (head_r * 0.95 + head_r * 0.13)
         ear_y = head_r * 0.04   # slight frontal offset (face is in -Y direction)
 
         # Inner ear ring (against head)
