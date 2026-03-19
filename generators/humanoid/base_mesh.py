@@ -127,15 +127,17 @@ def _build_torso_rings(bm, cfg):
     neck_z = chest_z + neck_len
 
     # Ring radii (rx=width, ry=depth) — hourglass silhouette
+    # Wider chest, narrower waist, and a clearer shoulder ledge give a more
+    # human-readable silhouette even at low poly counts.
     rings_spec = [
         # (z, rx, ry, bone_name)
-        (hip_z - 0.02,    hw + 0.04,   td * 0.48,   "Hips"),       # pelvis base
-        (hip_z,           hw + 0.05,   td * 0.52,   "Hips"),       # hip center
-        (lower_waist_z,   hw * 0.80,   td * 0.44,   "Hips"),       # lower waist
-        (waist_z,         sw * 0.65,   td * 0.40,   "Spine"),      # waist (narrowest)
-        (lower_chest_z,   sw * 0.90,   td * 0.54,   "Chest"),      # lower chest
-        (chest_z,         sw * 1.05,   td * 0.58,   "Chest"),      # chest top
-        (neck_z,          0.055,       0.055,        "Neck"),       # neck top
+        (hip_z - 0.02,    hw + 0.06,   td * 0.50,   "Hips"),       # pelvis base (wider hip flare)
+        (hip_z,           hw + 0.07,   td * 0.54,   "Hips"),       # hip center
+        (lower_waist_z,   hw * 0.78,   td * 0.42,   "Hips"),       # lower waist (tighter)
+        (waist_z,         sw * 0.60,   td * 0.38,   "Spine"),      # waist (narrowest — clear hourglass)
+        (lower_chest_z,   sw * 0.92,   td * 0.58,   "Chest"),      # lower chest (rib cage flare)
+        (chest_z,         sw * 1.10,   td * 0.64,   "Chest"),      # chest top (broader shoulders)
+        (neck_z,          0.060,       0.055,        "Neck"),       # neck base (slightly wider)
     ]
 
     rings = {}
@@ -188,14 +190,16 @@ def _build_leg(bm, cfg, side, hip_ring):
     x_sign = 1 if side == "L" else -1
     x = x_sign * hw
 
-    # Leg ring radii (rx, ry) — thicker at thigh, narrow at ankle
+    # Leg ring radii (rx, ry) — prominent thigh, narrow knee, defined calf
+    # This thigh-to-calf-to-ankle taper is the most recognisably human
+    # leg shape and reads clearly even at low polygon counts.
     leg_rings_spec = [
         # (z, rx, ry, bone_name)
-        (hip_z,    0.105 * lt, 0.095 * lt, f"UpperLeg.{side}"),   # hip joint
-        (thigh_z,  0.112 * lt, 0.098 * lt, f"UpperLeg.{side}"),   # thigh peak
-        (knee_z,   0.074 * lt, 0.072 * lt, f"LowerLeg.{side}"),   # knee
-        (calf_z,   0.082 * lt, 0.074 * lt, f"LowerLeg.{side}"),   # calf peak
-        (ankle_z,  0.058 * lt, 0.056 * lt, f"LowerLeg.{side}"),   # ankle
+        (hip_z,    0.115 * lt, 0.102 * lt, f"UpperLeg.{side}"),   # hip joint (wide)
+        (thigh_z,  0.122 * lt, 0.106 * lt, f"UpperLeg.{side}"),   # thigh peak (widest)
+        (knee_z,   0.070 * lt, 0.068 * lt, f"LowerLeg.{side}"),   # knee (narrow — clear joint)
+        (calf_z,   0.092 * lt, 0.080 * lt, f"LowerLeg.{side}"),   # calf peak (defined)
+        (ankle_z,  0.055 * lt, 0.052 * lt, f"LowerLeg.{side}"),   # ankle (tapered)
     ]
 
     rings = []
@@ -313,12 +317,14 @@ def _build_arm(bm, cfg, side, chest_ring):
 
     arm_rings_spec = [
         # (z, rx, ry, bone_name)
-        (arm_top_z,   0.068 * lt, 0.060 * lt, f"UpperArm.{side}"),   # shoulder
-        (deltoid_z,   0.072 * lt, 0.064 * lt, f"UpperArm.{side}"),   # deltoid
-        (bicep_z,     0.062 * lt, 0.058 * lt, f"UpperArm.{side}"),   # bicep
-        (elbow_z,     0.046 * lt, 0.046 * lt, f"LowerArm.{side}"),   # elbow
-        (forearm_z,   0.052 * lt, 0.048 * lt, f"LowerArm.{side}"),   # forearm
-        (wrist_z,     0.038 * lt, 0.034 * lt, f"Hand.{side}"),       # wrist
+        # Pronounced deltoid cap then taper to elbow — gives the natural
+        # shoulder-cap silhouette visible on real and stylized human arms.
+        (arm_top_z,   0.070 * lt, 0.062 * lt, f"UpperArm.{side}"),   # shoulder attachment
+        (deltoid_z,   0.088 * lt, 0.076 * lt, f"UpperArm.{side}"),   # deltoid peak (wider)
+        (bicep_z,     0.072 * lt, 0.064 * lt, f"UpperArm.{side}"),   # bicep (fuller)
+        (elbow_z,     0.050 * lt, 0.048 * lt, f"LowerArm.{side}"),   # elbow (narrow)
+        (forearm_z,   0.056 * lt, 0.050 * lt, f"LowerArm.{side}"),   # forearm (slight taper)
+        (wrist_z,     0.038 * lt, 0.034 * lt, f"Hand.{side}"),       # wrist (narrow)
     ]
 
     rings = []
@@ -455,96 +461,101 @@ def _build_head_rings(bm, cfg, neck_ring):
     ring_groups = []
 
     # --- Ring 0: Chin ---
-    # Narrow, pushed forward, with a chin point at front
-    chin_z = neck_z + head_r * 0.08
+    # Narrow, gently rounded chin — cleaner low-poly silhouette
+    chin_z = neck_z + head_r * 0.06
     chin_ring = _make_head_ring(bm, (0, 0, chin_z),
-                                head_r * 0.42, head_r * 0.46,
+                                head_r * 0.44, head_r * 0.42,
                                 front_offsets={
-                                    0: (0, -head_r * 0.12, -head_r * 0.04),  # chin point forward+down
-                                    1: (0, -head_r * 0.04, 0),   # jaw corner L
-                                    7: (0, -head_r * 0.04, 0),   # jaw corner R
+                                    0: (0, -head_r * 0.08, -head_r * 0.02),  # subtle chin point
+                                    1: (0, -head_r * 0.03, 0),   # jaw corner L
+                                    7: (0, -head_r * 0.03, 0),   # jaw corner R
                                 })
     rings.append(chin_ring)
     ring_groups.append((chin_ring, "Head"))
 
-    # --- Ring 1: Mouth level ---
-    # Wider jaw, mouth indent at front
-    mouth_z = neck_z + head_r * 0.28
+    # --- Ring 1: Mouth / lower face level ---
+    # Wider jaw, very subtle mouth area — flat-face low-poly style
+    mouth_z = neck_z + head_r * 0.26
     mouth_ring = _make_head_ring(bm, (0, 0, mouth_z),
-                                 head_r * 0.60, head_r * 0.58,
+                                 head_r * 0.64, head_r * 0.60,
                                  front_offsets={
-                                     0: (0, -head_r * 0.06, 0),   # upper lip forward
+                                     0: (0, -head_r * 0.04, 0),   # gentle lip plane
                                      1: (0, -head_r * 0.02, 0),   # mouth corner L
                                      7: (0, -head_r * 0.02, 0),   # mouth corner R
-                                     4: (0, head_r * 0.04, 0),    # back of head inward
                                  })
     rings.append(mouth_ring)
     ring_groups.append((mouth_ring, "Head"))
 
-    # --- Ring 2: Nose tip / cheek level ---
-    # Nose protrudes at front, cheeks wide
-    nose_z = neck_z + head_r * 0.50
+    # --- Ring 2: Nose / cheek level ---
+    # Cheeks at maximum width; nose is very subtle (Synty flat-face style)
+    nose_z = neck_z + head_r * 0.48
     nose_ring = _make_head_ring(bm, (0, 0, nose_z),
-                                head_r * 0.72, head_r * 0.70,
+                                head_r * 0.76, head_r * 0.72,
                                 front_offsets={
-                                    0: (0, -head_r * 0.22, 0),   # nose tip
-                                    1: (0, -head_r * 0.06, 0),   # nostril area L
-                                    7: (0, -head_r * 0.06, 0),   # nostril area R
+                                    0: (0, -head_r * 0.08, 0),   # very subtle nose bump
+                                    1: (0, -head_r * 0.03, 0),   # nostril edge L
+                                    7: (0, -head_r * 0.03, 0),   # nostril edge R
+                                    2: (head_r * 0.04, 0, 0),    # cheekbone L
+                                    6: (-head_r * 0.04, 0, 0),   # cheekbone R
                                 })
     rings.append(nose_ring)
     ring_groups.append((nose_ring, "Head"))
 
     # --- Ring 3: Eye level ---
-    # Eye sockets indent inward, nose bridge forward
-    eye_z = neck_z + head_r * 0.72
+    # Widest part of face; flat face plane, gentle nose bridge
+    eye_z = neck_z + head_r * 0.70
     eye_ring = _make_head_ring(bm, (0, 0, eye_z),
-                               head_r * 0.82, head_r * 0.82,
+                               head_r * 0.86, head_r * 0.84,
                                front_offsets={
-                                   0: (0, -head_r * 0.14, 0),    # nose bridge
-                                   1: (head_r * 0.04, head_r * 0.04, 0),   # eye socket L (inward)
-                                   7: (-head_r * 0.04, head_r * 0.04, 0),  # eye socket R (inward)
-                                   2: (head_r * 0.06, 0, 0),     # ear bump L
-                                   6: (-head_r * 0.06, 0, 0),    # ear bump R
+                                   0: (0, -head_r * 0.06, 0),    # nose bridge (subtle)
+                                   1: (head_r * 0.02, head_r * 0.02, 0),  # eye plane L (barely inward)
+                                   7: (-head_r * 0.02, head_r * 0.02, 0), # eye plane R
+                                   2: (head_r * 0.08, 0, 0),     # temple / ear bump L
+                                   6: (-head_r * 0.08, 0, 0),    # temple / ear bump R
                                })
     rings.append(eye_ring)
     ring_groups.append((eye_ring, "Head"))
 
-    # --- Ring 4: Brow ridge ---
-    # Forehead protrudes slightly, brow ridge over eyes
+    # --- Ring 4: Brow / upper face ---
+    # Forehead starts narrowing; very slight brow ridge
     brow_z = neck_z + head_r * 0.90
     brow_ring = _make_head_ring(bm, (0, 0, brow_z),
-                                head_r * 0.86, head_r * 0.84,
+                                head_r * 0.88, head_r * 0.84,
                                 front_offsets={
-                                    0: (0, -head_r * 0.08, 0),   # brow center
-                                    1: (0, -head_r * 0.06, 0),   # brow L
-                                    7: (0, -head_r * 0.06, 0),   # brow R
-                                    2: (head_r * 0.04, 0, 0),    # upper ear L
-                                    6: (-head_r * 0.04, 0, 0),   # upper ear R
+                                    0: (0, -head_r * 0.05, 0),   # brow center
+                                    1: (0, -head_r * 0.04, 0),   # brow L
+                                    7: (0, -head_r * 0.04, 0),   # brow R
+                                    2: (head_r * 0.06, 0, 0),    # upper temple L
+                                    6: (-head_r * 0.06, 0, 0),   # upper temple R
                                 })
     rings.append(brow_ring)
     ring_groups.append((brow_ring, "Head"))
 
     # --- Ring 5: Forehead ---
-    forehead_z = head_z + head_r * 0.20
+    # Slight forward bulge for natural forehead curve
+    forehead_z = head_z + head_r * 0.22
     forehead_ring = _make_head_ring(bm, (0, 0, forehead_z),
-                                    head_r * 0.82, head_r * 0.80,
+                                    head_r * 0.86, head_r * 0.80,
                                     front_offsets={
-                                        0: (0, -head_r * 0.04, 0),  # slight forehead bulge
+                                        0: (0, -head_r * 0.04, 0),  # forehead bulge
+                                        1: (0, -head_r * 0.02, 0),
+                                        7: (0, -head_r * 0.02, 0),
                                     })
     rings.append(forehead_ring)
     ring_groups.append((forehead_ring, "Head"))
 
     # --- Ring 6: Upper cranium ---
-    upper_z = head_z + head_r * 0.55
+    # Round transition to crown — slightly oval (wider than deep)
+    upper_z = head_z + head_r * 0.58
     upper_ring = _make_ring(bm, (0, 0, upper_z),
-                            head_r * 0.70, head_r * 0.68)
+                            head_r * 0.72, head_r * 0.66)
     rings.append(upper_ring)
     ring_groups.append((upper_ring, "Head"))
 
     # --- Ring 7: Crown approach ---
-    crown_z = head_z + head_r * 0.85
+    crown_z = head_z + head_r * 0.90
     crown_ring = _make_ring(bm, (0, 0, crown_z),
-                            head_r * 0.38, head_r * 0.36)
+                            head_r * 0.40, head_r * 0.36)
     rings.append(crown_ring)
     ring_groups.append((crown_ring, "Head"))
 
@@ -759,58 +770,56 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups = []
 
     # --- Eyes ---
-    # Larger oval eyes placed in the eye socket area
-    eye_z = neck_z + head_r * 0.72
-    eye_rx = head_r * 0.10   # wider horizontally
-    eye_ry = head_r * 0.065  # narrower vertically
-    eye_spacing = head_r * 0.26
-    eye_y = -(head_r * 0.80)  # pushed forward into face
+    # Simple oval eye pads sitting flush on the face plane — Synty flat-face style.
+    # Eyes are positioned relative to the eye ring level.
+    eye_z = neck_z + head_r * 0.70
+    eye_rx = head_r * 0.09    # horizontal half-width
+    eye_ry = head_r * 0.055   # vertical half-height
+    eye_spacing = head_r * 0.28
+    # Face front at eye level = ring ry (head_r * 0.84) + small bridge offset (head_r * 0.06)
+    eye_y = -(head_r * 0.84)  # sit on the face surface
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing
-        # Oval eye from two rings (front and back depth)
-        eye_front = _make_ring(bm, (ex, eye_y - eye_ry * 0.5, eye_z),
+        # Front disc (visible eye surface)
+        eye_front = _make_ring(bm, (ex, eye_y, eye_z),
                                eye_rx, eye_ry, n=8)
-        eye_back = _make_ring(bm, (ex, eye_y + eye_ry * 0.3, eye_z),
-                              eye_rx * 0.7, eye_ry * 0.7, n=8)
+        # Shallow back ring (gives the eye a slight inset depth)
+        eye_back = _make_ring(bm, (ex, eye_y + head_r * 0.04, eye_z),
+                              eye_rx * 0.65, eye_ry * 0.65, n=8)
         _bridge_rings(bm, eye_front, eye_back)
-        # Cap the front (the visible eyeball surface)
         front_cap, _ = _cap_ring(bm, eye_front, top=True)
         ring_groups.append((eye_front + eye_back + [front_cap], "Head"))
 
     # --- Nose ---
-    # 3D nose as a wedge: bridge ring + tip, connected together
-    nose_bridge_z = neck_z + head_r * 0.62
-    nose_tip_z = neck_z + head_r * 0.48
-    nose_w = head_r * 0.08
-    nose_bridge_y = -(head_r * 0.82)
-    nose_tip_y = -(head_r * 0.92)
+    # Very subtle nose panel — just enough geometry to read as a nose in low-poly.
+    # Kept minimal so the face stays flat (Synty style).
+    nose_bridge_z = neck_z + head_r * 0.60
+    nose_tip_z = neck_z + head_r * 0.46
+    nose_w = head_r * 0.07
+    # Face front at cheek level ~head_r * 0.72 + small offset 0.08
+    nose_bridge_y = -(head_r * 0.78)
+    nose_tip_y = -(head_r * 0.82)
 
-    # Nose bridge (narrow, at eye level)
     nb_verts = [
-        bm.verts.new((nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.04)),
-        bm.verts.new((nose_w, nose_bridge_y - head_r * 0.04, nose_bridge_z)),
-        bm.verts.new((-nose_w, nose_bridge_y - head_r * 0.04, nose_bridge_z)),
-        bm.verts.new((-nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.04)),
+        bm.verts.new(( nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.03)),
+        bm.verts.new(( nose_w, nose_bridge_y - head_r * 0.03, nose_bridge_z)),
+        bm.verts.new((-nose_w, nose_bridge_y - head_r * 0.03, nose_bridge_z)),
+        bm.verts.new((-nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.03)),
     ]
-
-    # Nose tip (wider, lower)
     nt_verts = [
-        bm.verts.new((nose_w * 1.3, nose_tip_y + head_r * 0.02, nose_tip_z + head_r * 0.02)),
-        bm.verts.new((nose_w * 1.3, nose_tip_y, nose_tip_z - head_r * 0.02)),
-        bm.verts.new((-nose_w * 1.3, nose_tip_y, nose_tip_z - head_r * 0.02)),
-        bm.verts.new((-nose_w * 1.3, nose_tip_y + head_r * 0.02, nose_tip_z + head_r * 0.02)),
+        bm.verts.new(( nose_w * 1.2, nose_tip_y + head_r * 0.01, nose_tip_z + head_r * 0.01)),
+        bm.verts.new(( nose_w * 1.2, nose_tip_y,                  nose_tip_z - head_r * 0.01)),
+        bm.verts.new((-nose_w * 1.2, nose_tip_y,                  nose_tip_z - head_r * 0.01)),
+        bm.verts.new((-nose_w * 1.2, nose_tip_y + head_r * 0.01, nose_tip_z + head_r * 0.01)),
     ]
 
-    # Bridge nose sections
     for i in range(4):
         j = (i + 1) % 4
         try:
             bm.faces.new([nb_verts[i], nb_verts[j], nt_verts[j], nt_verts[i]])
         except ValueError:
             pass
-
-    # Cap the nose tip (front face)
     try:
         bm.faces.new(nt_verts)
     except ValueError:

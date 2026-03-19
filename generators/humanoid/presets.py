@@ -26,59 +26,59 @@ from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color
 
 PRESETS = {
     "average": {
-        "height": 1.75,
-        "shoulder_width": 0.40,
+        "height": 2.00,          # actual mesh height ~2.0m (6.6-head proportion)
+        "shoulder_width": 0.42,
         "hip_width": 0.27,
-        "head_size": 0.21,
+        "head_size": 0.17,       # reduced for ~6.5-head body proportion
         "arm_length": 0.68,
         "leg_length": 0.88,
         "torso_length": 0.64,
-        "neck_length": 0.08,
+        "neck_length": 0.10,     # longer neck for clearer neck silhouette
         "hand_size": 0.08,
         "foot_length": 0.24,
         "foot_width": 0.10,
         "limb_thickness": 1.0,
-        "torso_depth": 0.20,
+        "torso_depth": 0.22,     # slightly deeper torso for better front profile
     },
     "tall": {
-        "height": 2.0,
-        "shoulder_width": 0.42,
+        "height": 2.25,          # actual mesh height ~2.25m
+        "shoulder_width": 0.44,
         "hip_width": 0.26,
-        "head_size": 0.22,
+        "head_size": 0.18,       # slightly larger than average (proportionally slimmer look)
         "arm_length": 0.78,
         "leg_length": 1.02,
         "torso_length": 0.72,
-        "neck_length": 0.10,
+        "neck_length": 0.12,
         "hand_size": 0.09,
         "foot_length": 0.27,
         "foot_width": 0.10,
         "limb_thickness": 0.95,
-        "torso_depth": 0.20,
+        "torso_depth": 0.22,
     },
     "short": {
-        "height": 1.50,
+        "height": 1.65,          # actual mesh height ~1.65m
         "shoulder_width": 0.36,
         "hip_width": 0.26,
-        "head_size": 0.22,
+        "head_size": 0.15,       # smaller head for realistic short adult proportions
         "arm_length": 0.55,
         "leg_length": 0.72,
         "torso_length": 0.54,
-        "neck_length": 0.06,
+        "neck_length": 0.08,
         "hand_size": 0.07,
         "foot_length": 0.20,
         "foot_width": 0.09,
         "limb_thickness": 1.05,
-        "torso_depth": 0.20,
+        "torso_depth": 0.21,
     },
     "child": {
-        "height": 1.20,
+        "height": 1.40,          # actual mesh height ~1.4m
         "shoulder_width": 0.26,
         "hip_width": 0.22,
-        "head_size": 0.24,       # proportionally larger head
+        "head_size": 0.20,       # proportionally larger head (children ~5-head proportion)
         "arm_length": 0.42,
         "leg_length": 0.52,
         "torso_length": 0.44,
-        "neck_length": 0.05,
+        "neck_length": 0.06,
         "hand_size": 0.06,
         "foot_length": 0.16,
         "foot_width": 0.08,
@@ -86,34 +86,34 @@ PRESETS = {
         "torso_depth": 0.16,
     },
     "brute": {
-        "height": 2.10,
-        "shoulder_width": 0.56,
-        "hip_width": 0.34,
-        "head_size": 0.22,
+        "height": 2.20,          # actual mesh height ~2.2m
+        "shoulder_width": 0.58,
+        "hip_width": 0.35,
+        "head_size": 0.17,       # small head emphasizes massive body
         "arm_length": 0.82,
         "leg_length": 1.00,
         "torso_length": 0.76,
-        "neck_length": 0.06,     # thick, short neck
+        "neck_length": 0.07,     # thick, short neck
         "hand_size": 0.12,
         "foot_length": 0.30,
         "foot_width": 0.14,
         "limb_thickness": 1.4,
-        "torso_depth": 0.28,
+        "torso_depth": 0.30,
     },
     "slender": {
-        "height": 1.85,
+        "height": 2.10,          # actual mesh height ~2.1m
         "shoulder_width": 0.34,
         "hip_width": 0.22,
-        "head_size": 0.20,
+        "head_size": 0.16,
         "arm_length": 0.75,
         "leg_length": 0.98,
         "torso_length": 0.62,
-        "neck_length": 0.10,
+        "neck_length": 0.12,     # long elegant neck
         "hand_size": 0.07,
         "foot_length": 0.23,
         "foot_width": 0.08,
         "limb_thickness": 0.75,
-        "torso_depth": 0.16,
+        "torso_depth": 0.18,
     },
 }
 
