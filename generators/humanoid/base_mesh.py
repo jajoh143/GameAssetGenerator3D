@@ -505,7 +505,18 @@ def _build_head_rings(bm, cfg, neck_ring):
     rings = []
     ring_groups = []
 
-    # --- Ring 0: Chin ---
+    # --- Ring 0: Jaw base (transition ring) ---
+    # Smooths the neck-to-jaw transition. Sits just above the neck ring at
+    # neck_z + head_r * 0.02, with rx ~48% of head_r — wider than the neck
+    # (0.060) but narrower than the chin ring (0.60*head_r) below, creating
+    # a gradual flare from neck into the jawline rather than an abrupt step.
+    jaw_base_z = neck_z + head_r * 0.02
+    jaw_base_ring = _make_head_ring(bm, (0, 0, jaw_base_z),
+                                    head_r * 0.48, head_r * 0.44)
+    rings.append(jaw_base_ring)
+    ring_groups.append((jaw_base_ring, "Head"))
+
+    # --- Ring 1: Chin ---
     # Wide, square Synty jawline — reference shows jaw ~68% of cheekbone width.
     # Increased from rx=0.44 to rx=0.60 to match Synty square jaw proportions.
     chin_z = neck_z + head_r * 0.06
@@ -611,7 +622,7 @@ def _build_head_rings(bm, cfg, neck_ring):
     rings.append(crown_ring)
     ring_groups.append((crown_ring, "Head"))
 
-    # Bridge neck to first head ring (chin)
+    # Bridge neck to jaw base transition ring, then jaw base to first chin ring
     _bridge_rings(bm, neck_ring, rings[0])
 
     # Bridge all head rings
@@ -825,14 +836,18 @@ def _build_facial_details(bm, cfg, head_rings):
     eye_face_indices = []
 
     # --- Eyes ---
-    # Oval eye pads at the anatomically correct level: 2/3 up from chin
-    # (matching Ring 3 at neck_z + head_r * 0.82).
-    # Eyes sit flush on the face plane and get a separate dark material.
-    eye_z = neck_z + head_r * 0.80       # between nose ring and eye ring
-    eye_rx = head_r * 0.10               # horizontal half-width (slightly larger for visibility)
-    eye_ry = head_r * 0.065              # vertical half-height
-    eye_spacing = head_r * 0.27          # distance from face centre to each eye
-    eye_y = -(head_r * 0.82)             # face surface at eye-ring ry level
+    # Large oval eye pads matching Synty style: big circular/oval eyes with
+    # flat colour, no iris detail. Positioned at 2/3 face height from chin
+    # (neck_z + head_r * 0.82, matching the eye ring in _build_head_rings).
+    # rx=0.12*head_r, ry=0.08*head_r gives a clearly visible oval. Eyes are
+    # pushed forward 0.04*head_r relative to the face plane so they sit proud
+    # of the head surface like a subtle rounded pad (Synty characteristic).
+    eye_z = neck_z + head_r * 0.82       # exactly at eye-ring level
+    eye_rx = head_r * 0.12               # horizontal half-width (Synty large eye)
+    eye_ry = head_r * 0.08               # vertical half-height (oval, wider than tall)
+    eye_spacing = head_r * 0.35          # ±35% of head_r from face centre laterally
+    # Face surface at eye-ring ry level, then push the eye pad 0.04*head_r forward
+    eye_y = -(head_r * 0.77) - head_r * 0.04   # face plane + forward prominence
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing
@@ -842,7 +857,7 @@ def _build_facial_details(bm, cfg, head_rings):
         # Front disc (visible eye surface — gets the dark eye material)
         eye_front = _make_ring(bm, (ex, eye_y, eye_z),
                                eye_rx, eye_ry, n=8)
-        # Shallow back ring (slight inset gives a recessed look)
+        # Shallow back ring (slight inset gives a recessed/pad look)
         eye_back = _make_ring(bm, (ex, eye_y + head_r * 0.035, eye_z),
                               eye_rx * 0.60, eye_ry * 0.60, n=8)
         _bridge_rings(bm, eye_front, eye_back)
@@ -889,19 +904,19 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups.append((nb_verts + nt_verts, "Head"))
 
     # --- Ears ---
-    # Ears positioned at cheekbone level (Ring 2 height) matching Synty reference OBJ.
-    # Reference OBJ shows ear protrusion at Y≈1.26-1.27 which maps to cheekbone height.
-    # Ear base X aligns with cheekbone rx (0.88*hr). Ear outer protrudes ~10% beyond skull.
-    # Moved down from neck_z + 0.80*hr (eye level) to neck_z + 0.57*hr (cheekbone level).
-    ear_z = neck_z + head_r * 0.62   # between cheek ring (0.57) and eye ring (0.82)
-    ear_h = head_r * 0.20            # ear height (slightly taller for visibility)
-    ear_depth = head_r * 0.08        # ear front-to-back thickness
+    # Ears centred at eye level (neck_z + head_r * 0.82) per Synty reference.
+    # The ear is a small C-shaped bump on the lateral head surface. Base X
+    # aligns with the eye-ring rx (0.83*head_r). Outer edge protrudes 0.05*head_r
+    # beyond the skull surface. ear_h = 0.06*head_r radius per spec (small bump).
+    ear_z = neck_z + head_r * 0.82   # exactly at eye level (matches eye_z above)
+    ear_h = head_r * 0.18            # ear height (visible but low-poly modest)
+    ear_depth = head_r * 0.06        # ear front-to-back thickness (C-shape depth)
 
     for x_sign in [1, -1]:
-        # Base X matches the cheekbone ring rx (now 0.88 * head_r)
-        ear_base_x = x_sign * (head_r * 0.88)
-        # Outer ear protrudes ~13% beyond skull (reference shows ~10% protrusion)
-        ear_outer_x = x_sign * (head_r * 0.88 + head_r * 0.13)
+        # Base X aligns with eye-ring rx (0.83*head_r) — the lateral skull surface
+        ear_base_x = x_sign * (head_r * 0.83)
+        # Outer ear protrudes 0.05*head_r beyond skull surface
+        ear_outer_x = x_sign * (head_r * 0.83 + head_r * 0.05)
         ear_y = head_r * 0.04   # slight frontal offset (face is in -Y direction)
 
         # Inner ear ring (against head)
