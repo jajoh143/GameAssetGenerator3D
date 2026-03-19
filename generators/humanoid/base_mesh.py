@@ -996,7 +996,7 @@ def build_base_mesh_positions(cfg):
     """
     import bmesh
 
-    bm, _ = build_base_mesh(cfg)
+    bm, _, _eye_indices = build_base_mesh(cfg)
     bm.verts.ensure_lookup_table()
     positions = [(v.co.x, v.co.y, v.co.z) for v in bm.verts]
     bm.free()
