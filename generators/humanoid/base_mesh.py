@@ -386,11 +386,47 @@ def _build_arm_junction(bm, chest_ring, arm_top_ring, side):
                     pass
 
 
-def _build_head_rings(bm, cfg, neck_ring):
-    """Build head as a series of rings from neck to crown.
+def _make_head_ring(bm, center, rx, ry, n=RING_VERTS, front_offsets=None):
+    """Create a head ring with optional per-vertex offsets for facial features.
 
-    Uses the neck ring as the base and builds upward with expanding
-    then contracting rings to form a head shape.
+    Like _make_ring but allows pushing individual vertices forward/backward
+    to create facial geometry (nose, brow, chin, etc.).
+
+    Args:
+        front_offsets: optional dict mapping vertex index (0=front center)
+            to (dx, dy, dz) offset applied after base position.
+    """
+    verts = []
+    cx, cy, cz = center
+    for i in range(n):
+        angle = 2 * math.pi * i / n
+        lx = cx + rx * math.sin(angle)
+        ly = cy - ry * math.cos(angle)
+        lz = cz
+        # Apply per-vertex offsets for facial features
+        if front_offsets and i in front_offsets:
+            dx, dy, dz = front_offsets[i]
+            lx += dx
+            ly += dy
+            lz += dz
+        verts.append(bm.verts.new((lx, ly, lz)))
+    return verts
+
+
+def _build_head_rings(bm, cfg, neck_ring):
+    """Build head with facial features from neck ring to crown.
+
+    Creates a detailed head with:
+    - Chin point and jawline
+    - Nose bridge and tip
+    - Mouth indent
+    - Brow ridge
+    - Ear bumps
+    - Eye socket indentations
+    - Smooth cranium
+
+    The head uses 8-vert rings with per-vertex offsets to sculpt
+    facial features from the standard ring topology.
 
     Returns ring_groups for vertex group assignment.
     """
@@ -405,29 +441,117 @@ def _build_head_rings(bm, cfg, neck_ring):
     neck_z = chest_z + neck_len
     head_z = neck_z + head_r  # center of head
 
-    # Head rings from bottom to top
-    head_rings_spec = [
-        # (z, rx, ry) — elliptical head shape
-        (neck_z + head_r * 0.15, head_r * 0.72, head_r * 0.70),   # jaw base
-        (neck_z + head_r * 0.50, head_r * 0.88, head_r * 0.86),   # cheek level
-        (head_z,                 head_r * 0.94, head_r * 0.96),   # ear level (widest)
-        (head_z + head_r * 0.40, head_r * 0.90, head_r * 0.88),   # brow level
-        (head_z + head_r * 0.75, head_r * 0.70, head_r * 0.68),   # upper head
-        (head_z + head_r * 0.95, head_r * 0.35, head_r * 0.34),   # crown approach
-    ]
+    # Ring indices (for 8-vert ring starting at front -Y, clockwise from above):
+    # 0 = front center (face)
+    # 1 = front-left
+    # 2 = left
+    # 3 = back-left
+    # 4 = back center
+    # 5 = back-right
+    # 6 = right
+    # 7 = front-right
 
     rings = []
     ring_groups = []
 
-    for z, rx, ry in head_rings_spec:
-        ring = _make_ring(bm, (0, 0, z), rx, ry)
-        rings.append(ring)
-        ring_groups.append((ring, "Head"))
+    # --- Ring 0: Chin ---
+    # Narrow, pushed forward, with a chin point at front
+    chin_z = neck_z + head_r * 0.08
+    chin_ring = _make_head_ring(bm, (0, 0, chin_z),
+                                head_r * 0.42, head_r * 0.46,
+                                front_offsets={
+                                    0: (0, -head_r * 0.12, -head_r * 0.04),  # chin point forward+down
+                                    1: (0, -head_r * 0.04, 0),   # jaw corner L
+                                    7: (0, -head_r * 0.04, 0),   # jaw corner R
+                                })
+    rings.append(chin_ring)
+    ring_groups.append((chin_ring, "Head"))
 
-    # Bridge neck to first head ring
+    # --- Ring 1: Mouth level ---
+    # Wider jaw, mouth indent at front
+    mouth_z = neck_z + head_r * 0.28
+    mouth_ring = _make_head_ring(bm, (0, 0, mouth_z),
+                                 head_r * 0.60, head_r * 0.58,
+                                 front_offsets={
+                                     0: (0, -head_r * 0.06, 0),   # upper lip forward
+                                     1: (0, -head_r * 0.02, 0),   # mouth corner L
+                                     7: (0, -head_r * 0.02, 0),   # mouth corner R
+                                     4: (0, head_r * 0.04, 0),    # back of head inward
+                                 })
+    rings.append(mouth_ring)
+    ring_groups.append((mouth_ring, "Head"))
+
+    # --- Ring 2: Nose tip / cheek level ---
+    # Nose protrudes at front, cheeks wide
+    nose_z = neck_z + head_r * 0.50
+    nose_ring = _make_head_ring(bm, (0, 0, nose_z),
+                                head_r * 0.72, head_r * 0.70,
+                                front_offsets={
+                                    0: (0, -head_r * 0.22, 0),   # nose tip
+                                    1: (0, -head_r * 0.06, 0),   # nostril area L
+                                    7: (0, -head_r * 0.06, 0),   # nostril area R
+                                })
+    rings.append(nose_ring)
+    ring_groups.append((nose_ring, "Head"))
+
+    # --- Ring 3: Eye level ---
+    # Eye sockets indent inward, nose bridge forward
+    eye_z = neck_z + head_r * 0.72
+    eye_ring = _make_head_ring(bm, (0, 0, eye_z),
+                               head_r * 0.82, head_r * 0.82,
+                               front_offsets={
+                                   0: (0, -head_r * 0.14, 0),    # nose bridge
+                                   1: (head_r * 0.04, head_r * 0.04, 0),   # eye socket L (inward)
+                                   7: (-head_r * 0.04, head_r * 0.04, 0),  # eye socket R (inward)
+                                   2: (head_r * 0.06, 0, 0),     # ear bump L
+                                   6: (-head_r * 0.06, 0, 0),    # ear bump R
+                               })
+    rings.append(eye_ring)
+    ring_groups.append((eye_ring, "Head"))
+
+    # --- Ring 4: Brow ridge ---
+    # Forehead protrudes slightly, brow ridge over eyes
+    brow_z = neck_z + head_r * 0.90
+    brow_ring = _make_head_ring(bm, (0, 0, brow_z),
+                                head_r * 0.86, head_r * 0.84,
+                                front_offsets={
+                                    0: (0, -head_r * 0.08, 0),   # brow center
+                                    1: (0, -head_r * 0.06, 0),   # brow L
+                                    7: (0, -head_r * 0.06, 0),   # brow R
+                                    2: (head_r * 0.04, 0, 0),    # upper ear L
+                                    6: (-head_r * 0.04, 0, 0),   # upper ear R
+                                })
+    rings.append(brow_ring)
+    ring_groups.append((brow_ring, "Head"))
+
+    # --- Ring 5: Forehead ---
+    forehead_z = head_z + head_r * 0.20
+    forehead_ring = _make_head_ring(bm, (0, 0, forehead_z),
+                                    head_r * 0.82, head_r * 0.80,
+                                    front_offsets={
+                                        0: (0, -head_r * 0.04, 0),  # slight forehead bulge
+                                    })
+    rings.append(forehead_ring)
+    ring_groups.append((forehead_ring, "Head"))
+
+    # --- Ring 6: Upper cranium ---
+    upper_z = head_z + head_r * 0.55
+    upper_ring = _make_ring(bm, (0, 0, upper_z),
+                            head_r * 0.70, head_r * 0.68)
+    rings.append(upper_ring)
+    ring_groups.append((upper_ring, "Head"))
+
+    # --- Ring 7: Crown approach ---
+    crown_z = head_z + head_r * 0.85
+    crown_ring = _make_ring(bm, (0, 0, crown_z),
+                            head_r * 0.38, head_r * 0.36)
+    rings.append(crown_ring)
+    ring_groups.append((crown_ring, "Head"))
+
+    # Bridge neck to first head ring (chin)
     _bridge_rings(bm, neck_ring, rings[0])
 
-    # Bridge head rings
+    # Bridge all head rings
     for i in range(len(rings) - 1):
         _bridge_rings(bm, rings[i], rings[i + 1])
 
@@ -435,7 +559,7 @@ def _build_head_rings(bm, cfg, neck_ring):
     cap_vert, _ = _cap_ring(bm, rings[-1], top=True)
     ring_groups.append(([cap_vert], "Head"))
 
-    return ring_groups
+    return ring_groups, rings
 
 
 def _build_hand(bm, cfg, side, wrist_ring):
@@ -562,8 +686,17 @@ def _build_foot(bm, cfg, side, ankle_ring):
     return ring_groups
 
 
-def _build_eyes_and_nose(bm, cfg):
-    """Build simple eye spheres and nose bump as part of the mesh.
+def _build_facial_details(bm, cfg, head_rings):
+    """Build eye spheres and ear geometry using head ring positions.
+
+    Eyes are placed between the nose-tip ring and brow ring, using
+    the actual head ring positions for accurate placement.
+    Ears are small loops extruding from the ear-level ring.
+
+    Args:
+        bm: bmesh instance
+        cfg: body config
+        head_rings: list of head ring vertex lists from _build_head_rings
 
     Returns list of (verts, group_name) for vertex groups.
     """
@@ -578,29 +711,60 @@ def _build_eyes_and_nose(bm, cfg):
     neck_z = chest_z + neck_len
     head_z = neck_z + head_r
 
-    # Eye positions (front face, -Y direction)
-    eye_r = head_r * 0.06
-    eye_spacing = head_r * 0.28
-    eye_y = -(head_r * 0.82)
-    eye_z = head_z + head_r * 0.12
-
     ring_groups = []
 
-    for side, x_sign in [("L", 1), ("R", -1)]:
-        # Small 4-vert ring for each eye
-        eye_ring = _make_ring(bm, (x_sign * eye_spacing, eye_y, eye_z),
-                              eye_r, eye_r, n=6)
-        # Cap front and back
-        front_cap, _ = _cap_ring(bm, eye_ring, top=True)
-        ring_groups.append((eye_ring + [front_cap], "Head"))
+    # --- Eyes ---
+    # Place between nose ring (index 2) and eye ring (index 3)
+    # Eye ring verts 1 and 7 are the eye socket positions
+    eye_ring = head_rings[3]  # eye level ring
+    nose_ring = head_rings[2]  # nose tip ring
 
-    # Nose — small bump
-    nose_r = head_r * 0.07
-    nose_y = -(head_r * 0.86)
-    nose_z = head_z - head_r * 0.06
-    nose_ring = _make_ring(bm, (0, nose_y, nose_z), nose_r, nose_r, n=6)
-    nose_cap, _ = _cap_ring(bm, nose_ring, top=True)
-    ring_groups.append((nose_ring + [nose_cap], "Head"))
+    # Eye Z is between nose and brow rings
+    eye_z = neck_z + head_r * 0.70
+    eye_r = head_r * 0.055
+    eye_spacing = head_r * 0.24
+    eye_y = -(head_r * 0.78)
+
+    for x_sign in [1, -1]:
+        ex = x_sign * eye_spacing
+        # Build a small 6-vert sphere for each eye
+        eye_verts = _make_ring(bm, (ex, eye_y, eye_z),
+                               eye_r, eye_r, n=6)
+        # Cap the front (visible) side
+        front_cap, _ = _cap_ring(bm, eye_verts, top=True)
+        ring_groups.append((eye_verts + [front_cap], "Head"))
+
+    # --- Ears ---
+    # Ears are small loops extruding from the widest head ring (ear level)
+    ear_z = neck_z + head_r * 0.72
+    ear_r = head_r * 0.06
+    ear_protrude = head_r * 0.14
+
+    for x_sign in [1, -1]:
+        ear_x = x_sign * (head_r * 0.82 + ear_protrude)
+        ear_y = head_r * 0.05  # slightly behind center
+
+        # Ear as a small flattened ring (4 verts) + cap
+        ear_verts = []
+        ear_positions = [
+            (ear_x, ear_y, ear_z + ear_r),            # top
+            (ear_x + x_sign * ear_r * 0.3, ear_y, ear_z),  # outer middle
+            (ear_x, ear_y, ear_z - ear_r),            # bottom (lobe)
+            (ear_x - x_sign * ear_r * 0.5, ear_y, ear_z),  # inner (near head)
+        ]
+        for pos in ear_positions:
+            ear_verts.append(bm.verts.new(pos))
+
+        # Create the ear face
+        try:
+            if x_sign > 0:
+                bm.faces.new(ear_verts)
+            else:
+                bm.faces.new(list(reversed(ear_verts)))
+        except ValueError:
+            pass
+
+        ring_groups.append((ear_verts, "Head"))
 
     return ring_groups
 
@@ -652,11 +816,11 @@ def build_base_mesh(cfg=None):
         all_ring_groups.extend(hand_groups)
 
     # --- Head ---
-    head_groups = _build_head_rings(bm, cfg, torso_rings["neck"])
+    head_groups, head_rings = _build_head_rings(bm, cfg, torso_rings["neck"])
     all_ring_groups.extend(head_groups)
 
-    # --- Eyes and Nose ---
-    face_groups = _build_eyes_and_nose(bm, cfg)
+    # --- Facial details (eyes, ears) ---
+    face_groups = _build_facial_details(bm, cfg, head_rings)
     all_ring_groups.extend(face_groups)
 
     # Ensure consistent normals

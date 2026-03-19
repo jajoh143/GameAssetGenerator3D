@@ -195,9 +195,11 @@ def _build_tshirt_template(cfg):
     chest_z = hip_z + torso_len
 
     # Torso rings (slightly oversized for clothing shell)
+    # Shirt hem sits at lower_waist — just above where pants waistband ends
     scale = 1.05  # 5% larger than body
+    shirt_hem_z = hip_z + torso_len * 0.25  # slightly above lower_waist
     torso_specs = [
-        (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (shirt_hem_z,   hw * 0.78 * scale, td * 0.43 * scale),
         (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
         (lower_chest_z, sw * 0.90 * scale, td * 0.54 * scale),
         (chest_z,       sw * 1.05 * scale, td * 0.58 * scale),
@@ -333,10 +335,12 @@ def _build_pants_template(cfg):
 
     scale = 1.05
 
-    # Waistband rings (shared torso section)
+    # Waistband rings — top sits at lower_waist (just above hips),
+    # below where the shirt hem ends, so they don't overlap
+    belt_z = hip_z + torso_len * 0.12  # belt line, just above hip
     waist_specs = [
-        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
         (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (belt_z,        hw * 0.90 * scale, td * 0.48 * scale),
         (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
     ]
 
@@ -395,9 +399,10 @@ def _build_shorts_template(cfg):
 
     scale = 1.06
 
+    belt_z = hip_z + torso_len * 0.12
     waist_specs = [
-        (waist_z,       sw * 0.65 * scale, td * 0.40 * scale),
         (lower_waist_z, hw * 0.80 * scale, td * 0.44 * scale),
+        (belt_z,        hw * 0.90 * scale, td * 0.48 * scale),
         (hip_z,         hw + 0.05 * scale, td * 0.52 * scale),
     ]
 
