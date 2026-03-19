@@ -97,6 +97,34 @@ def _bridge_rings(bm, ring_a, ring_b):
     return faces
 
 
+def _cap_ring(bm, ring, inward=True):
+    """Close an open ring end with a triangle fan.
+
+    Creates a center vertex at the ring centroid and fans triangles
+    outward to each edge.  This eliminates open-edge gaps at clothing
+    hems, sleeve cuffs, and trouser bottoms.
+
+    Args:
+        bm: bmesh instance
+        ring: list of bmesh Vert objects forming the open loop
+        inward: if True the fan normal points inward (use for hem/cuff
+                ends that face downward); False reverses the winding for
+                upward-facing ends (e.g. waistbands, collar tops).
+    """
+    cx = sum(v.co.x for v in ring) / len(ring)
+    cy = sum(v.co.y for v in ring) / len(ring)
+    cz = sum(v.co.z for v in ring) / len(ring)
+    center = bm.verts.new((cx, cy, cz))
+    n = len(ring)
+    for i in range(n):
+        j = (i + 1) % n
+        if inward:
+            bm.faces.new([ring[j], ring[i], center])
+        else:
+            bm.faces.new([ring[i], ring[j], center])
+    return center
+
+
 def _project_to_body(clothing_bm, body_obj, offset=0.008):
     """Project clothing vertices onto body surface using BVH tree.
 
@@ -214,6 +242,8 @@ def _build_tshirt_template(cfg):
         torso_rings.append(ring)
     for i in range(len(torso_rings) - 1):
         _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+    # Cap the shirt hem (bottom open edge — faces downward)
+    _cap_ring(bm, torso_rings[0], inward=True)
 
     # Sleeve tubes — separate from torso, overlapping at shoulder height
     shoulder_x = sw + 0.04
@@ -235,6 +265,8 @@ def _build_tshirt_template(cfg):
             sleeve_rings.append(ring)
         for i in range(len(sleeve_rings) - 1):
             _bridge_rings(bm, sleeve_rings[i], sleeve_rings[i + 1])
+        # Cap the sleeve cuff (open bottom of each sleeve)
+        _cap_ring(bm, sleeve_rings[-1], inward=True)
 
     return bm
 
@@ -276,11 +308,15 @@ def _build_jacket_template(cfg):
         torso_rings.append(ring)
     for i in range(len(torso_rings) - 1):
         _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+    # Cap jacket hem (bottom open edge)
+    _cap_ring(bm, torso_rings[0], inward=True)
 
     # Collar
     collar_ring = _make_ring(bm, (0, 0, chest_z + neck_len * 0.3),
                              0.07 * lt, 0.07 * lt)
     _bridge_rings(bm, torso_rings[-1], collar_ring)
+    # Cap collar top (faces upward)
+    _cap_ring(bm, collar_ring, inward=False)
 
     # Separate arm tubes
     shoulder_x = sw + 0.04
@@ -305,6 +341,8 @@ def _build_jacket_template(cfg):
             arm_rings.append(ring)
         for i in range(len(arm_rings) - 1):
             _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
+        # Cap wrist cuff (open bottom)
+        _cap_ring(bm, arm_rings[-1], inward=True)
 
     return bm
 
@@ -349,6 +387,8 @@ def _build_pants_template(cfg):
         waist_rings.append(ring)
     for i in range(len(waist_rings) - 1):
         _bridge_rings(bm, waist_rings[i], waist_rings[i + 1])
+    # Cap waistband top (faces upward)
+    _cap_ring(bm, waist_rings[0], inward=False)
 
     # Separate leg tubes — overlap with waist at hip_z
     thigh_z = hip_z - (hip_z - knee_z) * 0.35
@@ -369,6 +409,8 @@ def _build_pants_template(cfg):
             leg_rings.append(ring)
         for i in range(len(leg_rings) - 1):
             _bridge_rings(bm, leg_rings[i], leg_rings[i + 1])
+        # Cap trouser cuff (open bottom — ankle hem)
+        _cap_ring(bm, leg_rings[-1], inward=True)
 
     return bm
 
@@ -408,6 +450,8 @@ def _build_shorts_template(cfg):
         waist_rings.append(ring)
     for i in range(len(waist_rings) - 1):
         _bridge_rings(bm, waist_rings[i], waist_rings[i + 1])
+    # Cap shorts waistband top
+    _cap_ring(bm, waist_rings[0], inward=False)
 
     # Short leg tubes
     thigh_z = hip_z - (hip_z - knee_z) * 0.35
@@ -425,6 +469,8 @@ def _build_shorts_template(cfg):
             leg_rings.append(ring)
         for i in range(len(leg_rings) - 1):
             _bridge_rings(bm, leg_rings[i], leg_rings[i + 1])
+        # Cap shorts leg hem (open bottom of each leg)
+        _cap_ring(bm, leg_rings[-1], inward=True)
 
     return bm
 
@@ -464,6 +510,8 @@ def _build_armor_template(cfg):
         torso_rings.append(ring)
     for i in range(len(torso_rings) - 1):
         _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+    # Cap armor chest-plate bottom hem
+    _cap_ring(bm, torso_rings[0], inward=True)
 
     # Shoulder pads as separate tubes
     shoulder_x = sw + 0.04
@@ -481,6 +529,8 @@ def _build_armor_template(cfg):
             pad_rings.append(ring)
         for i in range(len(pad_rings) - 1):
             _bridge_rings(bm, pad_rings[i], pad_rings[i + 1])
+        # Cap shoulder pad bottom
+        _cap_ring(bm, pad_rings[-1], inward=True)
 
     return bm
 
@@ -524,6 +574,8 @@ def _build_robe_template(cfg):
         body_rings.append(ring)
     for i in range(len(body_rings) - 1):
         _bridge_rings(bm, body_rings[i], body_rings[i + 1])
+    # Cap robe skirt hem (bottom open edge)
+    _cap_ring(bm, body_rings[0], inward=True)
 
     # Separate sleeve tubes
     shoulder_x = sw + 0.04
@@ -547,6 +599,8 @@ def _build_robe_template(cfg):
             arm_rings.append(ring)
         for i in range(len(arm_rings) - 1):
             _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
+        # Cap robe sleeve end
+        _cap_ring(bm, arm_rings[-1], inward=True)
 
     return bm
 
