@@ -351,13 +351,13 @@ def _build_arm(bm, cfg, side, chest_ring):
     x_sign = 1 if side == "L" else -1
     shoulder_x = x_sign * (sw + 0.04)
 
-    arm_top_z = chest_z - 0.04
+    arm_top_z = chest_z              # flush with chest for clean shoulder merge
     upper_arm_len = arm_len * 0.48
     elbow_z = arm_top_z - upper_arm_len
     lower_arm_len = arm_len * 0.52
     wrist_z = elbow_z - lower_arm_len
 
-    deltoid_z = arm_top_z - upper_arm_len * 0.25
+    deltoid_z = arm_top_z - upper_arm_len * 0.20  # higher deltoid = rounder cap
     bicep_z = arm_top_z - upper_arm_len * 0.60
     forearm_z = elbow_z - lower_arm_len * 0.30
 
@@ -375,14 +375,16 @@ def _build_arm(bm, cfg, side, chest_ring):
     # ry/rx held at ≈ 0.88 (arms are slightly flattened front-to-back).
     arm_rings_spec = [
         # (z, rx, ry, bone_name)
-        # Pronounced deltoid cap then taper to elbow — gives the natural
-        # shoulder-cap silhouette visible on real and stylized human arms.
-        (arm_top_z,   0.082 * lt, 0.072 * lt, f"UpperArm.{side}"),   # shoulder attachment (~4.1%)
-        (deltoid_z,   0.099 * lt, 0.087 * lt, f"UpperArm.{side}"),   # deltoid peak (~4.9%, widest)
-        (bicep_z,     0.088 * lt, 0.077 * lt, f"UpperArm.{side}"),   # bicep (~4.4%, tapers toward elbow)
-        (elbow_z,     0.068 * lt, 0.060 * lt, f"LowerArm.{side}"),   # elbow (~3.4%, narrowest point)
-        (forearm_z,   0.080 * lt, 0.070 * lt, f"LowerArm.{side}"),   # forearm belly (~4.0%)
-        (wrist_z,     0.046 * lt, 0.040 * lt, f"Hand.{side}"),       # wrist (~2.3%)
+        # Shoulder attachment sits at chest_z so it merges cleanly with the
+        # torso.  Larger rx (0.092) gives more shoulder area for the cap.
+        # Deltoid is bigger (0.108) and higher (20% down) for a cartoony
+        # rounded-shoulder silhouette.
+        (arm_top_z,   0.092 * lt, 0.080 * lt, f"UpperArm.{side}"),   # shoulder (flush with chest)
+        (deltoid_z,   0.108 * lt, 0.094 * lt, f"UpperArm.{side}"),   # deltoid peak (widest, more cap)
+        (bicep_z,     0.090 * lt, 0.079 * lt, f"UpperArm.{side}"),   # bicep
+        (elbow_z,     0.068 * lt, 0.060 * lt, f"LowerArm.{side}"),   # elbow (narrowest)
+        (forearm_z,   0.082 * lt, 0.072 * lt, f"LowerArm.{side}"),   # forearm belly
+        (wrist_z,     0.046 * lt, 0.040 * lt, f"Hand.{side}"),       # wrist
     ]
 
     rings = []
@@ -405,49 +407,71 @@ def _build_arm(bm, cfg, side, chest_ring):
 
 
 def _build_arm_junction(bm, chest_ring, arm_top_ring, side):
-    """Connect an arm's top ring to the torso chest ring.
+    """Connect an arm's top ring to the torso with a clean shoulder cap.
 
-    Similar approach to leg junction — find closest chest verts and bridge.
+    The arm ring has 8 verts.  Half face toward the torso (inner side) and
+    half face away (outer / lateral side = the shoulder cap).
+
+      inner verts  → connected to the 4 nearest chest ring verts with quads
+      outer verts  → capped with a triangle fan to a raised central vert,
+                     forming a visible domed shoulder cap
+
+    This replaces the previous mixed quad/triangle fan that produced uneven
+    topology at the shoulder seam.
     """
-    arm_center = Vector((0, 0, 0))
-    for v in arm_top_ring:
-        arm_center += v.co
-    arm_center /= len(arm_top_ring)
+    x_sign = 1 if side == "L" else -1
 
-    # Find the 4 closest chest verts to the arm center
-    chest_dists = [(v, (v.co - arm_center).length) for v in chest_ring]
-    chest_dists.sort(key=lambda x: x[1])
-    closest_chest = [v for v, d in chest_dists[:4]]
+    # Arm ring centre
+    arm_cx = sum(v.co.x for v in arm_top_ring) / len(arm_top_ring)
+    arm_cy = sum(v.co.y for v in arm_top_ring) / len(arm_top_ring)
+    arm_cz = sum(v.co.z for v in arm_top_ring) / len(arm_top_ring)
 
-    def angle_around(v, center):
-        dx = v.co.x - center.x
-        dy = v.co.y - center.y
-        return math.atan2(dy, dx)
+    def angle_xy(v, cx, cy):
+        return math.atan2(v.co.y - cy, v.co.x - cx)
 
-    closest_chest.sort(key=lambda v: angle_around(v, arm_center))
-    arm_sorted = sorted(arm_top_ring, key=lambda v: angle_around(v, arm_center))
+    # Split arm verts: inner (toward torso centre) vs outer (shoulder side)
+    # Condition: x_sign * v.co.x < x_sign * arm_cx → inner (toward centre)
+    inner_arm = sorted(
+        [v for v in arm_top_ring if (v.co.x * x_sign) < (arm_cx * x_sign)],
+        key=lambda v: angle_xy(v, arm_cx, arm_cy),
+    )
+    outer_arm = sorted(
+        [v for v in arm_top_ring if (v.co.x * x_sign) >= (arm_cx * x_sign)],
+        key=lambda v: angle_xy(v, arm_cx, arm_cy),
+    )
 
-    n_chest = len(closest_chest)
-    n_arm = len(arm_sorted)
-    ratio = n_arm // n_chest
+    # 4 closest chest verts, sorted by angle from arm centre
+    chest_by_dist = sorted(chest_ring,
+                           key=lambda v: (v.co.x - arm_cx) ** 2 + (v.co.y - arm_cy) ** 2)
+    closest_chest = sorted(chest_by_dist[:4],
+                           key=lambda v: angle_xy(v, arm_cx, arm_cy))
 
-    for i in range(n_chest):
+    # Inner arm → chest: quad strip
+    n = min(len(closest_chest), len(inner_arm))
+    for i in range(n):
         c0 = closest_chest[i]
-        c1 = closest_chest[(i + 1) % n_chest]
-        a_base = i * ratio
-        for j in range(ratio):
-            a0 = arm_sorted[(a_base + j) % n_arm]
-            a1 = arm_sorted[(a_base + j + 1) % n_arm]
-            if j == 0:
-                try:
-                    bm.faces.new([c0, c1, a1, a0])
-                except ValueError:
-                    pass
-            else:
-                try:
-                    bm.faces.new([c0, a1, a0])
-                except ValueError:
-                    pass
+        c1 = closest_chest[(i + 1) % len(closest_chest)]
+        a0 = inner_arm[i % len(inner_arm)]
+        a1 = inner_arm[(i + 1) % len(inner_arm)]
+        try:
+            bm.faces.new([c0, c1, a1, a0])
+        except ValueError:
+            pass
+
+    # Outer arm → shoulder cap: triangle fan to a slightly raised centre vert
+    if outer_arm:
+        cap_cx = sum(v.co.x for v in outer_arm) / len(outer_arm)
+        cap_cy = sum(v.co.y for v in outer_arm) / len(outer_arm)
+        cap_v  = bm.verts.new((cap_cx, cap_cy, arm_cz + 0.015))
+        for i in range(len(outer_arm)):
+            j = (i + 1) % len(outer_arm)
+            try:
+                if x_sign > 0:
+                    bm.faces.new([outer_arm[i], outer_arm[j], cap_v])
+                else:
+                    bm.faces.new([outer_arm[j], outer_arm[i], cap_v])
+            except ValueError:
+                pass
 
 
 def _make_head_ring(bm, center, rx, ry, n=RING_VERTS, front_offsets=None):
@@ -855,56 +879,87 @@ def _build_facial_details(bm, cfg, head_rings):
     ring_groups = []
     eye_face_indices = []
 
-    # --- Eyes ---
-    # Large oval eye pads matching Synty style: big circular/oval eyes with
-    # flat colour, no iris detail. Positioned at 2/3 face height from chin
-    # (neck_z + head_r * 0.82, matching the eye ring in _build_head_rings).
-    # eye_y now tracks the updated (wider) eye ring ry = 0.83*head_r.
-    eye_z = neck_z + head_r * 0.82       # exactly at eye-ring level
-    eye_rx = head_r * 0.13               # slightly wider eye for bigger head
-    eye_ry = head_r * 0.09               # vertical half-height
-    eye_spacing = head_r * 0.38          # wider spacing to match wider face
-    # Face plane at eye ring ry (0.83), push pad forward by 0.04
-    eye_y = -(head_r * 0.83) - head_r * 0.04
+    # ── Eye positions ──────────────────────────────────────────────────────
+    # Eye ring (ring 4 in _build_head_rings) sits at neck_z + head_r * 0.82
+    # with ry = 0.83 * head_r. Face surface at that level ≈ y = -0.83*head_r.
+    eye_z       = neck_z + head_r * 0.82
+    eye_spacing = head_r * 0.38
+    face_y_eye  = -(head_r * 0.83)   # approximate face surface at eye level
+
+    # Recessed socket design:
+    #   outer_ring — at face surface, larger (socket rim, skin material)
+    #   inner_ring — recessed 0.06*head_r behind face, the dark eyeball disc
+    eye_outer_rx = head_r * 0.16
+    eye_outer_ry = head_r * 0.12
+    eye_rx       = head_r * 0.11
+    eye_ry       = head_r * 0.08
+    eye_recess   = head_r * 0.06    # depth of socket
 
     for x_sign in [1, -1]:
         ex = x_sign * eye_spacing
-        # Snapshot face count so we can identify the new eye faces
-        face_before = len(bm.faces)
 
-        # Front disc (visible eye surface — gets the dark eye material)
-        eye_front = _make_ring(bm, (ex, eye_y, eye_z),
-                               eye_rx, eye_ry, n=8)
-        # Shallow back ring (slight inset gives a recessed/pad look)
-        eye_back = _make_ring(bm, (ex, eye_y + head_r * 0.035, eye_z),
-                              eye_rx * 0.60, eye_ry * 0.60, n=8)
-        _bridge_rings(bm, eye_front, eye_back)
-        front_cap, _ = _cap_ring(bm, eye_front, top=True)
+        outer_ring = _make_ring(bm, (ex, face_y_eye, eye_z),
+                                eye_outer_rx, eye_outer_ry, n=8)
+        inner_ring = _make_ring(bm, (ex, face_y_eye + eye_recess, eye_z),
+                                eye_rx, eye_ry, n=8)
 
-        # Record face indices for this eye (used for dark material assignment)
-        eye_face_indices.extend(range(face_before, len(bm.faces)))
-        ring_groups.append((eye_front + eye_back + [front_cap], "Head"))
+        _bridge_rings(bm, outer_ring, inner_ring)
 
-    # --- Nose ---
-    # Nose positions updated to match the wider head rings.
-    # cheekbone ring ry = 0.88*head_r, eye ring ry = 0.83*head_r.
-    nose_bridge_z = neck_z + head_r * 0.72
-    nose_tip_z = neck_z + head_r * 0.55
-    nose_w = head_r * 0.07
-    nose_bridge_y = -(head_r * 0.86)   # matches new nose ring ry (0.88) roughly
-    nose_tip_y = -(head_r * 0.84)
+        eye_cap_start = len(bm.faces)
+        _cap_ring(bm, inner_ring, top=True)
+        eye_face_indices.extend(range(eye_cap_start, len(bm.faces)))
+
+        ring_groups.append((outer_ring + inner_ring, "Head"))
+
+    # ── Brow arches ────────────────────────────────────────────────────────
+    # Small raised ridge above each eye socket for expression depth.
+    brow_z = neck_z + head_r * 0.96
+    brow_y = face_y_eye - head_r * 0.02   # slightly more forward than face
+
+    for x_sign in [1, -1]:
+        ex  = x_sign * eye_spacing
+        bw  = eye_outer_rx * 1.2
+
+        top_in  = bm.verts.new((ex - x_sign * bw * 0.30, brow_y,                  brow_z + head_r * 0.04))
+        top_out = bm.verts.new((ex + x_sign * bw * 0.80, brow_y - head_r * 0.01,  brow_z + head_r * 0.02))
+        bot_in  = bm.verts.new((ex - x_sign * bw * 0.30, brow_y + head_r * 0.03,  brow_z))
+        bot_out = bm.verts.new((ex + x_sign * bw * 0.80, brow_y + head_r * 0.03,  brow_z))
+        back_in  = bm.verts.new((ex - x_sign * bw * 0.30, brow_y + head_r * 0.04, brow_z + head_r * 0.02))
+        back_out = bm.verts.new((ex + x_sign * bw * 0.80, brow_y + head_r * 0.04, brow_z + head_r * 0.01))
+
+        try:
+            if x_sign > 0:
+                bm.faces.new([top_in, top_out, bot_out, bot_in])
+                bm.faces.new([top_in, back_in, back_out, top_out])
+            else:
+                bm.faces.new([top_out, top_in, bot_in, bot_out])
+                bm.faces.new([top_out, back_out, back_in, top_in])
+        except ValueError:
+            pass
+
+        ring_groups.append(([top_in, top_out, bot_in, bot_out,
+                              back_in, back_out], "Head"))
+
+    # ── Nose ───────────────────────────────────────────────────────────────
+    # Nose clearly protrudes beyond the cheekbone face surface (ry=0.88).
+    # nose_tip_y pushed ~12% beyond that surface for clear visibility.
+    nose_bridge_z = neck_z + head_r * 0.74
+    nose_tip_z    = neck_z + head_r * 0.54
+    nose_w        = head_r * 0.10
+    nose_bridge_y = -(head_r * 0.94)
+    nose_tip_y    = -(head_r * 1.00)
 
     nb_verts = [
-        bm.verts.new(( nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.03)),
-        bm.verts.new(( nose_w, nose_bridge_y - head_r * 0.03, nose_bridge_z)),
-        bm.verts.new((-nose_w, nose_bridge_y - head_r * 0.03, nose_bridge_z)),
-        bm.verts.new((-nose_w, nose_bridge_y, nose_bridge_z + head_r * 0.03)),
+        bm.verts.new(( nose_w,       nose_bridge_y,                 nose_bridge_z + head_r * 0.03)),
+        bm.verts.new(( nose_w,       nose_bridge_y - head_r * 0.04, nose_bridge_z)),
+        bm.verts.new((-nose_w,       nose_bridge_y - head_r * 0.04, nose_bridge_z)),
+        bm.verts.new((-nose_w,       nose_bridge_y,                 nose_bridge_z + head_r * 0.03)),
     ]
     nt_verts = [
-        bm.verts.new(( nose_w * 1.2, nose_tip_y + head_r * 0.01, nose_tip_z + head_r * 0.01)),
-        bm.verts.new(( nose_w * 1.2, nose_tip_y,                  nose_tip_z - head_r * 0.01)),
-        bm.verts.new((-nose_w * 1.2, nose_tip_y,                  nose_tip_z - head_r * 0.01)),
-        bm.verts.new((-nose_w * 1.2, nose_tip_y + head_r * 0.01, nose_tip_z + head_r * 0.01)),
+        bm.verts.new(( nose_w * 1.5, nose_tip_y + head_r * 0.04, nose_tip_z + head_r * 0.02)),
+        bm.verts.new(( nose_w * 1.5, nose_tip_y,                 nose_tip_z - head_r * 0.02)),
+        bm.verts.new((-nose_w * 1.5, nose_tip_y,                 nose_tip_z - head_r * 0.02)),
+        bm.verts.new((-nose_w * 1.5, nose_tip_y + head_r * 0.04, nose_tip_z + head_r * 0.02)),
     ]
 
     for i in range(4):
@@ -920,26 +975,43 @@ def _build_facial_details(bm, cfg, head_rings):
 
     ring_groups.append((nb_verts + nt_verts, "Head"))
 
-    # --- Ears ---
-    # Ear base X updated to match new wider cheekbone ring rx (0.95*head_r).
-    ear_z = neck_z + head_r * 0.62
-    ear_h = head_r * 0.20
-    ear_depth = head_r * 0.08
+    # ── Lips ───────────────────────────────────────────────────────────────
+    # Subtle raised lip panel at mouth ring level (neck_z + head_r * 0.32).
+    # Mouth ring ry = 0.74, face surface ≈ -0.74*head_r. Lips protrude beyond.
+    lip_z      = neck_z + head_r * 0.32
+    lip_face_y = -(head_r * 0.80)
+    lip_w      = head_r * 0.18
+
+    ul_l = bm.verts.new((-lip_w,        lip_face_y, lip_z + head_r * 0.05))
+    ul_r = bm.verts.new(( lip_w,        lip_face_y, lip_z + head_r * 0.05))
+    ll_l = bm.verts.new((-lip_w * 1.15, lip_face_y, lip_z - head_r * 0.04))
+    ll_r = bm.verts.new(( lip_w * 1.15, lip_face_y, lip_z - head_r * 0.04))
+    cr_l = bm.verts.new((-lip_w * 0.85, lip_face_y + head_r * 0.02, lip_z - head_r * 0.10))
+    cr_r = bm.verts.new(( lip_w * 0.85, lip_face_y + head_r * 0.02, lip_z - head_r * 0.10))
+
+    try: bm.faces.new([ul_l, ul_r, ll_r, ll_l])
+    except ValueError: pass
+    try: bm.faces.new([ll_l, ll_r, cr_r, cr_l])
+    except ValueError: pass
+
+    ring_groups.append(([ul_l, ul_r, ll_l, ll_r, cr_l, cr_r], "Head"))
+
+    # ── Ears ───────────────────────────────────────────────────────────────
+    ear_z     = neck_z + head_r * 0.62
+    ear_h     = head_r * 0.22
+    ear_depth = head_r * 0.09
 
     for x_sign in [1, -1]:
-        ear_base_x = x_sign * (head_r * 0.95)          # aligns with new nose ring rx
+        ear_base_x  = x_sign * (head_r * 0.95)
         ear_outer_x = x_sign * (head_r * 0.95 + head_r * 0.13)
-        ear_y = head_r * 0.04   # slight frontal offset (face is in -Y direction)
+        ear_y = head_r * 0.04
 
-        # Inner ear ring (against head)
         inner_ear = [
-            bm.verts.new((ear_base_x, ear_y - ear_depth, ear_z + ear_h)),       # top front
-            bm.verts.new((ear_base_x, ear_y + ear_depth, ear_z + ear_h * 0.7)), # top back
-            bm.verts.new((ear_base_x, ear_y + ear_depth, ear_z - ear_h * 0.5)), # bottom back
-            bm.verts.new((ear_base_x, ear_y - ear_depth * 0.5, ear_z - ear_h)), # lobe
+            bm.verts.new((ear_base_x, ear_y - ear_depth,        ear_z + ear_h)),
+            bm.verts.new((ear_base_x, ear_y + ear_depth,        ear_z + ear_h * 0.7)),
+            bm.verts.new((ear_base_x, ear_y + ear_depth,        ear_z - ear_h * 0.5)),
+            bm.verts.new((ear_base_x, ear_y - ear_depth * 0.5,  ear_z - ear_h)),
         ]
-
-        # Outer ear ring (protruding) — rounded Synty ear bump shape
         outer_ear = [
             bm.verts.new((ear_outer_x, ear_y - ear_depth * 0.7, ear_z + ear_h * 0.85)),
             bm.verts.new((ear_outer_x, ear_y + ear_depth * 0.5, ear_z + ear_h * 0.60)),
@@ -947,19 +1019,19 @@ def _build_facial_details(bm, cfg, head_rings):
             bm.verts.new((ear_outer_x, ear_y - ear_depth * 0.4, ear_z - ear_h * 0.75)),
         ]
 
-        # Bridge inner to outer
         n = len(inner_ear)
         for i in range(n):
             j = (i + 1) % n
             try:
                 if x_sign > 0:
-                    bm.faces.new([inner_ear[i], inner_ear[j], outer_ear[j], outer_ear[i]])
+                    bm.faces.new([inner_ear[i], inner_ear[j],
+                                  outer_ear[j], outer_ear[i]])
                 else:
-                    bm.faces.new([inner_ear[j], inner_ear[i], outer_ear[i], outer_ear[j]])
+                    bm.faces.new([inner_ear[j], inner_ear[i],
+                                  outer_ear[i], outer_ear[j]])
             except ValueError:
                 pass
 
-        # Cap outer face
         try:
             if x_sign > 0:
                 bm.faces.new(outer_ear)
