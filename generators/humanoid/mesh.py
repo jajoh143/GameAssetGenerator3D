@@ -36,6 +36,97 @@ def _apply_material(obj, skin_tone=None):
     obj.data.materials.append(mat)
 
 
+def _assign_clothing_vertex_groups(obj, clothing_face_ranges, cfg):
+    """Assign clothing vertices to bone vertex groups based on world position.
+
+    Clothing geometry merged into the body mesh has no vertex group
+    assignments.  This assigns each clothing vert to the anatomically
+    correct bone by testing its Z and X coordinates against the known
+    body ring positions — a lightweight substitute for automatic weight
+    painting that works without a live armature.
+
+    Args:
+        obj: Blender mesh object (body + clothing unified mesh)
+        clothing_face_ranges: list of (ctype, rgba, face_start, face_end)
+        cfg: body config dict
+    """
+    import bpy
+
+    sw   = cfg["shoulder_width"]
+    hw   = cfg["hip_width"]
+    leg_len  = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+    arm_len  = cfg["arm_length"]
+
+    foot_top = 0.06
+    hip_z    = foot_top + leg_len
+    waist_z  = hip_z + torso_len * 0.42
+    chest_z  = hip_z + torso_len
+    shoulder_x = sw + 0.04
+    upper_arm_len = arm_len * 0.48
+    elbow_z  = chest_z - 0.04 - upper_arm_len
+
+    # Collect clothing vertex indices from face ranges
+    clothing_vert_indices = set()
+    for _ctype, _rgba, face_start, face_end in clothing_face_ranges:
+        for poly in obj.data.polygons:
+            if face_start <= poly.index < face_end:
+                for vi in poly.vertices:
+                    clothing_vert_indices.add(vi)
+
+    if not clothing_vert_indices:
+        return
+
+    # Helper to get or create a vertex group
+    def get_vg(name):
+        vg = obj.vertex_groups.get(name)
+        if vg is None:
+            vg = obj.vertex_groups.new(name=name)
+        return vg
+
+    # Bucket verts by bone region
+    buckets = {
+        "Chest": [], "Spine": [], "Hips": [],
+        "UpperLeg.L": [], "UpperLeg.R": [],
+        "LowerLeg.L": [], "LowerLeg.R": [],
+        "UpperArm.L": [], "UpperArm.R": [],
+        "LowerArm.L": [], "LowerArm.R": [],
+    }
+
+    verts = obj.data.vertices
+    for vi in clothing_vert_indices:
+        v = verts[vi]
+        x, y, z = v.co.x, v.co.y, v.co.z
+
+        # Arm regions: X significantly outside shoulder position
+        if abs(x) > shoulder_x * 0.70:
+            side = "L" if x > 0 else "R"
+            if z > elbow_z:
+                buckets[f"UpperArm.{side}"].append(vi)
+            else:
+                buckets[f"LowerArm.{side}"].append(vi)
+        # Torso regions
+        elif z >= chest_z:
+            buckets["Chest"].append(vi)
+        elif z >= waist_z:
+            buckets["Spine"].append(vi)
+        elif z >= hip_z:
+            buckets["Hips"].append(vi)
+        # Leg regions
+        else:
+            side = "L" if x >= 0 else "R"
+            knee_z = foot_top + leg_len * 0.48
+            if z >= knee_z:
+                buckets[f"UpperLeg.{side}"].append(vi)
+            else:
+                buckets[f"LowerLeg.{side}"].append(vi)
+
+    for bone_name, vis in buckets.items():
+        if vis:
+            vg = get_vg(bone_name)
+            vg.add(vis, 1.0, 'REPLACE')
+
+
 def _add_clothing_material(obj, name, rgba, roughness=0.85):
     """Append a new material slot to obj and return its slot index."""
     import bpy
@@ -198,6 +289,10 @@ def create_body(cfg):
                 poly.material_index = mat_idx
 
     body.data.update()
+
+    # --- Assign vertex groups to clothing verts for correct armature deformation ---
+    if clothing_face_ranges:
+        _assign_clothing_vertex_groups(body, clothing_face_ranges, cfg)
 
     # --- Hair (separate object, parented to Head bone by rig.py) ---
     hair_obj = None
