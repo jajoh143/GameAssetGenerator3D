@@ -86,6 +86,10 @@ def _bmesh_to_object(bm, name, vertex_groups=None):
 def create_body(cfg):
     """Build the complete humanoid mesh from config values.
 
+    When ``cfg["use_template"]`` is True the mesh is imported from a
+    pre-made NBM .blend file (see generators/humanoid/template_mesh.py).
+    Otherwise the mesh is built procedurally from cross-section rings.
+
     Args:
         cfg: dict with body proportion values.
 
@@ -94,6 +98,10 @@ def create_body(cfg):
         The empty list preserves the old (body, hair, clothing_objs) API so
         callers that unpack the tuple continue to work unchanged.
     """
+    if cfg.get("use_template", False):
+        from .template_mesh import create_body_from_template
+        return create_body_from_template(cfg)
+
     import bpy
 
     _clear_scene()

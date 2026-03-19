@@ -238,6 +238,7 @@ def get_gender_names():
 def resolve_config(preset="average", build="average", gender="neutral",
                    skin_tone="medium",
                    hair_style="none", hair_color="dark_brown",
+                   use_template=False, lod="low",
                    overrides=None, randomize=False, seed=None):
     """Build a complete character config from preset + build + gender + overrides.
 
@@ -248,6 +249,10 @@ def resolve_config(preset="average", build="average", gender="neutral",
         skin_tone: Named skin tone or custom (R,G,B,A) tuple.
         hair_style: Hair style name ("none", "buzzed", "short", etc.).
         hair_color: Named hair color or custom (R,G,B,A) tuple.
+        use_template: If True, import mesh from NBM .blend instead of
+            building procedurally.
+        lod: Level of detail for template mesh ("very_low", "low", "mid").
+            Only used when use_template=True.
         overrides: Dict of individual config values to override.
         randomize: If True, add slight random variation to proportions.
         seed: Random seed for reproducible randomization.
@@ -279,6 +284,10 @@ def resolve_config(preset="average", build="average", gender="neutral",
 
     # Store gender in config for mesh.py to use for radii adjustments
     cfg["gender"] = gender
+
+    # Template mesh settings
+    cfg["use_template"] = use_template
+    cfg["lod"] = lod
 
     # Resolve skin tone
     if isinstance(skin_tone, str):

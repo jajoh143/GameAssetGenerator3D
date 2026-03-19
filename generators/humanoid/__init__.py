@@ -25,6 +25,10 @@ def generate(config=None):
                 animations: List of animation names or "all" (default: "all").
                 randomize: Bool — add slight random variation (default: False).
                 seed: Int — random seed for reproducible variation.
+                use_template: Bool — import NBM .blend mesh instead of
+                    building procedurally (default: False).
+                lod: "very_low" / "low" / "mid" template LOD tier
+                    (default: "low", only used when use_template=True).
             All other keys override the resolved body proportions directly.
 
     Returns:
@@ -44,6 +48,8 @@ def generate(config=None):
     anim_selection = config.pop("animations", "all")
     randomize = config.pop("randomize", False)
     seed = config.pop("seed", None)
+    use_template = config.pop("use_template", False)
+    lod = config.pop("lod", "low")
 
     # Remaining config items become direct overrides
     cfg = resolve_config(
@@ -53,6 +59,8 @@ def generate(config=None):
         skin_tone=skin_tone,
         hair_style=hair_style,
         hair_color=hair_color,
+        use_template=use_template,
+        lod=lod,
         overrides=config if config else None,
         randomize=randomize,
         seed=seed,

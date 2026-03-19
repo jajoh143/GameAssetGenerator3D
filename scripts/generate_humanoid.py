@@ -54,6 +54,15 @@ def parse_args():
     parser.add_argument("--hair-color", default="brown",
                         help="Hair color name or R,G,B,A values")
 
+    # Template mesh
+    parser.add_argument("--use-template", action="store_true",
+                        help="Import body mesh from NBM .blend template instead of "
+                             "building procedurally")
+    parser.add_argument("--lod", default="low",
+                        choices=["very_low", "low", "mid"],
+                        help="Template mesh LOD tier (only used with --use-template): "
+                             "very_low (<300 faces), low (300-500), mid (500+)")
+
     # Direct proportion overrides
     parser.add_argument("--height", type=float, default=None)
     parser.add_argument("--shoulder-width", type=float, default=None)
@@ -104,6 +113,8 @@ def main():
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
         "randomize": args.randomize,
+        "use_template": args.use_template,
+        "lod": args.lod,
     }
 
     if args.seed is not None:
@@ -131,9 +142,10 @@ def main():
         if val is not None:
             config[key] = val
 
+    mesh_src = f"template({args.lod})" if args.use_template else "procedural"
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
           f"gender={args.gender}, skin={args.skin_tone}, "
-          f"hair={args.hair_style}/{args.hair_color}")
+          f"hair={args.hair_style}/{args.hair_color}, mesh={mesh_src}")
     armature = generate(config)
     print("Generation complete. Exporting...")
 
