@@ -1,15 +1,12 @@
 """Low-poly eye generation for the humanoid pipeline.
 
-Each eye is two objects combined into one draw call per material:
-  • Eyeballs_Mesh  — two low-poly spheres (sclera), ~32 faces each
-  • Iris_Mesh      — two flat discs (iris ring + pupil) per eye, ~16 faces each
-
-Total budget: ≈ 96 extra faces for the pair.
+Each eye is a single small black sphere (~32 faces).
 
 Public interface
 ----------------
-  create_eyes(head_z, head_r, eye_color)  →  [eyeballs_obj, iris_obj]
-  EYE_COLORS  — dict mapping name → RGBA tuple
+  create_eyes(head_z, head_r, eye_color, face_y)  →  [eyes_obj]
+  create_eyebrows(head_z, head_r, face_y, brow_color)  →  brow_obj
+  EYE_COLORS  — dict mapping name → RGBA tuple (kept for API compatibility)
 """
 
 import math
@@ -23,62 +20,42 @@ EYE_COLORS = {
     "hazel":      (0.28, 0.22, 0.08, 1.0),
 }
 
+# ── Shared geometry constants ─────────────────────────────────────────────────
+# All functions that need eye/brow positions import these helpers so values
+# stay in sync automatically.
+
+def _eye_geometry(head_z, head_r, face_y):
+    """Return (eye_r, eye_x, eye_z, eye_y, disc_y) for the current head."""
+    eye_r  = head_r * 0.09
+    eye_z  = head_z - head_r * 0.1
+    eye_x  = head_r * 0.32
+    if face_y is not None:
+        disc_y = face_y + head_r * 0.65
+        eye_y  = disc_y + eye_r
+    else:
+        eye_y  = -(head_r * 0.85)
+        disc_y = eye_y - eye_r * 0.88
+    return eye_r, eye_x, eye_z, eye_y, disc_y
+
 
 def create_eyes(head_z, head_r, eye_color=None, face_y=None):
-    """Build both eyeballs and iris/pupil geometry, returning two mesh objects.
+    """Build two small black eye spheres, returning a single mesh object.
 
     Args:
-        head_z:     Z of the head *centre* (same value passed to create_hair).
-        head_r:     Head radius in metres  (= actual_height * 0.065).
-        eye_color:  Iris colour — RGBA tuple, a key from EYE_COLORS, or None.
+        head_z:     Z of the head centre.
+        head_r:     Head radius in metres.
+        eye_color:  Ignored (kept for API compatibility).
         face_y:     Most-forward Y of the body mesh (nose-tip bounding-box Y).
-                    When provided the eyeball sphere is anchored so its front
-                    face sits just inside this plane, preventing protrusion.
-                    When None a spherical approximation is used (procedural path).
 
     Returns:
-        [eyeballs_obj, iris_obj]  — two linked bpy.types.Object instances.
+        [eyes_obj]  — one bpy.types.Object containing both spheres.
     """
     import bpy
     import bmesh as bmesh_mod
     import mathutils
 
-    # ── Colour resolution ────────────────────────────────────────────────────
-    if eye_color is None:
-        iris_rgba = EYE_COLORS["brown"]
-    elif isinstance(eye_color, str):
-        iris_rgba = EYE_COLORS.get(eye_color, EYE_COLORS["brown"])
-    else:
-        iris_rgba = tuple(eye_color)
+    eye_r, eye_x, eye_z, eye_y, _ = _eye_geometry(head_z, head_r, face_y)
 
-    sclera_rgba = (0.92, 0.90, 0.88, 1.0)
-    pupil_rgba  = (0.04, 0.03, 0.03, 1.0)  # near-black pupil centre
-
-    # ── Geometry constants ───────────────────────────────────────────────────
-    eye_r    = head_r * 0.15      # eyeball sphere radius
-    eye_z    = head_z - head_r * 0.1  # slightly below head centre (brow level)
-    eye_x    = head_r * 0.32       # lateral half-gap between eye centres
-
-    if face_y is not None:
-        # Anchor to the actual mesh surface.
-        # face_y ≈ nose-tip; eyes are ~20 % of head_r behind the nose tip.
-        # The iris disc sits at that depth; the sphere centre is one eye_r
-        # further back so the sphere is embedded in the head with only the
-        # disc visible on the surface.
-        # The nose tip is the most-forward point; the eye sockets are recessed
-        # roughly 0.40×head_r behind it.  Placing the disc there keeps it on
-        # (or just inside) the face surface rather than in front of it.
-        disc_y = face_y + head_r * 0.65   # eye-socket depth behind nose tip
-        eye_y  = disc_y + eye_r           # sphere centre one radius behind disc
-    else:
-        # Procedural / fallback: spherical heada approximation
-        eye_y  = -(head_r * 0.85)
-        disc_y = eye_y - eye_r * 0.88
-
-    iris_r   = eye_r * 0.4        # iris disc radius
-    pupil_r  = iris_r * 0.2       # pupil disc radius (solid dark centre)
-
-    # ── Eyeball spheres ──────────────────────────────────────────────────────
     bm = bmesh_mod.new()
     for x_sign in (1, -1):
         bmesh_mod.ops.create_uvsphere(
@@ -102,124 +79,26 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     eyes_obj.select_set(True)
     bpy.ops.object.shade_smooth()
 
-    sclera_mat = bpy.data.materials.new("Eye_Sclera")
-    sclera_mat.use_nodes = True
-    bsdf = sclera_mat.node_tree.nodes.get("Principled BSDF")
+    eye_mat = bpy.data.materials.new("Eye_Black")
+    eye_mat.use_nodes = True
+    bsdf = eye_mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = sclera_rgba
-        bsdf.inputs["Roughness"].default_value = 0.25
+        bsdf.inputs["Base Color"].default_value = (0.02, 0.02, 0.02, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.10
         if "Specular IOR Level" in bsdf.inputs:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.5
+            bsdf.inputs["Specular IOR Level"].default_value = 0.8
         elif "Specular" in bsdf.inputs:
-            bsdf.inputs["Specular"].default_value = 0.5
-    eyes_obj.data.materials.append(sclera_mat)
+            bsdf.inputs["Specular"].default_value = 0.8
+    eyes_obj.data.materials.append(eye_mat)
 
-    # ── Iris ring + pupil discs ──────────────────────────────────────────────
-    # Each eye has:
-    #   • An annular ring  (outer iris colour)  between pupil_r and iris_r
-    #   • A filled disc    (pupil near-black)    inside pupil_r
-    # Both lie in the XZ plane (facing -Y) at disc_y.
-    bm2 = bmesh_mod.new()
-    n = 10   # polygon sides — enough for smooth circles at this size
-
-    for x_sign in (1, -1):
-        cx = x_sign * eye_x
-
-        # Outer iris ring vertices
-        inner_v = [
-            bm2.verts.new((
-                cx + pupil_r * math.cos(2 * math.pi * i / n),
-                disc_y,
-                eye_z + pupil_r * math.sin(2 * math.pi * i / n),
-            ))
-            for i in range(n)
-        ]
-        outer_v = [
-            bm2.verts.new((
-                cx + iris_r * math.cos(2 * math.pi * i / n),
-                disc_y,
-                eye_z + iris_r * math.sin(2 * math.pi * i / n),
-            ))
-            for i in range(n)
-        ]
-        for i in range(n):
-            j = (i + 1) % n
-            try:
-                bm2.faces.new([outer_v[i], outer_v[j], inner_v[j], inner_v[i]])
-            except ValueError:
-                pass
-
-        # Pupil filled disc
-        ctr = bm2.verts.new((cx, disc_y, eye_z))
-        for i in range(n):
-            j = (i + 1) % n
-            try:
-                bm2.faces.new([ctr, inner_v[i], inner_v[j]])
-            except ValueError:
-                pass
-
-    bmesh_mod.ops.recalc_face_normals(bm2, faces=bm2.faces)
-
-    mesh_i = bpy.data.meshes.new("Iris_Mesh")
-    bm2.to_mesh(mesh_i)
-    mesh_i.update()
-    bm2.free()
-
-    iris_obj = bpy.data.objects.new("Iris", mesh_i)
-    bpy.context.collection.objects.link(iris_obj)
-
-    # Iris uses same material for both iris ring and pupil — split into two
-    # materials so the two regions can have distinct colours.
-    # Material slot 0 = iris ring, slot 1 = pupil.
-    iris_mat = bpy.data.materials.new("Eye_Iris")
-    iris_mat.use_nodes = True
-    bsdf2 = iris_mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf2:
-        bsdf2.inputs["Base Color"].default_value = iris_rgba
-        bsdf2.inputs["Roughness"].default_value = 0.20
-        if "Specular IOR Level" in bsdf2.inputs:
-            bsdf2.inputs["Specular IOR Level"].default_value = 0.60
-        elif "Specular" in bsdf2.inputs:
-            bsdf2.inputs["Specular"].default_value = 0.60
-    iris_obj.data.materials.append(iris_mat)
-
-    pupil_mat = bpy.data.materials.new("Eye_Pupil")
-    pupil_mat.use_nodes = True
-    bsdf3 = pupil_mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf3:
-        bsdf3.inputs["Base Color"].default_value = pupil_rgba
-        bsdf3.inputs["Roughness"].default_value = 0.05   # very glossy — wet
-        if "Specular IOR Level" in bsdf3.inputs:
-            bsdf3.inputs["Specular IOR Level"].default_value = 0.90
-        elif "Specular" in bsdf3.inputs:
-            bsdf3.inputs["Specular"].default_value = 0.90
-    iris_obj.data.materials.append(pupil_mat)
-
-    # Assign pupil material (slot 1) to the inner pupil faces.
-    # Iris ring faces were created first (first n*10 faces per eye),
-    # so pupil tris follow in each eye's geometry block.
-    iris_obj.data.update()
-    face_idx = 0
-    for _eye in range(2):        # two eyes
-        # n ring quads → iris material (slot 0, default)
-        face_idx += n
-        # n pupil tris → pupil material (slot 1)
-        for fi in range(face_idx, face_idx + n):
-            if fi < len(iris_obj.data.polygons):
-                iris_obj.data.polygons[fi].material_index = 1
-        face_idx += n
-
-    return [eyes_obj, iris_obj]
+    return [eyes_obj]
 
 
 def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
-    """Build low-poly eyebrow strips above each eye socket.
-
-    Uses the same coordinate conventions as create_eyes so the strips land
-    directly over the brow-arch ridges baked into the base mesh.
+    """Build low-poly eyebrow strips sitting just above the eye spheres.
 
     Args:
-        head_z:     Z of the head centre (same value passed to create_eyes).
+        head_z:     Z of the head centre.
         head_r:     Head radius in metres.
         face_y:     Most-forward Y of the body mesh (nose-tip bounding-box Y).
         brow_color: RGBA tuple or None (defaults to dark brown).
@@ -229,45 +108,33 @@ def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
     """
     import bpy
     import bmesh as bmesh_mod
-    import math
 
     if brow_color is None:
-        brow_rgba = (0.09, 0.05, 0.02, 1.0)   # dark brown
+        brow_rgba = (0.09, 0.05, 0.02, 1.0)
     else:
         brow_rgba = tuple(brow_color)
 
-    # ── Geometry constants (must match create_eyes above) ────────────────────
-    eye_r   = head_r * 0.15             # keep in sync with create_eyes eye_r
-    eye_z   = head_z - head_r * 0.1    # keep in sync with create_eyes eye_z
-    eye_x   = head_r * 0.32             # lateral half-gap between eye centres
+    eye_r, eye_x, eye_z, _, disc_y = _eye_geometry(head_z, head_r, face_y)
 
-    # brow_z: matches base_mesh brow arch  (neck_z + head_r*0.96 = head_z - head_r*0.04)
-    brow_z  = eye_z + head_r * 0.06     # = head_z - head_r*0.04
-
-    if face_y is not None:
-        disc_y = face_y + head_r * 0.65  # keep in sync with create_eyes disc_y
-    else:
-        disc_y = -(head_r * 0.85) - eye_r * 0.88
-
-    # Strip dimensions
-    brow_half_w = head_r * 0.27         # half-width of each brow
-    brow_h      = head_r * 0.045        # strip height (Z)
-    brow_y      = disc_y                # same depth as the iris disc
-    n_segs      = 5                     # segments across width (~12 faces/brow)
+    # Brow sits immediately above the top of the eye sphere
+    brow_z     = eye_z + eye_r + head_r * 0.015   # bottom edge of brow
+    brow_h     = head_r * 0.028                    # strip height (Z)
+    brow_half_w = head_r * 0.18                    # half-width of each brow
+    brow_y     = disc_y                            # same depth as eye surface
+    n_segs     = 5
 
     bm = bmesh_mod.new()
 
     for x_sign in (1, -1):
         cx = x_sign * eye_x
-        # inner end (toward nose) → smaller |x|; outer end → larger |x|
         bot_verts = []
         top_verts = []
         for i in range(n_segs + 1):
-            t = i / n_segs   # 0 = inner, 1 = outer
+            t = i / n_segs   # 0 = inner (nose side), 1 = outer
             x = cx + x_sign * (-brow_half_w + 2.0 * brow_half_w * t)
-            # gentle arch: highest at t≈0.4, inner end slightly higher than outer
-            arch_z  = brow_z + brow_h * 4.0 * t * (1.0 - t) * 0.35
-            taper_h = brow_h * (1.0 - 0.45 * t)   # taper toward outer end
+            # subtle arch peaking near t=0.4; tapers thinner toward outer end
+            arch_z  = brow_z + brow_h * 4.0 * t * (1.0 - t) * 0.30
+            taper_h = brow_h * (1.0 - 0.40 * t)
             bot_verts.append(bm.verts.new((x, brow_y, arch_z)))
             top_verts.append(bm.verts.new((x, brow_y, arch_z + taper_h)))
 
