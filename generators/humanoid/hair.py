@@ -151,6 +151,18 @@ def _front_verts(ring):
     return [ring[n - 1], ring[0], ring[1]]
 
 
+def _back_half_verts(ring):
+    """Back 270° of the ring — everything except the 3 front-centre verts.
+
+    For n=12 this returns ring[2]..ring[10], spanning from the front-left
+    shoulder, around the full back, to the front-right shoulder.  Combined
+    with a fringe panel for the remaining 90°, this gives seamless coverage
+    of the entire head circumference below the hairline.
+    """
+    n = len(ring)
+    return [ring[i] for i in range(2, n - 1)]
+
+
 # ── Panel row builder ──────────────────────────────────────────────────────────
 
 def _panel_rows(bm, top_verts, rows_spec):
@@ -239,36 +251,33 @@ def _build_buzzed(bm, head_z, head_r):
     """Skullcap hugging the head tightly — very short all over."""
     rings = _build_cap(bm, head_z, head_r, h_scale=1.03)
     hl = rings[0]
-    # One row of side and back panels for ear/nape coverage
-    for region in [_back_verts(hl), _left_verts(hl), _right_verts(hl)]:
-        _panel_rows(bm, region, [
-            (-head_r * 0.18, 1.0, 1.0),
-        ])
+    # Single unified row around the back 270° for seamless ear/nape coverage
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.18, 1.0, 1.0),
+    ])
 
 
 def _build_short(bm, head_z, head_r):
-    """Short hair: cap + tapering nape panel + side coverage + fringe."""
+    """Short hair: cap + unified back-half panel + fringe."""
     rings = _build_cap(bm, head_z, head_r, h_scale=1.07)
     hl = rings[0]
     hl_z = hl[0].co.z
 
-    # Nape — 3 rows tapering toward the neck
-    _panel_rows(bm, _back_verts(hl), [
+    # Unified back-half panel — covers back, left, and right in one strip so
+    # there are no seams or gaps between the old separate panels.  Three rows
+    # taper gently toward the nape; x/y scale is relative to the origin so the
+    # strip naturally pinches inward as it descends.
+    _panel_rows(bm, _back_half_verts(hl), [
         (-head_r * 0.22, 1.00, 1.00),
         (-head_r * 0.42, 0.92, 0.97),
         (-head_r * 0.58, 0.80, 0.94),
     ])
 
-    # Side coverage — 2 rows
-    for region in [_left_verts(hl), _right_verts(hl)]:
-        _panel_rows(bm, region, [
-            (-head_r * 0.20, 1.00, 1.00),
-            (-head_r * 0.36, 0.90, 0.98),
-        ])
-
-    # Fringe — two-row flat panel just in front of the brow
+    # Fringe — two-row flat panel just in front of the brow.
+    # fr_y uses the cap's actual ry_mult (0.90) at h_scale=1.07 so the panel
+    # sits flush against the front of the cap, not inside it.
     fr_w  = head_r * 1.60
-    fr_y  = -(head_r * 0.82 * 1.07) - 0.005
+    fr_y  = -(head_r * 0.90 * 1.07) - 0.005
     fr_zt = hl_z + head_r * 0.06
     fr_zb = hl_z - head_r * 0.18
     tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))
@@ -289,9 +298,8 @@ def _build_spiky(bm, head_z, head_r):
     rings = _build_cap(bm, head_z, head_r, h_scale=1.05)
     hl = rings[0]
 
-    # Minimal side coverage
-    for region in [_left_verts(hl), _right_verts(hl)]:
-        _panel_rows(bm, region, [(-head_r * 0.15, 1.0, 1.0)])
+    # Minimal back-half coverage — one row keeps ear/nape from showing through
+    _panel_rows(bm, _back_half_verts(hl), [(-head_r * 0.15, 1.0, 1.0)])
 
     # Spike layout: (x_frac, y_frac, height_mult) relative to crown extents
     crown_z  = head_z + head_r * 0.90
@@ -327,8 +335,10 @@ def _build_long(bm, head_z, head_r):
     hl = rings[0]
     hl_z = hl[0].co.z
 
-    # Back curtain — fans wider as it falls, reaching waist level
-    _panel_rows(bm, _back_verts(hl), [
+    # Unified back-half curtain — fans out as it falls toward waist level.
+    # The side verts (at ±rx) get the same rows and merge seamlessly into
+    # the back without the gap that the old separate panels had.
+    _panel_rows(bm, _back_half_verts(hl), [
         (-head_r * 0.28, 1.02, 1.00),
         (-head_r * 0.58, 1.05, 1.00),
         (-head_r * 0.90, 1.08, 0.99),
@@ -337,18 +347,9 @@ def _build_long(bm, head_z, head_r):
         (-head_r * 2.00, 1.03, 0.96),   # waist level
     ])
 
-    # Side curtains
-    for region in [_left_verts(hl), _right_verts(hl)]:
-        _panel_rows(bm, region, [
-            (-head_r * 0.25, 1.00, 1.00),
-            (-head_r * 0.55, 1.00, 1.00),
-            (-head_r * 0.88, 0.95, 0.99),
-            (-head_r * 1.22, 0.88, 0.98),
-        ])
-
     # Fringe (slightly longer than short)
     fr_w  = head_r * 1.72
-    fr_y  = -(head_r * 0.82 * 1.09) - 0.005
+    fr_y  = -(head_r * 0.90 * 1.09) - 0.005
     fr_zt = hl_z + head_r * 0.06
     fr_zb = hl_z - head_r * 0.24
     tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))
@@ -419,22 +420,15 @@ def _build_ponytail(bm, head_z, head_r):
     hl = rings[0]
     hl_z = hl[0].co.z
 
-    # Short nape panel — gathers inward toward the bundle root
-    _panel_rows(bm, _back_verts(hl), [
+    # Unified back-half panel — gathers inward toward the bundle root
+    _panel_rows(bm, _back_half_verts(hl), [
         (-head_r * 0.22, 1.00, 1.00),
         (-head_r * 0.42, 0.85, 0.96),
     ])
 
-    # Side coverage
-    for region in [_left_verts(hl), _right_verts(hl)]:
-        _panel_rows(bm, region, [
-            (-head_r * 0.20, 1.00, 1.00),
-            (-head_r * 0.36, 0.90, 0.98),
-        ])
-
     # Single-row fringe
     fr_w  = head_r * 1.60
-    fr_y  = -(head_r * 0.82 * 1.07) - 0.005
+    fr_y  = -(head_r * 0.90 * 1.07) - 0.005
     fr_zt = hl_z + head_r * 0.06
     fr_zb = hl_z - head_r * 0.18
     tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))

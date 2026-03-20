@@ -293,18 +293,27 @@ def create_body_from_template(cfg: dict):
     # ── Materials ─────────────────────────────────────────────────────────
     _apply_skin_material(mesh_obj, skin_tone)
 
-    # ── Hair: derive head position from actual mesh height ─────────────────
-    # Use standard human proportions (head ~13% of height, neck at ~87%) rather
-    # than our procedural cfg values which were designed for the generated mesh.
+    # ── Derive head geometry parameters from actual mesh height ───────────────
+    # head_r is the *radius* (half the head height).
+    # Head height ≈ 13% of total height, so radius ≈ 6.5%.
+    # Neck sits at ~90% of height for the template mesh proportions.
+    # head_z is the brow/hairline level = neck_top + head_r.
+    head_r = actual_height * 0.065
+    head_z = actual_height * 0.90 + head_r
+
+    # ── Hair ──────────────────────────────────────────────────────────────────
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
     if hair_style and hair_style != "none":
-        # head_r is the *radius* (half the head height).
-        # Head height ≈ 13% of total height, so radius ≈ 6.5%.
-        # Neck sits at ~90% of height for the template mesh proportions.
-        head_r = actual_height * 0.065
-        head_z = actual_height * 0.90 + head_r
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
-    return mesh_obj, hair_obj, []
+    # ── Eyes ──────────────────────────────────────────────────────────────────
+    from . import eyes as eyes_module
+    eye_color = cfg.get("eye_color", None)
+    eye_objs = eyes_module.create_eyes(head_z, head_r, eye_color)
+
+    # Return eye objects as (obj, "Head") tuples so the rig can parent them
+    # rigidly to the Head bone, matching how hair is handled.
+    extra_head_objs = [(e, "Head") for e in eye_objs]
+    return mesh_obj, hair_obj, extra_head_objs
