@@ -86,52 +86,58 @@ def _bmesh_to_object(bm, name, vertex_groups=None):
 def create_body(cfg):
     """Build the complete humanoid mesh from config values.
 
-    Uses the base-mesh + morph architecture:
-    1. Build fixed-topology base mesh
-    2. Apply morph deltas for body variation
-    3. Convert to Blender object with vertex groups
-
-    The character is built standing upright with feet at Z=0.
-    Head, hands, feet, and facial features are integrated into the
-    unified base mesh.
+    When ``cfg["use_template"]`` is True the mesh is imported from a
+    pre-made NBM .blend file (see generators/humanoid/template_mesh.py).
+    Otherwise the mesh is built procedurally from cross-section rings.
 
     Args:
         cfg: dict with body proportion values.
 
     Returns:
-        Tuple of (body_obj, hair_obj_or_None, clothing_list).
+        Tuple of (body_obj, hair_obj_or_None, []).
+        The empty list preserves the old (body, hair, clothing_objs) API so
+        callers that unpack the tuple continue to work unchanged.
     """
+    if cfg.get("use_template", False):
+        from .template_mesh import create_body_from_template
+        return create_body_from_template(cfg)
+
     import bpy
 
     _clear_scene()
 
     skin_tone = cfg.get("skin_tone", None)
 
-    # --- Build base mesh with morphs ---
+    # --- Build base body bmesh ---
     from .base_mesh import build_base_mesh
-    from .morphs import config_to_morphs, apply_morphs, is_neutral_config
 
-    # Build the base mesh with the target config directly
-    # (for neutral configs, no morphs needed)
-    bm, vertex_groups = build_base_mesh(cfg)
+    bm, vertex_groups, eye_face_indices = build_base_mesh(cfg)
 
-    # Convert to Blender object
+    # --- Convert unified bmesh to Blender object ---
     body = _bmesh_to_object(bm, "Humanoid_Body", vertex_groups)
     bm.free()
 
-    # Set origin to world center
     bpy.context.scene.cursor.location = (0, 0, 0)
     bpy.context.view_layer.objects.active = body
     bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
 
-    # Smooth shading
     bpy.ops.object.shade_smooth()
     mod = body.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
     mod.split_angle = math.radians(50)
 
+    # --- Assign materials ---
+    # Slot 0: skin
     _apply_material(body, skin_tone)
+    # Slot 1: eyes — assign to eye face polygons
+    _apply_eye_material(body)
+    eye_set = set(eye_face_indices) if eye_face_indices else set()
+    for poly in body.data.polygons:
+        if poly.index in eye_set:
+            poly.material_index = 1
 
-    # --- Hair (separate object, will be parented to Head bone) ---
+    body.data.update()
+
+    # --- Hair (separate object, parented to Head bone by rig.py) ---
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
@@ -148,16 +154,8 @@ def create_body(cfg):
         head_z = neck_z + head_r
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
-    # --- Clothing (separate objects, skinned to armature) ---
-    clothing_objs = []
-    clothing_type = cfg.get("clothing", "tshirt,pants")
-    if clothing_type and clothing_type != "none":
-        from . import clothing as clothing_module
-        clothing_color = cfg.get("clothing_color", None)
-        clothing_objs = clothing_module.create_clothing(cfg, clothing_type,
-                                                        clothing_color)
-
-    return body, hair_obj, clothing_objs
+    # Return empty list as third element to preserve the (body, hair, clothing) API
+    return body, hair_obj, []
 
 
 # ─── Backward compatibility ────────────────────────────────────────────────

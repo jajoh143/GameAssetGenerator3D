@@ -173,7 +173,17 @@ def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
     # arms, pant legs follow legs, etc.
     # ------------------------------------------------------------------ #
     if clothing_objs:
-        for obj, _bone_name in clothing_objs:
-            _skin_to_armature(armature_obj, obj)
+        for obj, bone_name in clothing_objs:
+            if bone_name:
+                # Rigid parent to a specific bone (e.g. eyes → Head)
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                armature_obj.select_set(True)
+                bpy.context.view_layer.objects.active = armature_obj
+                armature_obj.data.bones.active = armature_obj.data.bones[bone_name]
+                bpy.ops.object.parent_set(type='BONE')
+            else:
+                # Auto-weight skin to full armature (clothing, accessories)
+                _skin_to_armature(armature_obj, obj)
 
     return armature_obj
