@@ -1,18 +1,21 @@
-"""Low-poly eye generation for the humanoid pipeline.
+"""Low-poly 3-part eye generation for the humanoid pipeline.
 
-Each eye is a single small black sphere (~32 faces).
+Each eye is built from three separate mesh objects:
+  • Sclera  – white of the eye (UV sphere, ~40 faces per eye, 80 total)
+  • Iris    – coloured pupil + iris disc (~24 faces per eye, 48 total)
+  • Cornea  – near-transparent glossy dome (~40 faces per eye, 80 total)
+
+Total eye geometry: ~208 faces (both eyes, all 3 parts).
 
 Public interface
 ----------------
-  create_eyes(head_z, head_r, face_y)  →  [eyes_obj]
+  create_eyes(head_z, head_r, eye_color, face_y)  →  [sclera_obj, iris_obj, cornea_obj]
   create_eyebrows(head_z, head_r, face_y, brow_color)  →  brow_obj
 """
 
 import math
 
 # ── Shared geometry constants ─────────────────────────────────────────────────
-# All functions that need eye/brow positions import these helpers so values
-# stay in sync automatically.
 
 def _eye_geometry(head_z, head_r, face_y):
     """Return (eye_r, eye_x, eye_z, eye_y, disc_y) for the current head."""
@@ -28,60 +31,201 @@ def _eye_geometry(head_z, head_r, face_y):
     return eye_r, eye_x, eye_z, eye_y, disc_y
 
 
+def _set_specular(bsdf, value):
+    """Set specular on Principled BSDF, handling API differences across Blender versions."""
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = value
+    elif "Specular" in bsdf.inputs:
+        bsdf.inputs["Specular"].default_value = value
+
+
+def _default_iris_color(eye_color):
+    """Return an RGBA tuple for the iris, defaulting to warm brown."""
+    if eye_color is None:
+        return (0.35, 0.18, 0.05, 1.0)
+    c = tuple(eye_color)
+    return c if len(c) == 4 else (*c, 1.0)
+
+
 def create_eyes(head_z, head_r, eye_color=None, face_y=None):
-    """Build two small black eye spheres, returning a single mesh object.
+    """Build full 3-part eyes (sclera + iris + cornea) for left and right.
+
+    Geometry layout
+    ---------------
+    Sclera:  opaque off-white UV sphere.
+    Iris:    flat two-zone disc (pupil centre + coloured ring) placed just in
+             front of the sclera tip so it is never occluded.  Two material
+             slots: slot 0 = pupil (near-black), slot 1 = iris (eye_color).
+    Cornea:  slightly larger transparent sphere (IOR 1.4) that encloses both
+             sclera and iris, giving a wet-eye gloss effect.
 
     Args:
         head_z:    Z of the head centre.
         head_r:    Head radius in metres.
-        eye_color: Unused — eyes are always black spheres.
+        eye_color: RGBA or RGB tuple for iris colour, or None (defaults to warm brown).
         face_y:    Most-forward Y of the body mesh (nose-tip bounding-box Y).
 
     Returns:
-        [eyes_obj]  — one bpy.types.Object containing both spheres.
+        [sclera_obj, iris_obj, cornea_obj]  — three bpy.types.Object instances,
+        each containing geometry for both left and right eyes (~208 faces total).
     """
     import bpy
     import bmesh as bmesh_mod
     import mathutils
 
     eye_r, eye_x, eye_z, eye_y, _ = _eye_geometry(head_z, head_r, face_y)
+    iris_rgba = _default_iris_color(eye_color)
 
+    iris_r   = eye_r * 0.50          # iris covers ~50 % of sclera radius
+    pupil_r  = iris_r * 0.38         # pupil ~38 % of iris radius
+    # Place iris disc just in front of the sclera's frontmost point so the
+    # opaque sclera never occludes it.  The cornea (1.02× radius) then wraps
+    # over everything.
+    iris_y   = eye_y - eye_r * 1.005
+    cornea_r = eye_r * 1.020
+
+    # ── 1. SCLERA ──────────────────────────────────────────────────────────────
     bm = bmesh_mod.new()
     for x_sign in (1, -1):
         bmesh_mod.ops.create_uvsphere(
             bm,
             u_segments=8,
-            v_segments=4,
+            v_segments=6,
             radius=eye_r,
             matrix=mathutils.Matrix.Translation((x_sign * eye_x, eye_y, eye_z)),
             calc_uvs=False,
         )
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
-    mesh_s = bpy.data.meshes.new("Eyes_Mesh")
-    bm.to_mesh(mesh_s)
-    mesh_s.update()
+    sclera_mesh = bpy.data.meshes.new("Sclera_Mesh")
+    bm.to_mesh(sclera_mesh)
+    sclera_mesh.update()
     bm.free()
 
-    eyes_obj = bpy.data.objects.new("Eyes", mesh_s)
-    bpy.context.collection.objects.link(eyes_obj)
-    bpy.context.view_layer.objects.active = eyes_obj
-    eyes_obj.select_set(True)
-    bpy.ops.object.shade_smooth()
+    sclera_obj = bpy.data.objects.new("Eyes_Sclera", sclera_mesh)
+    bpy.context.collection.objects.link(sclera_obj)
+    for poly in sclera_mesh.polygons:
+        poly.use_smooth = True
 
-    eye_mat = bpy.data.materials.new("Eye_Black")
-    eye_mat.use_nodes = True
-    bsdf = eye_mat.node_tree.nodes.get("Principled BSDF")
+    sclera_mat = bpy.data.materials.new("Eye_Sclera")
+    sclera_mat.use_nodes = True
+    bsdf = sclera_mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.02, 0.02, 0.02, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.10
-        if "Specular IOR Level" in bsdf.inputs:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.8
-        elif "Specular" in bsdf.inputs:
-            bsdf.inputs["Specular"].default_value = 0.8
-    eyes_obj.data.materials.append(eye_mat)
+        bsdf.inputs["Base Color"].default_value = (0.95, 0.93, 0.90, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.30
+        _set_specular(bsdf, 0.4)
+    sclera_obj.data.materials.append(sclera_mat)
 
-    return [eyes_obj]
+    # ── 2. IRIS + PUPIL ────────────────────────────────────────────────────────
+    # Two-zone fan disc: center → pupil_r (slot 0 = pupil) and
+    # pupil_r → iris_r (slot 1 = iris colour).
+    bm = bmesh_mod.new()
+    n = 12
+    for x_sign in (1, -1):
+        cx = x_sign * eye_x
+        center_v = bm.verts.new((cx, iris_y, eye_z))
+        inner_vs = [
+            bm.verts.new((
+                cx + pupil_r * math.cos(2 * math.pi * i / n),
+                iris_y,
+                eye_z + pupil_r * math.sin(2 * math.pi * i / n),
+            ))
+            for i in range(n)
+        ]
+        outer_vs = [
+            bm.verts.new((
+                cx + iris_r * math.cos(2 * math.pi * i / n),
+                iris_y,
+                eye_z + iris_r * math.sin(2 * math.pi * i / n),
+            ))
+            for i in range(n)
+        ]
+
+        for i in range(n):
+            j = (i + 1) % n
+            # Pupil triangle — winding reversed for left eye so normal faces -Y
+            if x_sign > 0:
+                f = bm.faces.new([center_v, inner_vs[i], inner_vs[j]])
+            else:
+                f = bm.faces.new([center_v, inner_vs[j], inner_vs[i]])
+            f.material_index = 0
+
+            # Iris quad
+            if x_sign > 0:
+                f = bm.faces.new([inner_vs[i], outer_vs[i], outer_vs[j], inner_vs[j]])
+            else:
+                f = bm.faces.new([inner_vs[j], outer_vs[j], outer_vs[i], inner_vs[i]])
+            f.material_index = 1
+
+    iris_mesh = bpy.data.meshes.new("Iris_Mesh")
+    bm.to_mesh(iris_mesh)
+    iris_mesh.update()
+    bm.free()
+
+    iris_obj = bpy.data.objects.new("Eyes_Iris", iris_mesh)
+    bpy.context.collection.objects.link(iris_obj)
+
+    pupil_mat = bpy.data.materials.new("Eye_Pupil")
+    pupil_mat.use_nodes = True
+    bsdf = pupil_mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = (0.01, 0.01, 0.01, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.05
+        _set_specular(bsdf, 0.9)
+    iris_obj.data.materials.append(pupil_mat)
+
+    iris_mat = bpy.data.materials.new("Eye_Iris")
+    iris_mat.use_nodes = True
+    bsdf = iris_mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = iris_rgba
+        bsdf.inputs["Roughness"].default_value = 0.10
+        _set_specular(bsdf, 0.7)
+    iris_obj.data.materials.append(iris_mat)
+
+    # ── 3. CORNEA ──────────────────────────────────────────────────────────────
+    bm = bmesh_mod.new()
+    for x_sign in (1, -1):
+        bmesh_mod.ops.create_uvsphere(
+            bm,
+            u_segments=8,
+            v_segments=6,
+            radius=cornea_r,
+            matrix=mathutils.Matrix.Translation((x_sign * eye_x, eye_y, eye_z)),
+            calc_uvs=False,
+        )
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    cornea_mesh = bpy.data.meshes.new("Cornea_Mesh")
+    bm.to_mesh(cornea_mesh)
+    cornea_mesh.update()
+    bm.free()
+
+    cornea_obj = bpy.data.objects.new("Eyes_Cornea", cornea_mesh)
+    bpy.context.collection.objects.link(cornea_obj)
+    for poly in cornea_mesh.polygons:
+        poly.use_smooth = True
+
+    cornea_mat = bpy.data.materials.new("Eye_Cornea")
+    cornea_mat.use_nodes = True
+    bsdf = cornea_mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.0
+        _set_specular(bsdf, 1.0)
+        if "Transmission Weight" in bsdf.inputs:
+            bsdf.inputs["Transmission Weight"].default_value = 1.0
+        elif "Transmission" in bsdf.inputs:
+            bsdf.inputs["Transmission"].default_value = 1.0
+        if "IOR" in bsdf.inputs:
+            bsdf.inputs["IOR"].default_value = 1.4
+    try:
+        cornea_mat.blend_method = 'BLEND'
+    except AttributeError:
+        pass  # Blender 4.2+ handles transparency differently
+    cornea_obj.data.materials.append(cornea_mat)
+
+    return [sclera_obj, iris_obj, cornea_obj]
 
 
 def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
@@ -107,11 +251,11 @@ def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
     eye_r, eye_x, eye_z, _, disc_y = _eye_geometry(head_z, head_r, face_y)
 
     # Brow sits immediately above the top of the eye sphere
-    brow_z     = eye_z + eye_r + head_r * 0.015   # bottom edge of brow
-    brow_h     = head_r * 0.028                    # strip height (Z)
-    brow_half_w = head_r * 0.18                    # half-width of each brow
-    brow_y     = disc_y                            # same depth as eye surface
-    n_segs     = 5
+    brow_z      = eye_z + eye_r + head_r * 0.015   # bottom edge of brow
+    brow_h      = head_r * 0.028                    # strip height (Z)
+    brow_half_w = head_r * 0.18                     # half-width of each brow
+    brow_y      = disc_y                            # same depth as eye surface
+    n_segs      = 5
 
     bm = bmesh_mod.new()
 
