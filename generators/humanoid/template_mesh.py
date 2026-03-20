@@ -140,21 +140,21 @@ def _clear_non_mesh_objects(keep_names: set):
         bpy.data.objects.remove(obj, do_unlink=True)
 
 
-def _normalise_mesh(obj, target_height: float = None) -> float:
-    """Apply transforms and position feet at Z=0.
+def _normalise_mesh(obj, target_height: float, x_scale: float = 1.0,
+                    y_scale: float = 1.0) -> float:
+    """Apply transforms, position feet at Z=0, and scale to target dimensions.
 
-    Optionally scales the mesh to a specific height — only used when the user
-    has explicitly requested a non-default height via --height.  Otherwise the
-    mesh is imported at its natural dimensions so the artist's proportions are
-    preserved exactly.
+    Always scales the mesh to target_height (Z), then applies x_scale / y_scale
+    for body-width and body-depth proportions relative to the average template.
 
     Args:
-        obj: Blender mesh object.
-        target_height: If provided, scale the mesh uniformly to this height
-            (metres).  If None, no scaling is applied.
+        obj:           Blender mesh object.
+        target_height: Target height in metres (always applied).
+        x_scale:       Multiplier for X (width) relative to the average template.
+        y_scale:       Multiplier for Y (depth) relative to the average template.
 
     Returns:
-        Actual mesh height in metres after positioning (and optional scaling).
+        Actual mesh height in metres after scaling (= target_height).
     """
     import bpy
 
@@ -162,10 +162,8 @@ def _normalise_mesh(obj, target_height: float = None) -> float:
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
-    # Apply all transforms (location, rotation, scale) so values are clean
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    # Measure bounding box
     local_coords = [obj.matrix_world @ __import__('mathutils').Vector(v) for v in obj.bound_box]
     min_z = min(v.z for v in local_coords)
     max_z = max(v.z for v in local_coords)
@@ -174,18 +172,16 @@ def _normalise_mesh(obj, target_height: float = None) -> float:
     if mesh_height < 1e-6:
         raise RuntimeError("Imported mesh has zero height — cannot normalise.")
 
-    # Always position feet at Z=0
+    # Position feet at Z=0
     obj.location.z -= min_z
     bpy.ops.object.transform_apply(location=True)
 
-    # Only scale if the caller explicitly requested a specific height
-    if target_height is not None:
-        scale_factor = target_height / mesh_height
-        obj.scale = (scale_factor, scale_factor, scale_factor)
-        bpy.ops.object.transform_apply(scale=True)
-        return target_height
+    # Scale Z to target height, X/Y for body proportions
+    z_factor = target_height / mesh_height
+    obj.scale = (z_factor * x_scale, z_factor * y_scale, z_factor)
+    bpy.ops.object.transform_apply(scale=True)
 
-    return mesh_height
+    return target_height
 
 
 def _clear_vertex_groups(obj):
@@ -251,10 +247,20 @@ def create_body_from_template(cfg: dict):
 
     gender = cfg.get("gender", "neutral")
     lod = cfg.get("lod", "low")
-    # Only scale if the user explicitly passed --height; never apply preset/build/gender
-    # multiplied heights to the template mesh — that would distort the artist's work.
-    height_override = cfg.get("height_override", None)
     skin_tone = cfg.get("skin_tone", None)
+
+    # Compute proportion scale factors relative to the "average" template.
+    # The template mesh was built to average proportions (height=1.50,
+    # shoulder_width=0.23, torso_depth=0.16).  Preset/build values are applied
+    # as non-uniform XYZ scale so a "brute" comes out wide and a "slender"
+    # comes out narrow without touching the artist geometry.
+    from .presets import PRESETS as _PRESETS
+    _avg = _PRESETS["average"]
+    target_height   = cfg.get("height",         _avg["height"])
+    target_sw       = cfg.get("shoulder_width",  _avg["shoulder_width"])
+    target_td       = cfg.get("torso_depth",     _avg["torso_depth"])
+    x_scale = target_sw / _avg["shoulder_width"]   # width multiplier
+    y_scale = target_td / _avg["torso_depth"]       # depth multiplier
 
     # ── Clear scene ────────────────────────────────────────────────────────
     bpy.ops.object.select_all(action='SELECT')
@@ -273,10 +279,8 @@ def create_body_from_template(cfg: dict):
     keep = scene_before | {mesh_obj.name}
     _clear_non_mesh_objects(keep)
 
-    # ── Position (and optionally scale) ───────────────────────────────────
-    # Pass height_override only when user explicitly requested a specific height.
-    # Otherwise the mesh is imported at its natural dimensions.
-    actual_height = _normalise_mesh(mesh_obj, height_override)
+    # ── Scale to preset proportions ────────────────────────────────────────
+    actual_height = _normalise_mesh(mesh_obj, target_height, x_scale, y_scale)
 
     # Update cfg so that rig.py positions bones against the mesh's real height,
     # not a preset value that may not match the template mesh.

@@ -54,10 +54,9 @@ def parse_args():
     parser.add_argument("--hair-color", default="brown",
                         help="Hair color name or R,G,B,A values")
 
-    # Template mesh
-    parser.add_argument("--use-template", action="store_true",
-                        help="Import body mesh from NBM .blend template instead of "
-                             "building procedurally")
+    # Template mesh (always on by default; --procedural opts back to the old generator)
+    parser.add_argument("--procedural", action="store_true",
+                        help="Build body mesh procedurally instead of using the NBM template")
     parser.add_argument("--lod", default="low",
                         choices=["very_low", "low", "mid"],
                         help="Template mesh LOD tier (only used with --use-template): "
@@ -113,7 +112,7 @@ def main():
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
         "randomize": args.randomize,
-        "use_template": args.use_template,
+        "use_template": not args.procedural,
         "lod": args.lod,
     }
 
@@ -147,7 +146,7 @@ def main():
     if args.height is not None:
         config["height_override"] = args.height
 
-    mesh_src = f"template({args.lod})" if args.use_template else "procedural"
+    mesh_src = "procedural" if args.procedural else f"template({args.lod})"
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
           f"gender={args.gender}, skin={args.skin_tone}, "
           f"hair={args.hair_style}/{args.hair_color}, mesh={mesh_src}")

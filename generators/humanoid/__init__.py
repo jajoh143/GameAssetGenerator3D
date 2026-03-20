@@ -48,7 +48,7 @@ def generate(config=None):
     anim_selection = config.pop("animations", "all")
     randomize = config.pop("randomize", False)
     seed = config.pop("seed", None)
-    use_template = config.pop("use_template", False)
+    use_template = config.pop("use_template", True)
     lod = config.pop("lod", "low")
 
     # Remaining config items become direct overrides
