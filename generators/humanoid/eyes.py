@@ -65,7 +65,10 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
         # The iris disc sits at that depth; the sphere centre is one eye_r
         # further back so the sphere is embedded in the head with only the
         # disc visible on the surface.
-        disc_y = face_y + head_r * 0.20   # just behind nose tip = eye socket
+        # The nose tip is the most-forward point; the eye sockets are recessed
+        # roughly 0.40×head_r behind it.  Placing the disc there keeps it on
+        # (or just inside) the face surface rather than in front of it.
+        disc_y = face_y + head_r * 0.40   # eye-socket depth behind nose tip
         eye_y  = disc_y + eye_r           # sphere centre one radius behind disc
     else:
         # Procedural / fallback: spherical head approximation

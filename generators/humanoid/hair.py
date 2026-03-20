@@ -276,16 +276,19 @@ def _build_short(bm, head_z, head_r):
     # Fringe — two-row flat panel just in front of the brow.
     # fr_y uses the cap's actual ry_mult (0.90) at h_scale=1.07 so the panel
     # sits flush against the front of the cap, not inside it.
-    fr_w  = head_r * 1.60
+    # Fringe: keep it above the eyes.  The hairline ring is at the brow level
+    # (head_z); fr_zb must stay close to hl_z so the fringe doesn't hang down
+    # over the eye sockets.  0.06 keeps it just at/slightly below the brow.
+    fr_w  = head_r * 1.50
     fr_y  = -(head_r * 0.90 * 1.07) - 0.005
     fr_zt = hl_z + head_r * 0.06
-    fr_zb = hl_z - head_r * 0.18
+    fr_zb = hl_z - head_r * 0.06
     tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))
     tr = bm.verts.new(( fr_w * 0.50, fr_y, fr_zt))
     ml = bm.verts.new((-fr_w * 0.44, fr_y, fr_zb))
     mr = bm.verts.new(( fr_w * 0.44, fr_y, fr_zb))
-    bl = bm.verts.new((-fr_w * 0.34, fr_y + head_r * 0.04, fr_zb - head_r * 0.10))
-    br = bm.verts.new(( fr_w * 0.34, fr_y + head_r * 0.04, fr_zb - head_r * 0.10))
+    bl = bm.verts.new((-fr_w * 0.34, fr_y + head_r * 0.04, fr_zb - head_r * 0.05))
+    br = bm.verts.new(( fr_w * 0.34, fr_y + head_r * 0.04, fr_zb - head_r * 0.05))
     for fv in [[tl, tr, mr, ml], [ml, mr, br, bl]]:
         try:
             bm.faces.new(fv)
