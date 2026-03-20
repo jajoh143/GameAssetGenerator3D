@@ -120,22 +120,35 @@ def _close_ring(bm, ring, top=True):
     return centre
 
 
-# ── Ring region selectors (8-vert rings only) ──────────────────────────────────
+# ── Ring region selectors (work for any n) ────────────────────────────────────
+#
+# For a ring of n vertices produced by _ring():
+#   i=0        → front centre
+#   i=n//4     → left centre   (+x)
+#   i=n//2     → back centre
+#   i=3*n//4   → right centre  (-x)
 
 def _back_verts(ring):
-    return [ring[3], ring[4], ring[5]]
+    n = len(ring)
+    c = n // 2
+    return [ring[c - 1], ring[c], ring[c + 1]]
 
 
 def _left_verts(ring):
-    return [ring[1], ring[2], ring[3]]
+    n = len(ring)
+    c = n // 4
+    return [ring[c - 1], ring[c], ring[c + 1]]
 
 
 def _right_verts(ring):
-    return [ring[5], ring[6], ring[7]]
+    n = len(ring)
+    c = 3 * n // 4
+    return [ring[c - 1], ring[c], ring[c + 1]]
 
 
 def _front_verts(ring):
-    return [ring[7], ring[0], ring[1]]
+    n = len(ring)
+    return [ring[n - 1], ring[0], ring[1]]
 
 
 # ── Panel row builder ──────────────────────────────────────────────────────────
@@ -174,13 +187,17 @@ def _panel_rows(bm, top_verts, rows_spec):
 
 # ── Shared cap builder ─────────────────────────────────────────────────────────
 #
-# Reference proportions (standard human head geometry, normalised to head_r):
+# Proportions follow a spherical dome (sin/cos of elevation angle θ):
 #
-#   Level            z_offset   rx_mult   ry_mult
-#   hairline/brow    0.00       0.88      0.82
-#   forehead         0.28       0.74      0.68
-#   upper cranium    0.58       0.54      0.50
-#   crown            0.90       0.31      0.28
+#   θ      z_offset = sin(θ)   rx_mult ≈ cos(θ)   ry_mult (head is slightly
+#                                                    narrower front-to-back)
+#   0°     0.00                0.97               0.90   ← hairline / brow
+#   30°    0.50                0.84               0.77   ← upper forehead
+#   60°    0.86                0.52               0.48   ← upper cranium
+#   80°    0.97                0.14               0.13   ← crown apex
+#
+# This gives a visibly rounder dome than the old flat profile.
+# 12-sided rings (n=12) ensure the silhouette reads as circular.
 #
 # h_scale pushes the cap shell outward from the head surface:
 #   1.03 → near skin-tight (buzz cut)
@@ -188,11 +205,13 @@ def _panel_rows(bm, top_verts, rows_spec):
 #   1.09 → voluminous long hair
 
 _CAP_LEVELS = [
-    (0.00, 0.88, 0.82),   # hairline / brow
-    (0.28, 0.74, 0.68),   # forehead
-    (0.58, 0.54, 0.50),   # upper cranium
-    (0.90, 0.31, 0.28),   # crown
+    (0.00, 0.97, 0.90),   # hairline / brow  — equatorial
+    (0.50, 0.84, 0.77),   # upper forehead
+    (0.86, 0.52, 0.48),   # upper cranium
+    (0.97, 0.14, 0.13),   # crown apex
 ]
+
+_CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
 
 
 def _build_cap(bm, head_z, head_r, h_scale=1.07):
@@ -206,7 +225,8 @@ def _build_cap(bm, head_z, head_r, h_scale=1.07):
         z = head_z + head_r * z_off
         rings.append(_ring(bm, 0, 0, z,
                            head_r * rx_m * h_scale,
-                           head_r * ry_m * h_scale))
+                           head_r * ry_m * h_scale,
+                           n=_CAP_RING_N))
     for i in range(len(rings) - 1):
         _bridge(bm, rings[i], rings[i + 1])
     _close_ring(bm, rings[-1], top=True)
@@ -536,19 +556,54 @@ def create_hair(head_z, head_r, style="short", color=None):
     obj.select_set(True)
     bpy.ops.object.shade_smooth()
 
-    # Opaque Principled BSDF with a subtle anisotropic sheen
+    # Principled BSDF tuned for stylized low-poly hair:
+    #   - Mid roughness (0.55) avoids the chalky look of high roughness
+    #   - Low anisotropy (0.15) + rotation (0.1) adds directionality
+    #     without creating confusing highlights on flat poly geometry
+    #   - Sheen (0.2) gives a soft rim edge that reads as hair fibre
+    #   - Slight specular tint warms the highlight toward the hair colour
+    # Sources: Blender 4.x Principled BSDF manual, Blender Artists community
     mat = bpy.data.materials.new(name="Hair_Material")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         bsdf.inputs["Base Color"].default_value = rgba
-        bsdf.inputs["Roughness"].default_value = 0.85
+        bsdf.inputs["Roughness"].default_value = 0.55
+
+        # Specular (input name changed in Blender 4.0)
         if "Specular IOR Level" in bsdf.inputs:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.10
+            bsdf.inputs["Specular IOR Level"].default_value = 0.15
         elif "Specular" in bsdf.inputs:
-            bsdf.inputs["Specular"].default_value = 0.10
+            bsdf.inputs["Specular"].default_value = 0.15
+
+        # Directional sheen — keep low so it reads on simple geometry
         if "Anisotropic" in bsdf.inputs:
-            bsdf.inputs["Anisotropic"].default_value = 0.35
+            bsdf.inputs["Anisotropic"].default_value = 0.15
+        if "Anisotropic Rotation" in bsdf.inputs:
+            bsdf.inputs["Anisotropic Rotation"].default_value = 0.1
+
+        # Soft edge rim — simulates fine surface fibres
+        if "Sheen Weight" in bsdf.inputs:       # Blender 4.x
+            bsdf.inputs["Sheen Weight"].default_value = 0.20
+        elif "Sheen" in bsdf.inputs:             # Blender 3.x
+            bsdf.inputs["Sheen"].default_value = 0.20
+        if "Sheen Roughness" in bsdf.inputs:
+            bsdf.inputs["Sheen Roughness"].default_value = 0.50
+
+        # Warm the specular highlight toward the hair colour
+        if "Specular Tint" in bsdf.inputs:
+            si = bsdf.inputs["Specular Tint"]
+            try:
+                # Blender 4.x — colour input
+                r, g, b, a = rgba
+                si.default_value = (
+                    min(r * 1.15, 1.0),
+                    min(g * 1.10, 1.0),
+                    min(b * 1.05, 1.0),
+                    1.0,
+                )
+            except TypeError:
+                si.default_value = 0.4   # Blender 3.x — float input
     obj.data.materials.append(mat)
 
     return obj

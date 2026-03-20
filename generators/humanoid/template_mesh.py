@@ -302,8 +302,9 @@ def create_body_from_template(cfg: dict):
     if hair_style and hair_style != "none":
         # head_r is the *radius* (half the head height).
         # Head height ≈ 13% of total height, so radius ≈ 6.5%.
+        # Neck sits at ~90% of height for the template mesh proportions.
         head_r = actual_height * 0.065
-        head_z = actual_height * 0.87 + head_r
+        head_z = actual_height * 0.90 + head_r
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
     return mesh_obj, hair_obj, []
