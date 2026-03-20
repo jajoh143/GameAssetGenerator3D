@@ -1,15 +1,14 @@
 """Low-poly 3-part eye generation for the humanoid pipeline.
 
-Each eye is built from three separate mesh objects:
+Each eye is built from two separate mesh objects:
   • Sclera  – white of the eye (UV sphere, ~40 faces per eye, 80 total)
   • Iris    – coloured pupil + iris disc (~24 faces per eye, 48 total)
-  • Cornea  – near-transparent glossy dome (~40 faces per eye, 80 total)
 
-Total eye geometry: ~208 faces (both eyes, all 3 parts).
+Total eye geometry: ~128 faces (both eyes).
 
 Public interface
 ----------------
-  create_eyes(head_z, head_r, eye_color, face_y)  →  [sclera_obj, iris_obj, cornea_obj]
+  create_eyes(head_z, head_r, eye_color, face_y)  →  [sclera_obj, iris_obj]
   create_eyebrows(head_z, head_r, face_y, brow_color)  →  brow_obj
 """
 
@@ -66,8 +65,8 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
         face_y:    Most-forward Y of the body mesh (nose-tip bounding-box Y).
 
     Returns:
-        [sclera_obj, iris_obj, cornea_obj]  — three bpy.types.Object instances,
-        each containing geometry for both left and right eyes (~208 faces total).
+        [sclera_obj, iris_obj]  — two bpy.types.Object instances,
+        each containing geometry for both left and right eyes (~128 faces total).
     """
     import bpy
     import bmesh as bmesh_mod
@@ -85,7 +84,6 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     # The iris disc sits just beyond the sclera's frontmost point.
     sclera_y = disc_y
     iris_y   = disc_y - eye_r * 1.005
-    cornea_r = eye_r * 1.020
 
     # ── 1. SCLERA ──────────────────────────────────────────────────────────────
     bm = bmesh_mod.new()
@@ -186,49 +184,7 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
         _set_specular(bsdf, 0.7)
     iris_obj.data.materials.append(iris_mat)
 
-    # ── 3. CORNEA ──────────────────────────────────────────────────────────────
-    bm = bmesh_mod.new()
-    for x_sign in (1, -1):
-        bmesh_mod.ops.create_uvsphere(
-            bm,
-            u_segments=8,
-            v_segments=6,
-            radius=cornea_r,
-            matrix=mathutils.Matrix.Translation((x_sign * eye_x, sclera_y, eye_z)),
-            calc_uvs=False,
-        )
-    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
-
-    cornea_mesh = bpy.data.meshes.new("Cornea_Mesh")
-    bm.to_mesh(cornea_mesh)
-    cornea_mesh.update()
-    bm.free()
-
-    cornea_obj = bpy.data.objects.new("Eyes_Cornea", cornea_mesh)
-    bpy.context.collection.objects.link(cornea_obj)
-    for poly in cornea_mesh.polygons:
-        poly.use_smooth = True
-
-    cornea_mat = bpy.data.materials.new("Eye_Cornea")
-    cornea_mat.use_nodes = True
-    bsdf = cornea_mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.0
-        _set_specular(bsdf, 1.0)
-        if "Transmission Weight" in bsdf.inputs:
-            bsdf.inputs["Transmission Weight"].default_value = 1.0
-        elif "Transmission" in bsdf.inputs:
-            bsdf.inputs["Transmission"].default_value = 1.0
-        if "IOR" in bsdf.inputs:
-            bsdf.inputs["IOR"].default_value = 1.4
-    try:
-        cornea_mat.blend_method = 'BLEND'
-    except AttributeError:
-        pass  # Blender 4.2+ handles transparency differently
-    cornea_obj.data.materials.append(cornea_mat)
-
-    return [sclera_obj, iris_obj, cornea_obj]
+    return [sclera_obj, iris_obj]
 
 
 def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
