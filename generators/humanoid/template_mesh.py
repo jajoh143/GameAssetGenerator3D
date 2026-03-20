@@ -300,7 +300,9 @@ def create_body_from_template(cfg: dict):
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
     if hair_style and hair_style != "none":
-        head_r = actual_height * 0.13
+        # head_r is the *radius* (half the head height).
+        # Head height ≈ 13% of total height, so radius ≈ 6.5%.
+        head_r = actual_height * 0.065
         head_z = actual_height * 0.87 + head_r
         hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
 
