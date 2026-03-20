@@ -236,16 +236,16 @@ def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
     else:
         brow_rgba = tuple(brow_color)
 
-    # ── Geometry constants (mirror eyes.py) ──────────────────────────────────
-    eye_r   = head_r * 0.115
-    eye_z   = head_z - head_r * 0.15    # eye centre Z (same as create_eyes)
+    # ── Geometry constants (must match create_eyes above) ────────────────────
+    eye_r   = head_r * 0.15             # keep in sync with create_eyes eye_r
+    eye_z   = head_z - head_r * 0.1    # keep in sync with create_eyes eye_z
     eye_x   = head_r * 0.32             # lateral half-gap between eye centres
 
     # brow_z: matches base_mesh brow arch  (neck_z + head_r*0.96 = head_z - head_r*0.04)
-    brow_z  = eye_z + head_r * 0.11     # = head_z - head_r*0.04
+    brow_z  = eye_z + head_r * 0.06     # = head_z - head_r*0.04
 
     if face_y is not None:
-        disc_y = face_y + head_r * 0.55
+        disc_y = face_y + head_r * 0.65  # keep in sync with create_eyes disc_y
     else:
         disc_y = -(head_r * 0.85) - eye_r * 0.88
 
