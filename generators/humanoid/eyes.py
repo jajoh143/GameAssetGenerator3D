@@ -73,15 +73,18 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     import bmesh as bmesh_mod
     import mathutils
 
-    eye_r, eye_x, eye_z, eye_y, _ = _eye_geometry(head_z, head_r, face_y)
+    eye_r, eye_x, eye_z, eye_y, disc_y = _eye_geometry(head_z, head_r, face_y)
     iris_rgba = _default_iris_color(eye_color)
 
     iris_r   = eye_r * 0.50          # iris covers ~50 % of sclera radius
     pupil_r  = iris_r * 0.38         # pupil ~38 % of iris radius
-    # Place iris disc just in front of the sclera's frontmost point so the
-    # opaque sclera never occludes it.  The cornea (1.02× radius) then wraps
-    # over everything.
-    iris_y   = eye_y - eye_r * 1.005
+
+    # disc_y is the face-surface depth at the eye socket (the old "disc" position).
+    # Centre the sclera/cornea spheres there so the forward hemisphere protrudes
+    # visibly from the face rather than being buried inside the head mesh.
+    # The iris disc sits just beyond the sclera's frontmost point.
+    sclera_y = disc_y
+    iris_y   = disc_y - eye_r * 1.005
     cornea_r = eye_r * 1.020
 
     # ── 1. SCLERA ──────────────────────────────────────────────────────────────
@@ -92,7 +95,7 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
             u_segments=8,
             v_segments=6,
             radius=eye_r,
-            matrix=mathutils.Matrix.Translation((x_sign * eye_x, eye_y, eye_z)),
+            matrix=mathutils.Matrix.Translation((x_sign * eye_x, sclera_y, eye_z)),
             calc_uvs=False,
         )
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
@@ -191,7 +194,7 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
             u_segments=8,
             v_segments=6,
             radius=cornea_r,
-            matrix=mathutils.Matrix.Translation((x_sign * eye_x, eye_y, eye_z)),
+            matrix=mathutils.Matrix.Translation((x_sign * eye_x, sclera_y, eye_z)),
             calc_uvs=False,
         )
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
