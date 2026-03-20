@@ -24,13 +24,17 @@ EYE_COLORS = {
 }
 
 
-def create_eyes(head_z, head_r, eye_color=None):
+def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     """Build both eyeballs and iris/pupil geometry, returning two mesh objects.
 
     Args:
-        head_z:     Z of the brow/hairline level (same value passed to create_hair).
+        head_z:     Z of the head *centre* (same value passed to create_hair).
         head_r:     Head radius in metres  (= actual_height * 0.065).
         eye_color:  Iris colour — RGBA tuple, a key from EYE_COLORS, or None.
+        face_y:     Most-forward Y of the body mesh (nose-tip bounding-box Y).
+                    When provided the eyeball sphere is anchored so its front
+                    face sits just inside this plane, preventing protrusion.
+                    When None a spherical approximation is used (procedural path).
 
     Returns:
         [eyeballs_obj, iris_obj]  — two linked bpy.types.Object instances.
@@ -52,15 +56,24 @@ def create_eyes(head_z, head_r, eye_color=None):
 
     # ── Geometry constants ───────────────────────────────────────────────────
     eye_r    = head_r * 0.115      # eyeball sphere radius
-    eye_z    = head_z - head_r * 0.15   # slightly below brow
+    eye_z    = head_z - head_r * 0.15   # slightly below head centre (brow level)
     eye_x    = head_r * 0.32       # lateral half-gap between eye centres
-    # Centre spheres so they sit ~40 % inside the head face (protrude visibly)
-    eye_y    = -(head_r * 0.85)    # sphere centre y (head face ≈ -head_r)
+
+    if face_y is not None:
+        # Anchor to the actual mesh surface.
+        # face_y ≈ nose-tip; eyes are ~20 % of head_r behind the nose tip.
+        # The iris disc sits at that depth; the sphere centre is one eye_r
+        # further back so the sphere is embedded in the head with only the
+        # disc visible on the surface.
+        disc_y = face_y + head_r * 0.20   # just behind nose tip = eye socket
+        eye_y  = disc_y + eye_r           # sphere centre one radius behind disc
+    else:
+        # Procedural / fallback: spherical head approximation
+        eye_y  = -(head_r * 0.85)
+        disc_y = eye_y - eye_r * 0.88
 
     iris_r   = eye_r * 0.68        # iris disc radius
     pupil_r  = iris_r * 0.48       # pupil disc radius (solid dark centre)
-    # Iris / pupil disc sits at the near-front pole of the eyeball sphere
-    disc_y   = eye_y - eye_r * 0.88
 
     # ── Eyeball spheres ──────────────────────────────────────────────────────
     bm = bmesh_mod.new()

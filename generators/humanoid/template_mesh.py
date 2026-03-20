@@ -294,12 +294,22 @@ def create_body_from_template(cfg: dict):
     _apply_skin_material(mesh_obj, skin_tone)
 
     # ── Derive head geometry parameters from actual mesh height ───────────────
-    # head_r is the *radius* (half the head height).
-    # Head height ≈ 13% of total height, so radius ≈ 6.5%.
-    # Neck sits at ~90% of height for the template mesh proportions.
-    # head_z is the brow/hairline level = neck_top + head_r.
+    # head_z = head CENTRE = mesh top − head radius.
+    # With head_r ≈ 0.065 × height the crown lands at head_z + 0.97×head_r,
+    # which is ~3 mm below the top of the mesh — exactly right.
+    # The OLD formula (0.90×height + head_r) pushed the crown ~5 cm above the
+    # mesh for typical NBM heights, so the hair floated off the head.
     head_r = actual_height * 0.065
-    head_z = actual_height * 0.90 + head_r
+    head_z = actual_height - head_r   # head centre (= neck_top + head_r)
+
+    # ── Measure actual face Y so eye spheres sit inside the mesh ─────────────
+    # The mesh bounding box min-Y ≈ nose tip (most forward point in -Y).
+    # Eyes sit a little behind the nose, which is head_r*0.20 ahead of the
+    # eye socket.  Passing face_y to create_eyes lets it anchor to the real
+    # mesh surface rather than a spherical approximation.
+    import mathutils as _mu
+    world_verts = [mesh_obj.matrix_world @ _mu.Vector(v) for v in mesh_obj.bound_box]
+    face_y = min(v.y for v in world_verts)   # nose-tip Y ≈ front of face
 
     # ── Hair ──────────────────────────────────────────────────────────────────
     hair_obj = None
@@ -311,7 +321,7 @@ def create_body_from_template(cfg: dict):
     # ── Eyes ──────────────────────────────────────────────────────────────────
     from . import eyes as eyes_module
     eye_color = cfg.get("eye_color", None)
-    eye_objs = eyes_module.create_eyes(head_z, head_r, eye_color)
+    eye_objs = eyes_module.create_eyes(head_z, head_r, eye_color, face_y=face_y)
 
     # Return eye objects as (obj, "Head") tuples so the rig can parent them
     # rigidly to the Head bone, matching how hair is handled.
