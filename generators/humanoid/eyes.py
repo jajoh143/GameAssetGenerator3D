@@ -55,8 +55,8 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     pupil_rgba  = (0.04, 0.03, 0.03, 1.0)  # near-black pupil centre
 
     # ── Geometry constants ───────────────────────────────────────────────────
-    eye_r    = head_r * 0.115      # eyeball sphere radius
-    eye_z    = head_z - head_r * 0.15   # slightly below head centre (brow level)
+    eye_r    = head_r * 0.15      # eyeball sphere radius
+    eye_z    = head_z - head_r * 0.1  # slightly below head centre (brow level)
     eye_x    = head_r * 0.32       # lateral half-gap between eye centres
 
     if face_y is not None:
@@ -68,15 +68,15 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
         # The nose tip is the most-forward point; the eye sockets are recessed
         # roughly 0.40×head_r behind it.  Placing the disc there keeps it on
         # (or just inside) the face surface rather than in front of it.
-        disc_y = face_y + head_r * 0.55   # eye-socket depth behind nose tip
+        disc_y = face_y + head_r * 0.65   # eye-socket depth behind nose tip
         eye_y  = disc_y + eye_r           # sphere centre one radius behind disc
     else:
-        # Procedural / fallback: spherical head approximation
+        # Procedural / fallback: spherical heada approximation
         eye_y  = -(head_r * 0.85)
         disc_y = eye_y - eye_r * 0.88
 
-    iris_r   = eye_r * 0.68        # iris disc radius
-    pupil_r  = iris_r * 0.48       # pupil disc radius (solid dark centre)
+    iris_r   = eye_r * 0.4        # iris disc radius
+    pupil_r  = iris_r * 0.2       # pupil disc radius (solid dark centre)
 
     # ── Eyeball spheres ──────────────────────────────────────────────────────
     bm = bmesh_mod.new()
