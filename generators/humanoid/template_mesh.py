@@ -326,4 +326,11 @@ def create_body_from_template(cfg: dict):
     # Return eye objects as (obj, "Head") tuples so the rig can parent them
     # rigidly to the Head bone, matching how hair is handled.
     extra_head_objs = [(e, "Head") for e in eye_objs]
+
+    # ── Eyebrows ──────────────────────────────────────────────────────────────
+    brow_color = cfg.get("brow_color", None)
+    brow_obj = eyes_module.create_eyebrows(head_z, head_r, face_y=face_y,
+                                           brow_color=brow_color)
+    extra_head_objs.append((brow_obj, "Head"))
+
     return mesh_obj, hair_obj, extra_head_objs

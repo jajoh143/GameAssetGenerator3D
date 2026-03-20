@@ -210,3 +210,94 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
         face_idx += n
 
     return [eyes_obj, iris_obj]
+
+
+def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
+    """Build low-poly eyebrow strips above each eye socket.
+
+    Uses the same coordinate conventions as create_eyes so the strips land
+    directly over the brow-arch ridges baked into the base mesh.
+
+    Args:
+        head_z:     Z of the head centre (same value passed to create_eyes).
+        head_r:     Head radius in metres.
+        face_y:     Most-forward Y of the body mesh (nose-tip bounding-box Y).
+        brow_color: RGBA tuple or None (defaults to dark brown).
+
+    Returns:
+        brow_obj — one bpy.types.Object containing both brow strips.
+    """
+    import bpy
+    import bmesh as bmesh_mod
+    import math
+
+    if brow_color is None:
+        brow_rgba = (0.09, 0.05, 0.02, 1.0)   # dark brown
+    else:
+        brow_rgba = tuple(brow_color)
+
+    # ── Geometry constants (mirror eyes.py) ──────────────────────────────────
+    eye_r   = head_r * 0.115
+    eye_z   = head_z - head_r * 0.15    # eye centre Z (same as create_eyes)
+    eye_x   = head_r * 0.32             # lateral half-gap between eye centres
+
+    # brow_z: matches base_mesh brow arch  (neck_z + head_r*0.96 = head_z - head_r*0.04)
+    brow_z  = eye_z + head_r * 0.11     # = head_z - head_r*0.04
+
+    if face_y is not None:
+        disc_y = face_y + head_r * 0.55
+    else:
+        disc_y = -(head_r * 0.85) - eye_r * 0.88
+
+    # Strip dimensions
+    brow_half_w = head_r * 0.27         # half-width of each brow
+    brow_h      = head_r * 0.045        # strip height (Z)
+    brow_y      = disc_y                # same depth as the iris disc
+    n_segs      = 5                     # segments across width (~12 faces/brow)
+
+    bm = bmesh_mod.new()
+
+    for x_sign in (1, -1):
+        cx = x_sign * eye_x
+        # inner end (toward nose) → smaller |x|; outer end → larger |x|
+        bot_verts = []
+        top_verts = []
+        for i in range(n_segs + 1):
+            t = i / n_segs   # 0 = inner, 1 = outer
+            x = cx + x_sign * (-brow_half_w + 2.0 * brow_half_w * t)
+            # gentle arch: highest at t≈0.4, inner end slightly higher than outer
+            arch_z  = brow_z + brow_h * 4.0 * t * (1.0 - t) * 0.35
+            taper_h = brow_h * (1.0 - 0.45 * t)   # taper toward outer end
+            bot_verts.append(bm.verts.new((x, brow_y, arch_z)))
+            top_verts.append(bm.verts.new((x, brow_y, arch_z + taper_h)))
+
+        for i in range(n_segs):
+            try:
+                if x_sign > 0:
+                    bm.faces.new([bot_verts[i], bot_verts[i + 1],
+                                  top_verts[i + 1], top_verts[i]])
+                else:
+                    bm.faces.new([bot_verts[i + 1], bot_verts[i],
+                                  top_verts[i], top_verts[i + 1]])
+            except ValueError:
+                pass
+
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    mesh_b = bpy.data.meshes.new("Eyebrows_Mesh")
+    bm.to_mesh(mesh_b)
+    mesh_b.update()
+    bm.free()
+
+    brow_obj = bpy.data.objects.new("Eyebrows", mesh_b)
+    bpy.context.collection.objects.link(brow_obj)
+
+    brow_mat = bpy.data.materials.new("Eyebrow_Mat")
+    brow_mat.use_nodes = True
+    bsdf = brow_mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = brow_rgba
+        bsdf.inputs["Roughness"].default_value = 0.85
+    brow_obj.data.materials.append(brow_mat)
+
+    return brow_obj
