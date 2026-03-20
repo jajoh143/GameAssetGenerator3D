@@ -164,8 +164,8 @@ class TestResolveConfig(unittest.TestCase):
 class TestHairStyles(unittest.TestCase):
 
     def test_style_count(self):
-        # 5 styles + "none"
-        self.assertEqual(len(HAIR_STYLES), 6)
+        # 6 styles + "none"
+        self.assertEqual(len(HAIR_STYLES), 7)
 
     def test_all_non_none_styles_have_builders(self):
         for style in HAIR_STYLES:
@@ -173,7 +173,7 @@ class TestHairStyles(unittest.TestCase):
                 self.assertIn(style, HAIR_BUILDERS, f"No builder for '{style}'")
 
     def test_expected_styles_exist(self):
-        for style in ("buzzed", "short", "spiky", "long", "mohawk"):
+        for style in ("buzzed", "short", "spiky", "long", "mohawk", "ponytail"):
             self.assertIn(style, HAIR_STYLES)
 
     def test_none_not_in_builders(self):

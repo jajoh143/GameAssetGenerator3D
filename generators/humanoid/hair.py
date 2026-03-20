@@ -1,289 +1,651 @@
-"""Low-poly hair generation for humanoid characters.
+"""Low-poly hair generation for the humanoid pipeline.
 
-Each hair style is built from simple primitives (boxes, spheres, cylinders)
-positioned relative to the head center and radius. Hair is returned as a list
-of Blender objects that get joined into the body mesh.
+Mesh-based, no particle systems or alpha textures.  All styles use solid
+opaque geometry so they render correctly on any mobile/web real-time renderer
+without transparency-sorting artifacts.
 
-Available styles:
-    - "buzzed":  Thin skullcap hugging the head
-    - "short":   Slightly raised cap with volume on top
-    - "spiky":   Several extruded spike-like cones on top
-    - "long":    Flows down past the shoulders
-    - "mohawk":  Tall central ridge from forehead to nape
+Architecture
+------------
+Every style is composed of two parts:
 
-Data constants (HAIR_STYLES, HAIR_COLORS) are importable without bpy.
-Builder functions and create_hair() require Blender's Python environment.
+  1. A *cap* — a domed shell sitting ~3-9% outside the head surface,
+     covering from the hairline ring up to the crown.
+
+  2. *Extensions* — panel rows, ring stacks, or clumps that add the
+     style-defining volume (nape, curtains, fringe, spikes, ponytail bundle).
+
+All geometry is built into a single bmesh then converted to one Blender mesh
+object so there is only one draw call per character.
+
+Public interface
+----------------
+  create_hair(head_z, head_r, style, color)  →  bpy.types.Object or None
+  HAIR_STYLES   — tuple of valid style name strings
+  HAIR_COLORS   — dict mapping name → RGBA tuple
+
+Face budget (mobile target: 300-500 faces per complete asset)
+-------------------------------------------------------------
+  buzzed    ≈  50–80 faces
+  short     ≈ 100–160 faces
+  spiky     ≈ 120–200 faces
+  long      ≈ 180–280 faces
+  mohawk    ≈ 140–200 faces
+  ponytail  ≈ 150–220 faces
 """
 
 import math
 
-# ─── Data constants (no bpy dependency) ────────────────────────────────────
+# ── Data constants (no bpy dependency) ────────────────────────────────────────
 
-HAIR_STYLES = ("none", "buzzed", "short", "spiky", "long", "mohawk")
+HAIR_STYLES = ("none", "buzzed", "short", "spiky", "long", "mohawk", "ponytail")
 
-# Named hair color palettes (RGBA)
 HAIR_COLORS = {
-    "black":     (0.05, 0.04, 0.04, 1.0),
+    "black":      (0.05, 0.04, 0.04, 1.0),
     "dark_brown": (0.18, 0.10, 0.06, 1.0),
-    "brown":     (0.30, 0.18, 0.08, 1.0),
-    "auburn":    (0.42, 0.16, 0.08, 1.0),
-    "red":       (0.55, 0.12, 0.06, 1.0),
-    "blonde":    (0.72, 0.58, 0.30, 1.0),
-    "platinum":  (0.85, 0.82, 0.72, 1.0),
-    "white":     (0.90, 0.88, 0.85, 1.0),
-    "grey":      (0.50, 0.48, 0.46, 1.0),
-    # Fantasy
-    "blue":      (0.15, 0.25, 0.65, 1.0),
-    "green":     (0.12, 0.50, 0.18, 1.0),
-    "purple":    (0.40, 0.12, 0.55, 1.0),
-    "pink":      (0.75, 0.30, 0.50, 1.0),
+    "brown":      (0.30, 0.18, 0.08, 1.0),
+    "auburn":     (0.42, 0.16, 0.08, 1.0),
+    "red":        (0.55, 0.12, 0.06, 1.0),
+    "blonde":     (0.72, 0.58, 0.30, 1.0),
+    "platinum":   (0.85, 0.82, 0.72, 1.0),
+    "white":      (0.90, 0.88, 0.85, 1.0),
+    "grey":       (0.50, 0.48, 0.46, 1.0),
+    "blue":       (0.15, 0.25, 0.65, 1.0),
+    "green":      (0.12, 0.50, 0.18, 1.0),
+    "purple":     (0.40, 0.12, 0.55, 1.0),
+    "pink":       (0.75, 0.30, 0.50, 1.0),
 }
 
 
 def get_hair_style_names():
-    """Return list of available hair style names."""
     return list(HAIR_STYLES)
 
 
 def get_hair_color_names():
-    """Return sorted list of available hair color names."""
     return sorted(HAIR_COLORS.keys())
 
 
-# ─── Blender geometry helpers (bpy imported at call time) ──────────────────
+# ── Core bmesh geometry helpers ────────────────────────────────────────────────
 
-def _create_box(bpy, name, size, location):
-    """Create a box mesh at the given location."""
-    bpy.ops.mesh.primitive_cube_add(size=1, location=location)
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.scale = (size[0], size[1], size[2])
-    bpy.ops.object.transform_apply(scale=True)
-    return obj
+def _ring(bm, cx, cy, cz, rx, ry, n=8):
+    """Create an n-vertex elliptical ring in the XY plane at height cz.
 
-
-def _create_sphere(bpy, name, radius, location, segments=8, rings=6):
-    """Create a low-poly sphere."""
-    bpy.ops.mesh.primitive_uv_sphere_add(
-        segments=segments, ring_count=rings,
-        radius=radius, location=location,
-    )
-    obj = bpy.context.active_object
-    obj.name = name
-    return obj
-
-
-def _create_cone(bpy, name, radius, depth, location, segments=6):
-    """Create a low-poly cone (used for spikes)."""
-    bpy.ops.mesh.primitive_cone_add(
-        vertices=segments, radius1=radius, radius2=0,
-        depth=depth, location=location,
-    )
-    obj = bpy.context.active_object
-    obj.name = name
-    return obj
+    Vertex order for n=8 (used by the region helpers below):
+      i=0  front      (y most negative — faces forward)
+      i=1  front-right (+x, -y)
+      i=2  right       (+x)
+      i=3  back-right  (+x, +y)
+      i=4  back        (y most positive)
+      i=5  back-left   (-x, +y)
+      i=6  left        (-x)
+      i=7  front-left  (-x, -y)
+    """
+    verts = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        verts.append(bm.verts.new((
+            cx + rx * math.sin(a),
+            cy - ry * math.cos(a),
+            cz,
+        )))
+    return verts
 
 
-# ─── Hair style builders ───────────────────────────────────────────────────
-
-def build_buzzed(head_z, head_r):
-    """Thin skullcap that hugs the top of the head."""
-    import bpy
-    parts = []
-    cap = _create_sphere(bpy, "Hair_Buzzed", head_r * 1.04,
-                         (0, 0, head_z + head_r * 0.03),
-                         segments=10, rings=5)
-    cap.scale = (1.0, 1.0, 0.55)
-    bpy.context.view_layer.objects.active = cap
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(cap)
-    return parts
+def _bridge(bm, ring_a, ring_b):
+    """Connect two equal-length rings with a quad strip."""
+    n = len(ring_a)
+    for i in range(n):
+        j = (i + 1) % n
+        try:
+            bm.faces.new([ring_a[i], ring_a[j], ring_b[j], ring_b[i]])
+        except ValueError:
+            pass
 
 
-def build_short(head_z, head_r):
-    """Short hair with volume on top — cap + slight side coverage."""
-    import bpy
-    parts = []
-    top = _create_sphere(bpy, "Hair_Short_Top", head_r * 1.10,
-                         (0, 0, head_z + head_r * 0.10),
-                         segments=10, rings=5)
-    top.scale = (1.05, 1.0, 0.6)
-    bpy.context.view_layer.objects.active = top
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(top)
-
-    back = _create_box(bpy, "Hair_Short_Back",
-                       (head_r * 1.8, head_r * 0.5, head_r * 0.7),
-                       (0, -head_r * 0.45, head_z + head_r * 0.15))
-    parts.append(back)
-    return parts
-
-
-def build_spiky(head_z, head_r):
-    """Multiple low-poly cones sticking up from the top of the head."""
-    import bpy
-    parts = []
-
-    cap = _create_sphere(bpy, "Hair_Spiky_Base", head_r * 1.06,
-                         (0, 0, head_z + head_r * 0.05),
-                         segments=10, rings=4)
-    cap.scale = (1.0, 1.0, 0.5)
-    bpy.context.view_layer.objects.active = cap
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(cap)
-
-    spike_layout = [
-        (0.0,    0.0,    0,    0),      # center
-        (0.55,   0.0,   15,    0),      # right
-        (-0.55,  0.0,  -15,    0),      # left
-        (0.0,    0.45,   0,  -15),      # front
-        (0.0,   -0.45,   0,   15),      # back
-        (0.35,   0.35,  10,  -10),      # front-right
-        (-0.35,  0.35, -10,  -10),      # front-left
-    ]
-
-    spike_h = head_r * 0.55
-    spike_r = head_r * 0.12
-
-    for i, (xo, yo, tilt_x, tilt_y) in enumerate(spike_layout):
-        x = xo * head_r
-        y = yo * head_r
-        z = head_z + head_r * 0.85 + spike_h / 2
-
-        spike = _create_cone(bpy, f"Hair_Spike_{i}", spike_r, spike_h,
-                             (x, y, z), segments=5)
-        spike.rotation_euler = (math.radians(tilt_y), math.radians(tilt_x), 0)
-        bpy.context.view_layer.objects.active = spike
-        bpy.ops.object.transform_apply(rotation=True)
-        parts.append(spike)
-
-    return parts
+def _close_ring(bm, ring, top=True):
+    """Close a ring with a triangle fan.  Returns the centre vertex."""
+    cx = sum(v.co.x for v in ring) / len(ring)
+    cy = sum(v.co.y for v in ring) / len(ring)
+    cz = sum(v.co.z for v in ring) / len(ring)
+    centre = bm.verts.new((cx, cy, cz))
+    n = len(ring)
+    for i in range(n):
+        j = (i + 1) % n
+        try:
+            if top:
+                bm.faces.new([ring[i], ring[j], centre])
+            else:
+                bm.faces.new([ring[j], ring[i], centre])
+        except ValueError:
+            pass
+    return centre
 
 
-def build_long(head_z, head_r):
-    """Long hair flowing down past the shoulders."""
-    import bpy
-    parts = []
+# ── Ring region selectors (work for any n) ────────────────────────────────────
+#
+# For a ring of n vertices produced by _ring():
+#   i=0        → front centre
+#   i=n//4     → left centre   (+x)
+#   i=n//2     → back centre
+#   i=3*n//4   → right centre  (-x)
 
-    top = _create_sphere(bpy, "Hair_Long_Top", head_r * 1.12,
-                         (0, 0, head_z + head_r * 0.08),
-                         segments=10, rings=5)
-    top.scale = (1.05, 1.05, 0.6)
-    bpy.context.view_layer.objects.active = top
-    bpy.ops.object.transform_apply(scale=True)
-    parts.append(top)
-
-    curtain_h = head_r * 2.8
-    curtain_w = head_r * 0.35
-    for side, x_sign in [("L", 1), ("R", -1)]:
-        curtain = _create_box(
-            bpy, f"Hair_Long_Side_{side}",
-            (curtain_w, head_r * 0.8, curtain_h),
-            (x_sign * head_r * 0.85, -head_r * 0.1,
-             head_z - curtain_h / 2 + head_r * 0.3),
-        )
-        parts.append(curtain)
-
-    back_h = head_r * 3.5
-    back = _create_box(bpy, "Hair_Long_Back",
-                       (head_r * 1.6, head_r * 0.4, back_h),
-                       (0, -head_r * 0.65,
-                        head_z - back_h / 2 + head_r * 0.4))
-    parts.append(back)
-    return parts
+def _back_verts(ring):
+    n = len(ring)
+    c = n // 2
+    return [ring[c - 1], ring[c], ring[c + 1]]
 
 
-def build_mohawk(head_z, head_r):
-    """Tall central ridge from front to back of head."""
-    import bpy
-    parts = []
-
-    ridge_count = 5
-    ridge_height = head_r * 0.9
-    ridge_width = head_r * 0.2
-    ridge_total_len = head_r * 1.8
-    step = ridge_total_len / ridge_count
-
-    for i in range(ridge_count):
-        y = head_r * 0.5 - i * step
-        t = abs(i - ridge_count / 2) / (ridge_count / 2)
-        h = ridge_height * (1.0 - 0.3 * t)
-        z = head_z + head_r * 0.7 + h / 2
-
-        segment = _create_box(
-            bpy, f"Hair_Mohawk_{i}",
-            (ridge_width, step * 0.9, h),
-            (0, y, z),
-        )
-        parts.append(segment)
-
-    for side, x_sign in [("L", 1), ("R", -1)]:
-        side_cap = _create_sphere(
-            bpy, f"Hair_Mohawk_Side_{side}",
-            head_r * 1.02,
-            (x_sign * head_r * 0.15, 0, head_z + head_r * 0.02),
-            segments=8, rings=4,
-        )
-        side_cap.scale = (0.5, 0.9, 0.45)
-        bpy.context.view_layer.objects.active = side_cap
-        bpy.ops.object.transform_apply(scale=True)
-        parts.append(side_cap)
-
-    return parts
+def _left_verts(ring):
+    n = len(ring)
+    c = n // 4
+    return [ring[c - 1], ring[c], ring[c + 1]]
 
 
-# ─── Style dispatch ────────────────────────────────────────────────────────
-
-HAIR_BUILDERS = {
-    "buzzed":  build_buzzed,
-    "short":   build_short,
-    "spiky":   build_spiky,
-    "long":    build_long,
-    "mohawk":  build_mohawk,
-}
+def _right_verts(ring):
+    n = len(ring)
+    c = 3 * n // 4
+    return [ring[c - 1], ring[c], ring[c + 1]]
 
 
-def create_hair(head_z, head_r, style="short", color=None):
-    """Create hair geometry and return the list of objects.
+def _front_verts(ring):
+    n = len(ring)
+    return [ring[n - 1], ring[0], ring[1]]
+
+
+def _back_half_verts(ring):
+    """Back 270° of the ring — everything except the 3 front-centre verts.
+
+    For n=12 this returns ring[2]..ring[10], spanning from the front-left
+    shoulder, around the full back, to the front-right shoulder.  Combined
+    with a fringe panel for the remaining 90°, this gives seamless coverage
+    of the entire head circumference below the hairline.
+    """
+    n = len(ring)
+    return [ring[i] for i in range(2, n - 1)]
+
+
+# ── Hair clump builder (CGCookie "big→medium→small" technique) ────────────────
+#
+# Instead of flat rectangular fringe panels, hair is composed of individual
+# tapered "locks" — each wide at the scalp root and narrowing to a pointed tip.
+# This matches the Bézier-curve clump workflow from CGCookie's cartoon-hair
+# tutorial: define a spine (root→mid→tip), give it a cross-section that tapers,
+# and layer 4-6 overlapping clumps across the fringe to read as distinct strands.
+
+def _hair_clump(bm, spine, widths):
+    """Build one tapered flat hair lock.
 
     Args:
-        head_z: Z position of head center.
-        head_r: Head sphere radius.
-        style: Hair style name (or "none" for bald).
-        color: RGBA tuple or named color string. Defaults to "dark_brown".
+        spine:   [(x, y, z), ...] — 3–5 centre-line points, root first.
+        widths:  [half_width, ...] in X at each point; last entry = 0 (tip).
+
+    Geometry: quad strip for all segments except the last, which terminates
+    in a single tip vertex (triangle) so the clump reads as pointed.
+    """
+    n = len(spine)
+    # All points except the tip get left+right edge verts
+    left  = [bm.verts.new((spine[i][0] - widths[i], spine[i][1], spine[i][2]))
+             for i in range(n - 1)]
+    right = [bm.verts.new((spine[i][0] + widths[i], spine[i][1], spine[i][2]))
+             for i in range(n - 1)]
+    tip = bm.verts.new(spine[-1])   # single pointed tip vertex
+
+    for i in range(n - 2):
+        try:
+            bm.faces.new([left[i], left[i + 1], right[i + 1], right[i]])
+        except ValueError:
+            pass
+    # Triangulated tip
+    try:
+        bm.faces.new([left[-1], tip, right[-1]])
+    except ValueError:
+        pass
+
+
+def _fringe_clumps(bm, head_r, hl_z, fr_y, clump_defs):
+    """Lay out overlapping hair clumps forming a fringe / bangs.
+
+    Args:
+        head_r:     Head radius in metres.
+        hl_z:       Z of the hairline ring (= head_z for the equatorial ring).
+        fr_y:       Y of the cap front surface (negative = forward).
+        clump_defs: list of tuples:
+          (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
+          cx        — X centre as multiple of head_r
+          x_drift   — extra X at tip (×head_r), for sideways sweep
+          y_fwd     — how far the tip comes forward (×head_r, added to fr_y)
+          z_mid     — Z drop at mid-point below root (×head_r)
+          z_tip     — Z drop at tip below root (×head_r)
+          w_root    — half-width at root (×head_r)
+    """
+    for cx, x_drift, y_fwd, z_mid, z_tip, w_root in clump_defs:
+        rx      = cx     * head_r
+        drift   = x_drift * head_r
+        wd_root = w_root  * head_r
+        wd_mid  = wd_root * 0.58   # tapers to ~58 % at mid-point
+
+        spine = [
+            (rx,                  fr_y,                       hl_z + head_r * 0.02),
+            (rx + drift * 0.5,    fr_y - head_r * y_fwd * 0.5, hl_z - head_r * z_mid),
+            (rx + drift,          fr_y - head_r * y_fwd,       hl_z - head_r * z_tip),
+        ]
+        _hair_clump(bm, spine, [wd_root, wd_mid, 0])
+
+
+# ── Panel row builder ──────────────────────────────────────────────────────────
+
+def _panel_rows(bm, top_verts, rows_spec):
+    """Extrude a strip of vertices downward in sequential quad rows.
+
+    Args:
+        top_verts:  List of Blender verts forming the top edge of the panel.
+        rows_spec:  List of (dz, x_scale, y_scale) tuples where:
+                    - dz is cumulative (each step moves further from top_verts)
+                    - x_scale and y_scale are absolute — applied to the
+                      original top_verts x/y so the taper is fully controlled
 
     Returns:
-        List of Blender objects (empty if style is "none").
+        (last_row_verts, list_of_all_new_rows)
+    """
+    prev = top_verts
+    all_rows = []
+    cumulative_dz = 0.0
+    for dz, xm, ym in rows_spec:
+        cumulative_dz += dz
+        new_row = [
+            bm.verts.new((v.co.x * xm, v.co.y * ym, v.co.z + cumulative_dz))
+            for v in top_verts
+        ]
+        for i in range(len(prev) - 1):
+            try:
+                bm.faces.new([prev[i], prev[i + 1], new_row[i + 1], new_row[i]])
+            except ValueError:
+                pass
+        all_rows.append(new_row)
+        prev = new_row
+    return prev, all_rows
+
+
+# ── Shared cap builder ─────────────────────────────────────────────────────────
+#
+# Proportions follow a spherical dome (sin/cos of elevation angle θ):
+#
+#   θ      z_offset = sin(θ)   rx_mult ≈ cos(θ)   ry_mult (head is slightly
+#                                                    narrower front-to-back)
+#   0°     0.00                0.97               0.90   ← hairline / brow
+#   30°    0.50                0.84               0.77   ← upper forehead
+#   60°    0.86                0.52               0.48   ← upper cranium
+#   80°    0.97                0.14               0.13   ← crown apex
+#
+# This gives a visibly rounder dome than the old flat profile.
+# 12-sided rings (n=12) ensure the silhouette reads as circular.
+#
+# h_scale pushes the cap shell outward from the head surface:
+#   1.03 → near skin-tight (buzz cut)
+#   1.07 → normal short/medium hair
+#   1.09 → voluminous long hair
+
+_CAP_LEVELS = [
+    (0.00, 0.97, 0.90),   # hairline / brow  — equatorial
+    (0.50, 0.84, 0.77),   # upper forehead
+    (0.86, 0.52, 0.48),   # upper cranium
+    (0.97, 0.14, 0.13),   # crown apex
+]
+
+_CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
+
+
+def _build_cap(bm, head_z, head_r, h_scale=1.07):
+    """Build the shared domed cap from hairline to crown.
+
+    Returns [hairline, forehead, upper, crown] ring lists.
+    Crown is closed; hairline is left open so skin shows below it.
+    """
+    rings = []
+    for z_off, rx_m, ry_m in _CAP_LEVELS:
+        z = head_z + head_r * z_off
+        rings.append(_ring(bm, 0, 0, z,
+                           head_r * rx_m * h_scale,
+                           head_r * ry_m * h_scale,
+                           n=_CAP_RING_N))
+    for i in range(len(rings) - 1):
+        _bridge(bm, rings[i], rings[i + 1])
+    _close_ring(bm, rings[-1], top=True)
+    return rings  # rings[0] = hairline ring
+
+
+# ── Style builders ─────────────────────────────────────────────────────────────
+
+def _build_buzzed(bm, head_z, head_r):
+    """Skullcap hugging the head tightly — very short all over."""
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.03)
+    hl = rings[0]
+    # Single unified row around the back 270° for seamless ear/nape coverage
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.18, 1.0, 1.0),
+    ])
+
+
+def _build_short(bm, head_z, head_r):
+    """Short hair: cap + unified back-half panel + fringe."""
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.07)
+    hl = rings[0]
+    hl_z = hl[0].co.z
+
+    # Unified back-half panel — covers back, left, and right in one strip so
+    # there are no seams or gaps between the old separate panels.  Three rows
+    # taper gently toward the nape; x/y scale is relative to the origin so the
+    # strip naturally pinches inward as it descends.
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.22, 1.00, 1.00),
+        (-head_r * 0.42, 0.92, 0.97),
+        (-head_r * 0.58, 0.80, 0.94),
+    ])
+
+    # Fringe — 5 overlapping tapered clumps (CGCookie big→medium approach).
+    # fr_y sits flush against the cap front face at h_scale=1.07.
+    fr_y = -(head_r * 0.90 * 1.07) - 0.005
+    # (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.52, -0.07, 0.05, 0.03, 0.07, 0.14),   # far-left, sweeps left
+        (-0.26,  0.00, 0.06, 0.03, 0.07, 0.14),   # left
+        ( 0.00,  0.00, 0.07, 0.03, 0.08, 0.16),   # centre (slightly wider)
+        ( 0.26,  0.00, 0.06, 0.03, 0.07, 0.14),   # right
+        ( 0.52,  0.07, 0.05, 0.03, 0.07, 0.14),   # far-right, sweeps right
+    ])
+
+
+def _build_spiky(bm, head_z, head_r):
+    """Toon-style cone spikes radiating from the crown over a tight cap."""
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.05)
+    hl = rings[0]
+
+    # Minimal back-half coverage — one row keeps ear/nape from showing through
+    _panel_rows(bm, _back_half_verts(hl), [(-head_r * 0.15, 1.0, 1.0)])
+
+    # Spike layout: (x_frac, y_frac, height_mult) relative to crown extents
+    crown_z  = head_z + head_r * 0.90
+    crown_rx = head_r * 0.31 * 1.05
+    crown_ry = head_r * 0.28 * 1.05
+    base_r   = head_r * 0.10
+    spike_h  = head_r * 0.80
+    layout = [
+        ( 0.00,  0.00, 1.00),   # centre top
+        ( 0.55,  0.00, 0.85),   # left
+        (-0.55,  0.00, 0.85),   # right
+        ( 0.00,  0.55, 0.80),   # back
+        ( 0.00, -0.55, 0.80),   # front
+        ( 0.40,  0.40, 0.72),   # back-left
+        (-0.40,  0.40, 0.72),   # back-right
+        ( 0.40, -0.40, 0.72),   # front-left
+        (-0.40, -0.40, 0.72),   # front-right
+    ]
+    for xf, yf, hm in layout:
+        sx, sy, sz = xf * crown_rx, yf * crown_ry, crown_z
+        h = spike_h * hm
+        base = _ring(bm, sx,        sy,        sz,          base_r,        base_r * 0.88, n=6)
+        mid  = _ring(bm, sx * 1.06, sy * 1.06, sz + h * 0.55, base_r * 0.50, base_r * 0.45, n=6)
+        tip  = _ring(bm, sx * 1.12, sy * 1.12, sz + h,        base_r * 0.12, base_r * 0.12, n=6)
+        _bridge(bm, base, mid)
+        _bridge(bm, mid, tip)
+        _close_ring(bm, tip, top=True)
+
+
+def _build_long(bm, head_z, head_r):
+    """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.09)
+    hl = rings[0]
+    hl_z = hl[0].co.z
+
+    # Unified back-half curtain — fans out as it falls toward waist level.
+    # The side verts (at ±rx) get the same rows and merge seamlessly into
+    # the back without the gap that the old separate panels had.
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.28, 1.02, 1.00),
+        (-head_r * 0.58, 1.05, 1.00),
+        (-head_r * 0.90, 1.08, 0.99),
+        (-head_r * 1.25, 1.10, 0.98),
+        (-head_r * 1.65, 1.08, 0.97),
+        (-head_r * 2.00, 1.03, 0.96),   # waist level
+    ])
+
+    # Fringe — 5 tapered clumps, longer drop than short style.
+    fr_y = -(head_r * 0.90 * 1.09) - 0.005
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.52, -0.08, 0.07, 0.06, 0.22, 0.15),
+        (-0.26,  0.00, 0.08, 0.06, 0.20, 0.15),
+        ( 0.00,  0.00, 0.09, 0.06, 0.22, 0.17),
+        ( 0.26,  0.00, 0.08, 0.06, 0.20, 0.15),
+        ( 0.52,  0.08, 0.07, 0.06, 0.22, 0.15),
+    ])
+
+
+def _build_mohawk(bm, head_z, head_r):
+    """Tall central fin front-to-back with closely-cropped side caps."""
+    # Two partial side domes, offset left/right
+    for x_sign in [1, -1]:
+        cx = x_sign * head_r * 0.50
+        side_rings = []
+        for z_off, rx_m, ry_m in [
+            (0.00, 0.36, 0.80),
+            (0.22, 0.28, 0.70),
+            (0.46, 0.16, 0.48),
+        ]:
+            side_rings.append(
+                _ring(bm, cx, 0, head_z + head_r * z_off,
+                      head_r * rx_m, head_r * ry_m)
+            )
+        for i in range(len(side_rings) - 1):
+            _bridge(bm, side_rings[i], side_rings[i + 1])
+        _close_ring(bm, side_rings[-1], top=True)
+
+    # Central fin: 7 tapered segments, tallest at centre
+    crown_z = head_z + head_r * 0.90
+    ridge_w = head_r * 0.20    # half-width of each fin panel
+    ridge_d = head_r * 0.14    # front-to-back depth per segment
+    peak_h  = head_r * 1.10
+    y_start = -head_r * 0.28
+    y_end   =  head_r * 0.28
+    n_segs  = 7
+    for i in range(n_segs):
+        yc = y_start + i * (y_end - y_start) / (n_segs - 1)
+        t  = abs(i - (n_segs - 1) / 2) / ((n_segs - 1) / 2)
+        h  = peak_h * (1.0 - 0.35 * t)
+        b_fl = bm.verts.new((-ridge_w, yc - ridge_d * 0.5, crown_z))
+        b_fr = bm.verts.new(( ridge_w, yc - ridge_d * 0.5, crown_z))
+        b_bl = bm.verts.new((-ridge_w, yc + ridge_d * 0.5, crown_z))
+        b_br = bm.verts.new(( ridge_w, yc + ridge_d * 0.5, crown_z))
+        pk_l = bm.verts.new((-ridge_w * 0.25, yc, crown_z + h))
+        pk_r = bm.verts.new(( ridge_w * 0.25, yc, crown_z + h))
+        for fv in [
+            [b_fl, b_fr, pk_r, pk_l],   # front slope
+            [b_br, b_bl, pk_l, pk_r],   # back slope
+            [b_fl, pk_l, b_bl],          # left triangle
+            [b_fr, b_br, pk_r],          # right triangle
+        ]:
+            try:
+                bm.faces.new(fv)
+            except ValueError:
+                pass
+
+
+def _build_ponytail(bm, head_z, head_r):
+    """Short front/sides with a gathered bundle hanging at the back."""
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.07)
+    hl = rings[0]
+    hl_z = hl[0].co.z
+
+    # Unified back-half panel — gathers inward toward the bundle root
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.22, 1.00, 1.00),
+        (-head_r * 0.42, 0.85, 0.96),
+    ])
+
+    # Fringe — 3 shorter clumps (less drop; most hair is in the ponytail).
+    fr_y = -(head_r * 0.90 * 1.07) - 0.005
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.38, -0.05, 0.05, 0.04, 0.14, 0.13),
+        ( 0.00,  0.00, 0.06, 0.04, 0.14, 0.14),
+        ( 0.38,  0.05, 0.05, 0.04, 0.14, 0.13),
+    ])
+
+    # Ponytail bundle — stacked rings hanging from the nape
+    pt_cy  = head_r * 0.85        # sits behind the head
+    pt_cz  = head_z - head_r * 0.42   # nape level
+    pt_r   = head_r * 0.16        # bundle root radius
+    pt_len = head_r * 1.80        # total drop length
+
+    # (relative_dz, radius_multiplier) — dz is a fraction of pt_len
+    bundle_spec = [
+        (0.00, 1.00),   # root
+        (0.14, 0.88),   # slight gather toward tie
+        (0.14, 0.72),   # hair-tie pinch
+        (0.14, 0.84),   # just below tie — slight flare
+        (0.24, 0.90),
+        (0.28, 0.88),
+        (0.28, 0.82),
+        (0.22, 0.68),   # taper toward tip
+        (0.18, 0.42),
+        (0.14, 0.18),   # tip
+    ]
+    prev_ring = None
+    cumz = 0.0
+    for rel_dz, rm in bundle_spec:
+        cumz += rel_dz * pt_len
+        r = pt_r * rm
+        ring = _ring(bm, 0, pt_cy, pt_cz - cumz, r, r * 0.90, n=8)
+        if prev_ring is not None:
+            _bridge(bm, prev_ring, ring)
+        prev_ring = ring
+    _close_ring(bm, prev_ring, top=False)
+
+    # Hair-tie band at the pinch point (~28% down from root)
+    tie_z   = pt_cz - pt_len * 0.28
+    tie_ro  = pt_r * 0.80    # outer radius
+    tie_ri  = pt_r * 0.60    # inner radius
+    tie_h   = head_r * 0.035  # half-height of the band
+    bo = _ring(bm, 0, pt_cy, tie_z - tie_h, tie_ro, tie_ro * 0.90, n=8)
+    to = _ring(bm, 0, pt_cy, tie_z + tie_h, tie_ro, tie_ro * 0.90, n=8)
+    bi = _ring(bm, 0, pt_cy, tie_z - tie_h, tie_ri, tie_ri * 0.90, n=8)
+    ti = _ring(bm, 0, pt_cy, tie_z + tie_h, tie_ri, tie_ri * 0.90, n=8)
+    _bridge(bm, bo, to)           # outer wall
+    _bridge(bm, ti, bi)           # inner wall (reversed winding)
+    _bridge(bm, ti, to)           # top face
+    _bridge(bm, bo, bi)           # bottom face
+
+
+# ── Style dispatch ─────────────────────────────────────────────────────────────
+
+_STYLE_BUILDERS = {
+    "buzzed":   _build_buzzed,
+    "short":    _build_short,
+    "spiky":    _build_spiky,
+    "long":     _build_long,
+    "mohawk":   _build_mohawk,
+    "ponytail": _build_ponytail,
+}
+
+# Public alias expected by tests and external callers
+HAIR_BUILDERS = _STYLE_BUILDERS
+
+
+# ── Public entry point ─────────────────────────────────────────────────────────
+
+def create_hair(head_z, head_r, style="short", color=None):
+    """Build hair geometry and return a linked Blender mesh object.
+
+    Args:
+        head_z: Z coordinate of the head *centre* (= neck_z + head_r).
+        head_r: Head radius in metres.
+        style:  Name from HAIR_STYLES.  "none" returns None.
+        color:  RGBA tuple, a key from HAIR_COLORS, or None (→ dark_brown).
+
+    Returns:
+        A linked bpy.types.Object, or None when style is "none".
     """
     import bpy
+    import bmesh as bmesh_mod
 
     if style == "none":
-        return []
+        return None
 
-    if style not in HAIR_BUILDERS:
-        raise ValueError(f"Unknown hair style '{style}'. Available: {list(HAIR_STYLES)}")
+    if style not in _STYLE_BUILDERS:
+        raise ValueError(
+            f"Unknown hair style '{style}'. Valid styles: {list(HAIR_STYLES)}"
+        )
 
     # Resolve color
     if color is None:
         rgba = HAIR_COLORS["dark_brown"]
     elif isinstance(color, str):
-        if color not in HAIR_COLORS:
-            raise ValueError(f"Unknown hair color '{color}'. Available: {get_hair_color_names()}")
-        rgba = HAIR_COLORS[color]
+        rgba = HAIR_COLORS.get(color, HAIR_COLORS["dark_brown"])
     else:
         rgba = tuple(color)
 
-    # Build the hair parts
-    parts = HAIR_BUILDERS[style](head_z, head_r)
+    # Build geometry
+    bm = bmesh_mod.new()
+    _STYLE_BUILDERS[style](bm, head_z, head_r)
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
-    # Apply hair material to all parts
+    # Convert to Blender mesh object
+    mesh = bpy.data.meshes.new("Hair_Mesh")
+    bm.to_mesh(mesh)
+    mesh.update()
+    bm.free()
+
+    obj = bpy.data.objects.new("Hair", mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.shade_smooth()
+
+    # Principled BSDF tuned for stylized low-poly hair:
+    #   - Mid roughness (0.55) avoids the chalky look of high roughness
+    #   - Low anisotropy (0.15) + rotation (0.1) adds directionality
+    #     without creating confusing highlights on flat poly geometry
+    #   - Sheen (0.2) gives a soft rim edge that reads as hair fibre
+    #   - Slight specular tint warms the highlight toward the hair colour
+    # Sources: Blender 4.x Principled BSDF manual, Blender Artists community
     mat = bpy.data.materials.new(name="Hair_Material")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         bsdf.inputs["Base Color"].default_value = rgba
-        bsdf.inputs["Roughness"].default_value = 0.9
-    for part in parts:
-        part.data.materials.append(mat)
+        bsdf.inputs["Roughness"].default_value = 0.55
 
-    return parts
+        # Specular (input name changed in Blender 4.0)
+        if "Specular IOR Level" in bsdf.inputs:
+            bsdf.inputs["Specular IOR Level"].default_value = 0.15
+        elif "Specular" in bsdf.inputs:
+            bsdf.inputs["Specular"].default_value = 0.15
+
+        # Directional sheen — keep low so it reads on simple geometry
+        if "Anisotropic" in bsdf.inputs:
+            bsdf.inputs["Anisotropic"].default_value = 0.15
+        if "Anisotropic Rotation" in bsdf.inputs:
+            bsdf.inputs["Anisotropic Rotation"].default_value = 0.1
+
+        # Soft edge rim — simulates fine surface fibres
+        if "Sheen Weight" in bsdf.inputs:       # Blender 4.x
+            bsdf.inputs["Sheen Weight"].default_value = 0.20
+        elif "Sheen" in bsdf.inputs:             # Blender 3.x
+            bsdf.inputs["Sheen"].default_value = 0.20
+        if "Sheen Roughness" in bsdf.inputs:
+            bsdf.inputs["Sheen Roughness"].default_value = 0.50
+
+        # Warm the specular highlight toward the hair colour
+        if "Specular Tint" in bsdf.inputs:
+            si = bsdf.inputs["Specular Tint"]
+            try:
+                # Blender 4.x — colour input
+                r, g, b, a = rgba
+                si.default_value = (
+                    min(r * 1.15, 1.0),
+                    min(g * 1.10, 1.0),
+                    min(b * 1.05, 1.0),
+                    1.0,
+                )
+            except TypeError:
+                si.default_value = 0.4   # Blender 3.x — float input
+    obj.data.materials.append(mat)
+
+    return obj

@@ -25,12 +25,27 @@ def _create_bone(edit_bones, name, head, tail, parent=None, connect=True):
     return bone
 
 
-def create_rig(cfg, body_obj):
+def _skin_to_armature(armature_obj, obj):
+    """Parent an object to the armature with automatic weights.
+
+    This makes the object deform with the skeleton — vertices near arm bones
+    follow the arms, vertices near leg bones follow the legs, etc.
+    """
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    armature_obj.select_set(True)
+    bpy.context.view_layer.objects.active = armature_obj
+    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+
+def create_rig(cfg, body_obj, hair_obj=None, clothing_objs=None):
     """Build the armature, parent the mesh, and apply automatic weights.
 
     Args:
         cfg: dict with body proportion values.
         body_obj: the mesh object to skin.
+        hair_obj: optional hair mesh to parent to Head bone.
+        clothing_objs: optional list of (obj, bone_name) tuples for clothing.
 
     Returns:
         The armature object.
@@ -48,7 +63,7 @@ def create_rig(cfg, body_obj):
     foot_top = 0.06
     knee_z = foot_top + leg_len * 0.48
     hip_z = foot_top + leg_len
-    waist_z = hip_z + torso_len * 0.35
+    waist_z = hip_z + torso_len * 0.42
     chest_z = hip_z + torso_len
     neck_z = chest_z + neck_len
     head_z = neck_z + head_r
@@ -96,41 +111,79 @@ def create_rig(cfg, body_obj):
                                  (x, 0, knee_z), (x, 0, foot_top), upper_leg)
 
         foot = _create_bone(edit_bones, f"Foot.{side}",
-                            (x, 0, foot_top), (x, 0.18, foot_top), lower_leg)
+                            (x, 0, foot_top), (x, -0.18, foot_top), lower_leg)
 
-    # ---- Arms ----
+    # ---- Arms (hanging down at sides) ----
     for side, x_sign in [("L", 1), ("R", -1)]:
-        shoulder_x = x_sign * sw
-        elbow_x = x_sign * (sw + 0.04 + arm_len * 0.48)
-        wrist_x = x_sign * (sw + 0.04 + arm_len)
-        hand_end_x = x_sign * (sw + 0.04 + arm_len + 0.1)
+        shoulder_x = x_sign * (sw + 0.04)
         arm_z = chest_z - 0.06
+        elbow_z = arm_z - arm_len * 0.48
+        wrist_z = elbow_z - arm_len * 0.52
+        hand_end_z = wrist_z - 0.1
 
         shoulder = _create_bone(edit_bones, f"Shoulder.{side}",
                                 (0, 0, chest_z - 0.02),
                                 (shoulder_x, 0, arm_z), chest, connect=False)
 
         upper_arm = _create_bone(edit_bones, f"UpperArm.{side}",
-                                 (shoulder_x + x_sign * 0.04, 0, arm_z),
-                                 (elbow_x, 0, arm_z), shoulder)
+                                 (shoulder_x, 0, arm_z),
+                                 (shoulder_x, 0, elbow_z), shoulder)
 
         lower_arm = _create_bone(edit_bones, f"LowerArm.{side}",
-                                 (elbow_x, 0, arm_z),
-                                 (wrist_x, 0, arm_z), upper_arm)
+                                 (shoulder_x, 0, elbow_z),
+                                 (shoulder_x, 0, wrist_z), upper_arm)
 
         hand_bone = _create_bone(edit_bones, f"Hand.{side}",
-                                 (wrist_x, 0, arm_z),
-                                 (hand_end_x, 0, arm_z), lower_arm)
+                                 (shoulder_x, 0, wrist_z),
+                                 (shoulder_x, 0, hand_end_z), lower_arm)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
     # ------------------------------------------------------------------ #
-    # Parent mesh to armature with automatic weights
+    # Parent mesh to armature
     # ------------------------------------------------------------------ #
-    bpy.ops.object.select_all(action='DESELECT')
-    body_obj.select_set(True)
-    armature_obj.select_set(True)
-    bpy.context.view_layer.objects.active = armature_obj
-    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+    # If the body already has vertex groups (from base_mesh.py), use them
+    # directly with an Armature modifier instead of automatic weights.
+    # This gives deterministic, reliable skinning.
+    if body_obj.vertex_groups:
+        body_obj.parent = armature_obj
+        mod = body_obj.modifiers.new(name="Armature", type='ARMATURE')
+        mod.object = armature_obj
+    else:
+        # Fallback to automatic weights for backward compatibility
+        bpy.ops.object.select_all(action='DESELECT')
+        body_obj.select_set(True)
+        armature_obj.select_set(True)
+        bpy.context.view_layer.objects.active = armature_obj
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+    # ------------------------------------------------------------------ #
+    # Parent hair to Head bone (rigid — moves as one piece with the head)
+    # ------------------------------------------------------------------ #
+    if hair_obj is not None:
+        bpy.ops.object.select_all(action='DESELECT')
+        hair_obj.select_set(True)
+        armature_obj.select_set(True)
+        bpy.context.view_layer.objects.active = armature_obj
+        armature_obj.data.bones.active = armature_obj.data.bones["Head"]
+        bpy.ops.object.parent_set(type='BONE')
+
+    # ------------------------------------------------------------------ #
+    # Skin clothing to armature with automatic weights so sleeves follow
+    # arms, pant legs follow legs, etc.
+    # ------------------------------------------------------------------ #
+    if clothing_objs:
+        for obj, bone_name in clothing_objs:
+            if bone_name:
+                # Rigid parent to a specific bone (e.g. eyes → Head)
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                armature_obj.select_set(True)
+                bpy.context.view_layer.objects.active = armature_obj
+                armature_obj.data.bones.active = armature_obj.data.bones[bone_name]
+                bpy.ops.object.parent_set(type='BONE')
+            else:
+                # Auto-weight skin to full armature (clothing, accessories)
+                _skin_to_armature(armature_obj, obj)
 
     return armature_obj

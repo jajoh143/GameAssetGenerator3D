@@ -43,14 +43,24 @@ def parse_args():
                         help="Character archetype (average, tall, short, child, brute, slender)")
     parser.add_argument("--build", default="average",
                         help="Body build (lean, average, stocky, heavy)")
+    parser.add_argument("--gender", default="neutral",
+                        help="Body gender (neutral, male, female)")
     parser.add_argument("--skin-tone", default="medium",
                         help="Skin tone name or R,G,B,A (e.g., 'tan' or '0.5,0.4,0.3,1.0')")
 
     # Hair
-    parser.add_argument("--hair-style", default="none",
+    parser.add_argument("--hair-style", default="short",
                         help="Hair style (none, buzzed, short, spiky, long, mohawk)")
-    parser.add_argument("--hair-color", default="dark_brown",
+    parser.add_argument("--hair-color", default="brown",
                         help="Hair color name or R,G,B,A values")
+
+    # Template mesh (always on by default; --procedural opts back to the old generator)
+    parser.add_argument("--procedural", action="store_true",
+                        help="Build body mesh procedurally instead of using the NBM template")
+    parser.add_argument("--lod", default="low",
+                        choices=["very_low", "low", "mid"],
+                        help="Template mesh LOD tier (only used with --use-template): "
+                             "very_low (<300 faces), low (300-500), mid (500+)")
 
     # Direct proportion overrides
     parser.add_argument("--height", type=float, default=None)
@@ -73,6 +83,10 @@ def parse_args():
     parser.add_argument("--animations", default="all",
                         help="Comma-separated list or 'all'")
 
+    # Export options
+    parser.add_argument("--draco", action="store_true",
+                        help="Enable Draco mesh compression for glTF/GLB")
+
     return parser.parse_args(argv)
 
 
@@ -93,10 +107,13 @@ def main():
     config = {
         "preset": args.preset,
         "build": args.build,
+        "gender": args.gender,
         "skin_tone": _parse_color_value(args.skin_tone),
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
         "randomize": args.randomize,
+        "use_template": not args.procedural,
+        "lod": args.lod,
     }
 
     if args.seed is not None:
@@ -124,13 +141,20 @@ def main():
         if val is not None:
             config[key] = val
 
+    # Signal to template_mesh.py that height was explicitly requested.
+    # Without this flag the template mesh is imported at its natural dimensions.
+    if args.height is not None:
+        config["height_override"] = args.height
+
+    mesh_src = "procedural" if args.procedural else f"template({args.lod})"
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
-          f"skin={args.skin_tone}, hair={args.hair_style}/{args.hair_color}")
+          f"gender={args.gender}, skin={args.skin_tone}, "
+          f"hair={args.hair_style}/{args.hair_color}, mesh={mesh_src}")
     armature = generate(config)
     print("Generation complete. Exporting...")
 
     output = os.path.abspath(args.output)
-    export(output, args.format)
+    export(output, args.format, draco=args.draco)
     print(f"Done! Asset saved to: {output}")
 
 

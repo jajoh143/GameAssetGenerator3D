@@ -24,7 +24,7 @@ def detect_format(filepath):
     return "glb"  # default
 
 
-def export(filepath, fmt=None):
+def export(filepath, fmt=None, draco=False):
     """Export the current scene to the given filepath.
 
     Must be called from within Blender's Python environment.
@@ -32,6 +32,7 @@ def export(filepath, fmt=None):
     Args:
         filepath: Output path.
         fmt: One of 'glb', 'gltf', 'fbx', 'obj'. Auto-detected if None.
+        draco: Enable Draco mesh compression for glTF/GLB exports.
     """
     import bpy
 
@@ -47,7 +48,7 @@ def export(filepath, fmt=None):
             obj.select_set(True)
 
     if fmt in ("glb", "gltf"):
-        bpy.ops.export_scene.gltf(
+        gltf_kwargs = dict(
             filepath=filepath,
             export_format='GLB' if fmt == "glb" else 'GLTF_SEPARATE',
             use_selection=True,
@@ -55,6 +56,15 @@ def export(filepath, fmt=None):
             export_skins=True,
             export_apply=True,
         )
+        if draco:
+            gltf_kwargs.update(
+                export_draco_mesh_compression_enable=True,
+                export_draco_mesh_compression_level=6,
+                export_draco_position_quantization=14,
+                export_draco_normal_quantization=10,
+                export_draco_texcoord_quantization=12,
+            )
+        bpy.ops.export_scene.gltf(**gltf_kwargs)
     elif fmt == "fbx":
         bpy.ops.export_scene.fbx(
             filepath=filepath,

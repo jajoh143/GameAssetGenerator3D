@@ -38,12 +38,76 @@ def _set_loc(pose_bone, frame, axis, value):
     pose_bone.keyframe_insert(data_path="location", index=idx, frame=frame)
 
 
-def _make_cyclic(action):
-    """Add cyclic F-curve modifiers for seamless looping."""
-    for fcurve in action.fcurves:
+def _get_fcurves(armature_obj):
+    """Get all F-Curves from the active action, supporting both legacy and 5.0+ API."""
+    anim_data = armature_obj.animation_data
+    if not anim_data or not anim_data.action:
+        return []
+    action = anim_data.action
+    # Legacy Blender (< 5.0): action.fcurves exists directly
+    if hasattr(action, 'fcurves'):
+        return action.fcurves
+    # Blender 5.0+: F-Curves live in channelbags accessed via action slots
+    from bpy_extras import anim_utils
+    slot = anim_data.action_slot
+    if slot is None:
+        return []
+    channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
+    if channelbag is None:
+        return []
+    return channelbag.fcurves
+
+
+def _make_cyclic(action_or_armature):
+    """Add cyclic F-curve modifiers for seamless looping.
+
+    In Blender 5.0+ the armature_obj must be passed so we can resolve the
+    channelbag.  For legacy Blender the action itself is sufficient.
+    """
+    import bpy
+    # Determine the list of fcurves depending on API version
+    if hasattr(action_or_armature, 'fcurves'):
+        # Legacy path – called with an Action that has .fcurves
+        fcurves = action_or_armature.fcurves
+    elif hasattr(action_or_armature, 'animation_data'):
+        # Blender 5.0+ path – called with the armature object
+        fcurves = _get_fcurves(action_or_armature)
+    else:
+        return
+    for fcurve in fcurves:
         mod = fcurve.modifiers.new(type='CYCLES')
         mod.mode_before = 'REPEAT'
         mod.mode_after = 'REPEAT'
+
+
+def _equalize_keyframes(armature_obj):
+    """Ensure all F-Curves in the active action have keyframes at the same frames.
+
+    The glTF exporter warns and falls back to baking when channel tracks have
+    different keyframe counts.  This helper collects every unique frame across
+    all F-Curves, then inserts evaluated (interpolated) keyframes wherever a
+    curve is missing one, so all curves share the same frame set.
+    """
+    fcurves = _get_fcurves(armature_obj)
+    if not fcurves:
+        return
+
+    # Collect the union of all keyed frames
+    all_frames = set()
+    for fc in fcurves:
+        for kp in fc.keyframe_points:
+            all_frames.add(kp.co[0])
+    all_frames = sorted(all_frames)
+
+    for fc in fcurves:
+        existing = {kp.co[0] for kp in fc.keyframe_points}
+        missing = [f for f in all_frames if f not in existing]
+        if not missing:
+            continue
+        for frame in missing:
+            value = fc.evaluate(frame)
+            fc.keyframe_points.insert(frame, value, options={'FAST'})
+        fc.update()
 
 
 def _new_action(armature_obj, name):
@@ -85,11 +149,12 @@ ANIM_PARAMS = {
     "idle": {
         "cycle_frames": 48,
         "fps": 24,
-        "breath_chest": 2,       # chest expansion rotation (degrees)
-        "breath_spine": 1.5,
-        "head_look": 3,          # subtle head turn
-        "hip_shift": 1.5,        # weight shift side-to-side
-        "arm_drift": 3,          # arms hang, slight sway
+        "breath_chest": 1.5,     # chest expansion rotation (degrees)
+        "breath_spine": 1.0,
+        "head_look": 2,          # subtle head turn
+        "hip_shift": 1.0,        # weight shift side-to-side
+        "arm_breath": 0.8,       # subtle arm shift from breathing
+        "shoulder_breath": 0.5,  # slight shoulder rise on inhale
     },
     "walk": {
         "cycle_frames": 24,
@@ -100,6 +165,7 @@ ANIM_PARAMS = {
         "upper_arm_swing": 20,
         "lower_arm_bend": 25,
         "spine_twist": 3,
+        "spine_lean": 4,         # forward/backward torso sway
         "hip_bob": 0.02,
         "hip_sway": 2,
     },
@@ -158,7 +224,12 @@ ANIM_PARAMS = {
 # ───────────────────────────────────────────────────────────────────────────
 
 def create_idle(armature_obj, cfg):
-    """Idle: subtle breathing, weight-shift, and head turn. Loops."""
+    """Idle: arms at sides, subtle breathing shake, gentle weight-shift. Loops.
+
+    Arms hang naturally in the rest pose. Breathing causes slight chest
+    expansion and a tiny outward drift of the upper arms, mimicking the
+    ribcage pushing the shoulders out on inhale.
+    """
     _enter_pose(armature_obj)
     _reset_pose(armature_obj)
 
@@ -179,7 +250,7 @@ def create_idle(armature_obj, cfg):
             (q * 3, p["breath_chest"] * 0.7, p["breath_spine"] * 0.7),
             (f,     0,                    0),
         ]:
-            _set_rot(chest, frame, 'X', -chest_angle)  # lean back slightly = breathing in
+            _set_rot(chest, frame, 'X', -chest_angle)
             _set_rot(spine, frame, 'X', -spine_angle)
 
     # Subtle head look left/right
@@ -200,18 +271,29 @@ def create_idle(armature_obj, cfg):
         ]:
             _set_rot(hips, frame, 'Z', sway)
 
-    # Arms hang with gentle sway (opposite to hip shift)
-    for side_mult, side in [(1, "L"), (-1, "R")]:
+    # Arms at sides — subtle breathing shake only.
+    # With arms-down rest pose, a small X rotation gives a gentle
+    # forward/back drift synced with the breathing rhythm.
+    ab = p["arm_breath"]
+    sb = p["shoulder_breath"]
+    for side in ["L", "R"]:
         ua = pb.get(f"UpperArm.{side}")
+        sh = pb.get(f"Shoulder.{side}")
         if ua:
-            ad = p["arm_drift"]
             for frame, angle in [
-                (0, 0), (q, -ad * side_mult), (q * 2, 0),
-                (q * 3, ad * side_mult), (f, 0),
+                (0, 0), (q, ab), (q * 2, 0),
+                (q * 3, ab * 0.7), (f, 0),
             ]:
-                _set_rot(ua, frame, 'Z', angle)
+                _set_rot(ua, frame, 'X', angle)
+        if sh:
+            for frame, angle in [
+                (0, 0), (q, -sb), (q * 2, 0),
+                (q * 3, -sb * 0.7), (f, 0),
+            ]:
+                _set_rot(sh, frame, 'X', angle)
 
-    _make_cyclic(action)
+    _make_cyclic(armature_obj)
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -296,13 +378,17 @@ def create_walk_cycle(armature_obj, cfg):
     spine_bone = pb.get("Spine")
     if spine_bone:
         st = wp["spine_twist"]
-        for frame, twist in [
-            (0, st), (half // 2, 0), (half, -st),
-            (half + half // 2, 0), (frames, st),
+        sl = wp.get("spine_lean", 0)
+        for frame, twist, lean in [
+            (0, st, sl), (half // 2, 0, -sl * 0.5),
+            (half, -st, sl), (half + half // 2, 0, -sl * 0.5),
+            (frames, st, sl),
         ]:
             _set_rot(spine_bone, frame, 'Z', twist)
+            _set_rot(spine_bone, frame, 'X', lean)
 
-    _make_cyclic(action)
+    _make_cyclic(armature_obj)
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -401,7 +487,8 @@ def create_run_cycle(armature_obj, cfg):
             _set_loc(hips, frame, 'Z', b)
             _set_rot(hips, frame, 'Z', s)
 
-    _make_cyclic(action)
+    _make_cyclic(armature_obj)
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -570,6 +657,7 @@ def create_jump(armature_obj, cfg):
         _set_loc(hips, f_total, 'Z', 0)
 
     # Jump does NOT loop
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 
@@ -690,6 +778,7 @@ def create_attack(armature_obj, cfg):
                 _set_rot(b, f_total, 'X', 0)
 
     # Attack does NOT loop
+    _equalize_keyframes(armature_obj)
     _exit_pose()
     return action
 

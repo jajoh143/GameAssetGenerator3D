@@ -42,11 +42,25 @@ def find_blender():
     return None
 
 
+def _bpy_is_standalone():
+    """Return True if the standalone bpy Python package is importable."""
+    try:
+        import importlib.util
+        return importlib.util.find_spec("bpy") is not None
+    except Exception:
+        return False
+
+
 def cmd_generate(args):
-    """Run a generator script in Blender's background mode."""
+    """Run a generator script via Blender (or standalone bpy if Blender not found)."""
     blender = find_blender()
-    if not blender:
-        print("Error: Blender not found. Install Blender 3.6+ or set BLENDER_PATH.", file=sys.stderr)
+    if not blender and not _bpy_is_standalone():
+        print(
+            "Error: Blender not found and the 'bpy' package is not installed.\n"
+            "  Option 1: Install Blender 3.6+ and ensure it is on PATH (or set BLENDER_PATH).\n"
+            "  Option 2: pip install bpy",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     asset_type = args.asset_type
@@ -59,13 +73,13 @@ def cmd_generate(args):
 
     os.makedirs(os.path.dirname(output), exist_ok=True)
 
-    cmd = [
-        blender,
-        "--background",
-        "--python", script,
-        "--",
-        "--output", output,
-    ]
+    if blender:
+        # Full Blender installation: run in background mode
+        cmd = [blender, "--background", "--python", script, "--", "--output", output]
+    else:
+        # Standalone bpy package: run the script directly with the current Python
+        # The generate scripts use sys.argv and split on "--", so pass it the same way
+        cmd = [sys.executable, script, "--", "--output", output]
 
     if args.format:
         cmd.extend(["--format", args.format])
@@ -83,12 +97,18 @@ def cmd_generate(args):
         cmd.extend(["--preset", args.preset])
     if args.build:
         cmd.extend(["--build", args.build])
+    if args.gender:
+        cmd.extend(["--gender", args.gender])
     if args.skin_tone:
         cmd.extend(["--skin-tone", args.skin_tone])
     if args.hair_style:
         cmd.extend(["--hair-style", args.hair_style])
     if args.hair_color:
         cmd.extend(["--hair-color", args.hair_color])
+    if args.clothing:
+        cmd.extend(["--clothing", args.clothing])
+    if args.clothing_color:
+        cmd.extend(["--clothing-color", args.clothing_color])
     if args.height is not None:
         cmd.extend(["--height", str(args.height)])
     if args.shoulder_width is not None:
@@ -111,6 +131,12 @@ def cmd_generate(args):
         cmd.append("--randomize")
     if args.seed is not None:
         cmd.extend(["--seed", str(args.seed)])
+    if args.draco:
+        cmd.append("--draco")
+    if getattr(args, "use_template", False):
+        cmd.append("--use-template")
+    if getattr(args, "lod", None):
+        cmd.extend(["--lod", args.lod])
 
     print(f"Generating {asset_type} -> {output}")
     print(f"Running: {' '.join(cmd)}")
@@ -156,12 +182,19 @@ def main():
                             help="Character preset (average, tall, short, child, brute, slender)")
     gen_parser.add_argument("--build", default=None,
                             help="Body build (lean, average, stocky, heavy)")
+    gen_parser.add_argument("--gender", default=None,
+                            help="Body gender (neutral, male, female)")
     gen_parser.add_argument("--skin-tone", default=None,
                             help="Skin tone name or R,G,B,A values")
     gen_parser.add_argument("--hair-style", default=None,
                             help="Hair style (none, buzzed, short, spiky, long, mohawk)")
     gen_parser.add_argument("--hair-color", default=None,
                             help="Hair color name or R,G,B,A values")
+    gen_parser.add_argument("--clothing", default=None,
+                            help="Clothing type or comma-separated list "
+                                 "(tshirt, jacket, pants, shorts, armor, robe)")
+    gen_parser.add_argument("--clothing-color", default=None,
+                            help="Clothing color name or R,G,B,A values")
     gen_parser.add_argument("--height", type=float, default=None,
                             help="Character height override in meters")
     gen_parser.add_argument("--shoulder-width", type=float, default=None)
@@ -176,6 +209,14 @@ def main():
                             help="Add random variation to proportions")
     gen_parser.add_argument("--seed", type=int, default=None,
                             help="Random seed for reproducible variation")
+    gen_parser.add_argument("--draco", action="store_true", default=False,
+                            help="Enable Draco mesh compression for glTF/GLB")
+    gen_parser.add_argument("--use-template", action="store_true", default=False,
+                            help="Import body from NBM .blend template instead of "
+                                 "building procedurally (humanoid only)")
+    gen_parser.add_argument("--lod", default=None, choices=["very_low", "low", "mid"],
+                            help="Template mesh LOD tier (only with --use-template): "
+                                 "very_low (<300 faces), low (300-500), mid (500+)")
     gen_parser.set_defaults(func=cmd_generate)
 
     # list

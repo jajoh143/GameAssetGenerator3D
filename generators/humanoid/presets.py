@@ -25,95 +25,110 @@ from .hair import HAIR_STYLES, HAIR_COLORS, get_hair_style_names, get_hair_color
 # ─── Named presets ──────────────────────────────────────────────────────────
 
 PRESETS = {
+    # ── Dimensions reverse-engineered from Characters_Matt.blend ──────────
+    # Reference character is 1.5 m tall (scale 1,1,1).  All measurements
+    # taken directly from bone positions and mesh cross-sections in that file.
+    #
+    # Key reference values (unscaled):
+    #   hip_z        = 0.518   (= foot_top 0.06 + leg_length 0.458 ≈ 0.46)
+    #   chest_z      = 0.945   (= hip_z + torso_length 0.427 ≈ 0.43)
+    #   neck_z       = 1.008   (= chest_z + neck_length 0.063 ≈ 0.06)
+    #   head_top     ≈ 1.50    (= neck_z + 2 × head_size 0.207 ≈ 0.20)
+    #   arm_start_x  = 0.185   (≈ shoulder_width 0.23 × 0.80)
+    #   wrist_x      = 0.741   (arm_start + arm_length 0.556 ≈ 0.56)
+    #   torso half-w ≈ ±0.23   (chest cross-section)
+    #   leg centre x = 0.125   (hip_width)
+    #   arm centre z = 0.883   (= hip_z + torso_len × 0.855)
+
     "average": {
-        "height": 1.75,
-        "shoulder_width": 0.40,
-        "hip_width": 0.27,
-        "head_size": 0.21,
-        "arm_length": 0.68,
-        "leg_length": 0.88,
-        "torso_length": 0.54,
-        "neck_length": 0.08,
-        "hand_size": 0.08,
-        "foot_length": 0.24,
-        "foot_width": 0.10,
+        "height": 1.50,          # matched to Characters_Matt.blend
+        "shoulder_width": 0.23,  # torso chest half-width; arm joint at 80 % = 0.184
+        "hip_width": 0.125,      # leg centre x (ref UpperLeg head x ≈ 0.122)
+        "head_size": 0.20,       # head radius (ref head spans ≈ 0.41 m)
+        "arm_length": 0.56,      # shoulder joint → wrist (ref 0.185 → 0.741 = 0.556)
+        "leg_length": 0.46,      # hip_z = foot_top(0.06) + 0.46 = 0.52 ≈ ref 0.518
+        "torso_length": 0.43,    # chest_z − hip_z (ref 0.427)
+        "neck_length": 0.06,     # neck bone length (ref 0.063)
+        "hand_size": 0.065,
+        "foot_length": 0.19,
+        "foot_width": 0.08,
         "limb_thickness": 1.0,
-        "torso_depth": 0.20,
+        "torso_depth": 0.16,     # torso ry at chest (ref depth ≈ 0.36 m → half 0.18)
     },
     "tall": {
-        "height": 2.0,
-        "shoulder_width": 0.42,
-        "hip_width": 0.26,
+        "height": 1.70,          # ~1.13× average
+        "shoulder_width": 0.26,
+        "hip_width": 0.14,
         "head_size": 0.22,
-        "arm_length": 0.78,
-        "leg_length": 1.02,
-        "torso_length": 0.60,
-        "neck_length": 0.10,
-        "hand_size": 0.09,
-        "foot_length": 0.27,
-        "foot_width": 0.10,
+        "arm_length": 0.63,
+        "leg_length": 0.54,
+        "torso_length": 0.48,
+        "neck_length": 0.07,
+        "hand_size": 0.07,
+        "foot_length": 0.22,
+        "foot_width": 0.09,
         "limb_thickness": 0.95,
-        "torso_depth": 0.20,
+        "torso_depth": 0.18,
     },
     "short": {
-        "height": 1.50,
-        "shoulder_width": 0.36,
-        "hip_width": 0.26,
-        "head_size": 0.22,
-        "arm_length": 0.55,
-        "leg_length": 0.72,
-        "torso_length": 0.46,
-        "neck_length": 0.06,
-        "hand_size": 0.07,
-        "foot_length": 0.20,
-        "foot_width": 0.09,
+        "height": 1.25,          # ~0.83× average
+        "shoulder_width": 0.19,
+        "hip_width": 0.10,
+        "head_size": 0.18,
+        "arm_length": 0.46,
+        "leg_length": 0.38,
+        "torso_length": 0.36,
+        "neck_length": 0.05,
+        "hand_size": 0.055,
+        "foot_length": 0.16,
+        "foot_width": 0.07,
         "limb_thickness": 1.05,
-        "torso_depth": 0.20,
+        "torso_depth": 0.13,
     },
     "child": {
-        "height": 1.20,
-        "shoulder_width": 0.26,
-        "hip_width": 0.22,
-        "head_size": 0.24,       # proportionally larger head
-        "arm_length": 0.42,
-        "leg_length": 0.52,
-        "torso_length": 0.38,
+        "height": 1.05,          # ~0.70× average; big head for cartoon style
+        "shoulder_width": 0.16,
+        "hip_width": 0.085,
+        "head_size": 0.20,       # deliberately large — chibi proportion
+        "arm_length": 0.37,
+        "leg_length": 0.30,
+        "torso_length": 0.33,
         "neck_length": 0.05,
-        "hand_size": 0.06,
-        "foot_length": 0.16,
-        "foot_width": 0.08,
+        "hand_size": 0.045,
+        "foot_length": 0.13,
+        "foot_width": 0.06,
         "limb_thickness": 0.85,
-        "torso_depth": 0.16,
+        "torso_depth": 0.12,
     },
     "brute": {
-        "height": 2.10,
-        "shoulder_width": 0.56,
-        "hip_width": 0.34,
-        "head_size": 0.22,
-        "arm_length": 0.82,
-        "leg_length": 1.00,
-        "torso_length": 0.65,
-        "neck_length": 0.06,     # thick, short neck
-        "hand_size": 0.12,
-        "foot_length": 0.30,
-        "foot_width": 0.14,
+        "height": 1.65,          # ~1.10× average but stockier
+        "shoulder_width": 0.37,  # much wider chest
+        "hip_width": 0.175,
+        "head_size": 0.18,       # smaller head → massive body reads bigger
+        "arm_length": 0.68,
+        "leg_length": 0.54,
+        "torso_length": 0.54,
+        "neck_length": 0.05,     # short thick neck
+        "hand_size": 0.10,
+        "foot_length": 0.24,
+        "foot_width": 0.12,
         "limb_thickness": 1.4,
-        "torso_depth": 0.28,
+        "torso_depth": 0.24,
     },
     "slender": {
-        "height": 1.85,
-        "shoulder_width": 0.34,
-        "hip_width": 0.22,
-        "head_size": 0.20,
-        "arm_length": 0.75,
-        "leg_length": 0.98,
-        "torso_length": 0.52,
-        "neck_length": 0.10,
-        "hand_size": 0.07,
-        "foot_length": 0.23,
-        "foot_width": 0.08,
+        "height": 1.58,          # ~1.05× average but lean
+        "shoulder_width": 0.19,
+        "hip_width": 0.10,
+        "head_size": 0.22,
+        "arm_length": 0.60,
+        "leg_length": 0.52,
+        "torso_length": 0.46,
+        "neck_length": 0.08,     # longer elegant neck
+        "hand_size": 0.06,
+        "foot_length": 0.19,
+        "foot_width": 0.07,
         "limb_thickness": 0.75,
-        "torso_depth": 0.16,
+        "torso_depth": 0.13,
     },
 }
 
@@ -154,6 +169,31 @@ BUILDS = {
 }
 
 
+# ─── Gender profiles (multiplier adjustments) ─────────────────────────────
+
+GENDERS = {
+    "neutral": {},  # no modifications — current default proportions
+    "male": {
+        "shoulder_width": 1.12,     # broader shoulders
+        "hip_width": 0.92,          # narrower hips relative to shoulders
+        "limb_thickness": 1.15,     # thicker arms and legs
+        "torso_depth": 1.10,        # deeper chest front-to-back
+        "neck_length": 0.85,        # shorter, thicker-looking neck
+        "hand_size": 1.08,          # slightly larger hands
+        "foot_width": 1.06,         # slightly wider feet
+    },
+    "female": {
+        "shoulder_width": 0.92,     # narrower shoulders
+        "hip_width": 1.12,          # wider hips
+        "limb_thickness": 0.88,     # slimmer limbs
+        "torso_depth": 0.92,        # narrower front-to-back
+        "hand_size": 0.90,          # smaller hands
+        "foot_length": 0.92,        # smaller feet
+        "foot_width": 0.90,
+    },
+}
+
+
 # ─── Skin tones ─────────────────────────────────────────────────────────────
 
 SKIN_TONES = {
@@ -190,17 +230,29 @@ def get_skin_tone_names():
     return sorted(SKIN_TONES.keys())
 
 
-def resolve_config(preset="average", build="average", skin_tone="medium",
+def get_gender_names():
+    """Return list of available gender names."""
+    return sorted(GENDERS.keys())
+
+
+def resolve_config(preset="average", build="average", gender="neutral",
+                   skin_tone="medium",
                    hair_style="none", hair_color="dark_brown",
+                   use_template=True, lod="low",
                    overrides=None, randomize=False, seed=None):
-    """Build a complete character config from preset + build + overrides.
+    """Build a complete character config from preset + build + gender + overrides.
 
     Args:
         preset: Name of the base preset (e.g., "tall", "brute").
         build: Body build modifier ("lean", "average", "stocky", "heavy").
+        gender: Body gender ("neutral", "male", "female").
         skin_tone: Named skin tone or custom (R,G,B,A) tuple.
         hair_style: Hair style name ("none", "buzzed", "short", etc.).
         hair_color: Named hair color or custom (R,G,B,A) tuple.
+        use_template: If True, import mesh from NBM .blend instead of
+            building procedurally.
+        lod: Level of detail for template mesh ("very_low", "low", "mid").
+            Only used when use_template=True.
         overrides: Dict of individual config values to override.
         randomize: If True, add slight random variation to proportions.
         seed: Random seed for reproducible randomization.
@@ -212,6 +264,8 @@ def resolve_config(preset="average", build="average", skin_tone="medium",
         raise ValueError(f"Unknown preset '{preset}'. Available: {get_preset_names()}")
     if build not in BUILDS:
         raise ValueError(f"Unknown build '{build}'. Available: {get_build_names()}")
+    if gender not in GENDERS:
+        raise ValueError(f"Unknown gender '{gender}'. Available: {get_gender_names()}")
 
     # Start from preset
     cfg = dict(PRESETS[preset])
@@ -221,6 +275,19 @@ def resolve_config(preset="average", build="average", skin_tone="medium",
     for key, mult in build_mults.items():
         if key in cfg:
             cfg[key] = cfg[key] * mult
+
+    # Apply gender multipliers
+    gender_mults = GENDERS[gender]
+    for key, mult in gender_mults.items():
+        if key in cfg:
+            cfg[key] = cfg[key] * mult
+
+    # Store gender in config for mesh.py to use for radii adjustments
+    cfg["gender"] = gender
+
+    # Template mesh settings
+    cfg["use_template"] = use_template
+    cfg["lod"] = lod
 
     # Resolve skin tone
     if isinstance(skin_tone, str):
