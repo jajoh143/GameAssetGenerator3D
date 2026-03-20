@@ -4,21 +4,11 @@ Each eye is a single small black sphere (~32 faces).
 
 Public interface
 ----------------
-  create_eyes(head_z, head_r, eye_color, face_y)  →  [eyes_obj]
+  create_eyes(head_z, head_r, face_y)  →  [eyes_obj]
   create_eyebrows(head_z, head_r, face_y, brow_color)  →  brow_obj
-  EYE_COLORS  — dict mapping name → RGBA tuple (kept for API compatibility)
 """
 
 import math
-
-EYE_COLORS = {
-    "brown":      (0.15, 0.08, 0.04, 1.0),
-    "dark_brown": (0.10, 0.05, 0.02, 1.0),
-    "blue":       (0.20, 0.35, 0.65, 1.0),
-    "green":      (0.12, 0.42, 0.18, 1.0),
-    "grey":       (0.40, 0.40, 0.42, 1.0),
-    "hazel":      (0.28, 0.22, 0.08, 1.0),
-}
 
 # ── Shared geometry constants ─────────────────────────────────────────────────
 # All functions that need eye/brow positions import these helpers so values
@@ -42,10 +32,10 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     """Build two small black eye spheres, returning a single mesh object.
 
     Args:
-        head_z:     Z of the head centre.
-        head_r:     Head radius in metres.
-        eye_color:  Ignored (kept for API compatibility).
-        face_y:     Most-forward Y of the body mesh (nose-tip bounding-box Y).
+        head_z:    Z of the head centre.
+        head_r:    Head radius in metres.
+        eye_color: Unused — eyes are always black spheres.
+        face_y:    Most-forward Y of the body mesh (nose-tip bounding-box Y).
 
     Returns:
         [eyes_obj]  — one bpy.types.Object containing both spheres.
@@ -68,12 +58,12 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
         )
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
-    mesh_s = bpy.data.meshes.new("Eyeballs_Mesh")
+    mesh_s = bpy.data.meshes.new("Eyes_Mesh")
     bm.to_mesh(mesh_s)
     mesh_s.update()
     bm.free()
 
-    eyes_obj = bpy.data.objects.new("Eyeballs", mesh_s)
+    eyes_obj = bpy.data.objects.new("Eyes", mesh_s)
     bpy.context.collection.objects.link(eyes_obj)
     bpy.context.view_layer.objects.active = eyes_obj
     eyes_obj.select_set(True)
