@@ -163,6 +163,74 @@ def _back_half_verts(ring):
     return [ring[i] for i in range(2, n - 1)]
 
 
+# ── Hair clump builder (CGCookie "big→medium→small" technique) ────────────────
+#
+# Instead of flat rectangular fringe panels, hair is composed of individual
+# tapered "locks" — each wide at the scalp root and narrowing to a pointed tip.
+# This matches the Bézier-curve clump workflow from CGCookie's cartoon-hair
+# tutorial: define a spine (root→mid→tip), give it a cross-section that tapers,
+# and layer 4-6 overlapping clumps across the fringe to read as distinct strands.
+
+def _hair_clump(bm, spine, widths):
+    """Build one tapered flat hair lock.
+
+    Args:
+        spine:   [(x, y, z), ...] — 3–5 centre-line points, root first.
+        widths:  [half_width, ...] in X at each point; last entry = 0 (tip).
+
+    Geometry: quad strip for all segments except the last, which terminates
+    in a single tip vertex (triangle) so the clump reads as pointed.
+    """
+    n = len(spine)
+    # All points except the tip get left+right edge verts
+    left  = [bm.verts.new((spine[i][0] - widths[i], spine[i][1], spine[i][2]))
+             for i in range(n - 1)]
+    right = [bm.verts.new((spine[i][0] + widths[i], spine[i][1], spine[i][2]))
+             for i in range(n - 1)]
+    tip = bm.verts.new(spine[-1])   # single pointed tip vertex
+
+    for i in range(n - 2):
+        try:
+            bm.faces.new([left[i], left[i + 1], right[i + 1], right[i]])
+        except ValueError:
+            pass
+    # Triangulated tip
+    try:
+        bm.faces.new([left[-1], tip, right[-1]])
+    except ValueError:
+        pass
+
+
+def _fringe_clumps(bm, head_r, hl_z, fr_y, clump_defs):
+    """Lay out overlapping hair clumps forming a fringe / bangs.
+
+    Args:
+        head_r:     Head radius in metres.
+        hl_z:       Z of the hairline ring (= head_z for the equatorial ring).
+        fr_y:       Y of the cap front surface (negative = forward).
+        clump_defs: list of tuples:
+          (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
+          cx        — X centre as multiple of head_r
+          x_drift   — extra X at tip (×head_r), for sideways sweep
+          y_fwd     — how far the tip comes forward (×head_r, added to fr_y)
+          z_mid     — Z drop at mid-point below root (×head_r)
+          z_tip     — Z drop at tip below root (×head_r)
+          w_root    — half-width at root (×head_r)
+    """
+    for cx, x_drift, y_fwd, z_mid, z_tip, w_root in clump_defs:
+        rx      = cx     * head_r
+        drift   = x_drift * head_r
+        wd_root = w_root  * head_r
+        wd_mid  = wd_root * 0.58   # tapers to ~58 % at mid-point
+
+        spine = [
+            (rx,                  fr_y,                       hl_z + head_r * 0.02),
+            (rx + drift * 0.5,    fr_y - head_r * y_fwd * 0.5, hl_z - head_r * z_mid),
+            (rx + drift,          fr_y - head_r * y_fwd,       hl_z - head_r * z_tip),
+        ]
+        _hair_clump(bm, spine, [wd_root, wd_mid, 0])
+
+
 # ── Panel row builder ──────────────────────────────────────────────────────────
 
 def _panel_rows(bm, top_verts, rows_spec):
@@ -273,27 +341,17 @@ def _build_short(bm, head_z, head_r):
         (-head_r * 0.58, 0.80, 0.94),
     ])
 
-    # Fringe — two-row flat panel just in front of the brow.
-    # fr_y uses the cap's actual ry_mult (0.90) at h_scale=1.07 so the panel
-    # sits flush against the front of the cap, not inside it.
-    # Fringe: keep it above the eyes.  The hairline ring is at the brow level
-    # (head_z); fr_zb must stay close to hl_z so the fringe doesn't hang down
-    # over the eye sockets.  0.06 keeps it just at/slightly below the brow.
-    fr_w  = head_r * 1.50
-    fr_y  = -(head_r * 0.90 * 1.00) - 0.010
-    fr_zt = hl_z + head_r * 0.06
-    fr_zb = hl_z - head_r * 0.06
-    tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))
-    tr = bm.verts.new(( fr_w * 0.50, fr_y, fr_zt))
-    ml = bm.verts.new((-fr_w * 0.44, fr_y, fr_zb))
-    mr = bm.verts.new(( fr_w * 0.44, fr_y, fr_zb))
-    bl = bm.verts.new((-fr_w * 0.34, fr_y + head_r * 0.04, fr_zb - head_r * 0.05))
-    br = bm.verts.new(( fr_w * 0.34, fr_y + head_r * 0.04, fr_zb - head_r * 0.05))
-    for fv in [[tl, tr, mr, ml], [ml, mr, br, bl]]:
-        try:
-            bm.faces.new(fv)
-        except ValueError:
-            pass
+    # Fringe — 5 overlapping tapered clumps (CGCookie big→medium approach).
+    # fr_y sits flush against the cap front face at h_scale=1.07.
+    fr_y = -(head_r * 0.90 * 1.07) - 0.005
+    # (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.52, -0.07, 0.05, 0.03, 0.07, 0.14),   # far-left, sweeps left
+        (-0.26,  0.00, 0.06, 0.03, 0.07, 0.14),   # left
+        ( 0.00,  0.00, 0.07, 0.03, 0.08, 0.16),   # centre (slightly wider)
+        ( 0.26,  0.00, 0.06, 0.03, 0.07, 0.14),   # right
+        ( 0.52,  0.07, 0.05, 0.03, 0.07, 0.14),   # far-right, sweeps right
+    ])
 
 
 def _build_spiky(bm, head_z, head_r):
@@ -350,22 +408,15 @@ def _build_long(bm, head_z, head_r):
         (-head_r * 2.00, 1.03, 0.96),   # waist level
     ])
 
-    # Fringe (slightly longer than short)
-    fr_w  = head_r * 1.72
-    fr_y  = -(head_r * 0.90 * 1.09) - 0.005
-    fr_zt = hl_z + head_r * 0.06
-    fr_zb = hl_z - head_r * 0.24
-    tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))
-    tr = bm.verts.new(( fr_w * 0.50, fr_y, fr_zt))
-    ml = bm.verts.new((-fr_w * 0.44, fr_y, fr_zb))
-    mr = bm.verts.new(( fr_w * 0.44, fr_y, fr_zb))
-    bl = bm.verts.new((-fr_w * 0.34, fr_y + head_r * 0.05, fr_zb - head_r * 0.14))
-    br = bm.verts.new(( fr_w * 0.34, fr_y + head_r * 0.05, fr_zb - head_r * 0.14))
-    for fv in [[tl, tr, mr, ml], [ml, mr, br, bl]]:
-        try:
-            bm.faces.new(fv)
-        except ValueError:
-            pass
+    # Fringe — 5 tapered clumps, longer drop than short style.
+    fr_y = -(head_r * 0.90 * 1.09) - 0.005
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.52, -0.08, 0.07, 0.06, 0.22, 0.15),
+        (-0.26,  0.00, 0.08, 0.06, 0.20, 0.15),
+        ( 0.00,  0.00, 0.09, 0.06, 0.22, 0.17),
+        ( 0.26,  0.00, 0.08, 0.06, 0.20, 0.15),
+        ( 0.52,  0.08, 0.07, 0.06, 0.22, 0.15),
+    ])
 
 
 def _build_mohawk(bm, head_z, head_r):
@@ -429,19 +480,13 @@ def _build_ponytail(bm, head_z, head_r):
         (-head_r * 0.42, 0.85, 0.96),
     ])
 
-    # Single-row fringe
-    fr_w  = head_r * 1.60
-    fr_y  = -(head_r * 0.90 * 1.07) - 0.005
-    fr_zt = hl_z + head_r * 0.06
-    fr_zb = hl_z - head_r * 0.18
-    tl = bm.verts.new((-fr_w * 0.50, fr_y, fr_zt))
-    tr = bm.verts.new(( fr_w * 0.50, fr_y, fr_zt))
-    ml = bm.verts.new((-fr_w * 0.44, fr_y, fr_zb))
-    mr = bm.verts.new(( fr_w * 0.44, fr_y, fr_zb))
-    try:
-        bm.faces.new([tl, tr, mr, ml])
-    except ValueError:
-        pass
+    # Fringe — 3 shorter clumps (less drop; most hair is in the ponytail).
+    fr_y = -(head_r * 0.90 * 1.07) - 0.005
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.38, -0.05, 0.05, 0.04, 0.14, 0.13),
+        ( 0.00,  0.00, 0.06, 0.04, 0.14, 0.14),
+        ( 0.38,  0.05, 0.05, 0.04, 0.14, 0.13),
+    ])
 
     # Ponytail bundle — stacked rings hanging from the nape
     pt_cy  = head_r * 0.85        # sits behind the head
