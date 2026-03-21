@@ -22,6 +22,25 @@ ASSET_SCRIPTS = {
     "floor": os.path.join(
         os.path.dirname(__file__), "..", "scripts", "generate_floor.py"
     ),
+    # Leather bar assets
+    "bar_counter": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_bar_counter.py"
+    ),
+    "bottle": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_bottle.py"
+    ),
+    "led_rainbow_sign": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_led_rainbow_sign.py"
+    ),
+    "dance_floor": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_dance_floor.py"
+    ),
+    "speaker": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_speaker.py"
+    ),
+    "demon_bartender": os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "generate_demon_bartender.py"
+    ),
 }
 
 
