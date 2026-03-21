@@ -267,13 +267,114 @@ def _normalise_mesh(obj, target_height: float, x_scale: float = 1.0,
     return target_height
 
 
-def _clear_vertex_groups(obj):
-    """Remove all vertex groups so auto-weight starts fresh.
+# ── Bone name mapping: Cartoon_Male.glb bones → our rig bone names ────────
+# The GLB was built for a Mixamo/Rigify-style armature.  We rename vertex
+# groups in-place so the existing artist-made skin weights work with our
+# Humanoid_Armature without running ARMATURE_AUTO (which often fails for
+# cartoon meshes whose proportions differ from our rig's bone positions).
+#
+# Bones absent from this dict (IK controls, toe details) are collected into
+# the nearest logical parent so we keep 100 % of the mesh covered.
+_GLB_TO_OUR_BONES = {
+    # Spine chain
+    "Hips":            "Hips",
+    "HipsCtrl":        "Hips",
+    "Spine":           "Spine",
+    "Chest":           "Chest",
+    "UpperChest":      "Chest",
+    "Neck":            "Neck",
+    "Head":            "Head",
+    # Left arm
+    "LeftShoulder":    "Shoulder.L",
+    "LeftArm":         "UpperArm.L",
+    "LeftForeArm":     "LowerArm.L",
+    "LeftHand":        "Hand.L",
+    "LeftHandIndex1":  "Hand.L",
+    "LeftHandIndex2":  "Hand.L",
+    "LeftHandIndex3":  "Hand.L",
+    "LeftHandThumb1":  "Hand.L",
+    "LeftHandThumb2":  "Hand.L",
+    # Right arm
+    "RightShoulder":   "Shoulder.R",
+    "RightArm":        "UpperArm.R",
+    "RightForeArm":    "LowerArm.R",
+    "RightHand":       "Hand.R",
+    "RightHandIndex1": "Hand.R",
+    "RightHandIndex2": "Hand.R",
+    "RightHandIndex3": "Hand.R",
+    "RightHandThumb1": "Hand.R",
+    "RightHandThumb2": "Hand.R",
+    # Left leg
+    "LeftUpLeg":       "UpperLeg.L",
+    "LeftLeg":         "LowerLeg.L",
+    "LeftFoot":        "Foot.L",
+    "LeftToes":        "Foot.L",
+    # Right leg
+    "RightUpLeg":      "UpperLeg.R",
+    "RightLeg":        "LowerLeg.R",
+    "RightFoot":       "Foot.R",
+    "RightToes":       "Foot.R",
+}
 
-    The rig.py auto-weight (heat-map) will create correct groups matching
-    our bone names when parent_set(ARMATURE_AUTO) is called.
+
+def _remap_glb_vertex_groups(obj):
+    """Remap Cartoon_Male.glb vertex groups to our Humanoid_Armature bone names.
+
+    The GLB carries perfectly-painted skin weights bound to Mixamo-style bone
+    names.  Rather than discarding them and re-computing with ARMATURE_AUTO
+    (which often fails for cartoon meshes), we:
+
+      1. Rename each group that has a direct entry in _GLB_TO_OUR_BONES.
+      2. If a target name already exists (multiple GLB bones map to one of
+         ours, e.g. finger bones → Hand.L), we add the weights from the
+         source group into the target group, then delete the source.
+      3. Delete any remaining groups that don't map to anything (IK controls,
+         roll helpers, etc.) — they have no corresponding bone in our rig.
     """
-    obj.vertex_groups.clear()
+    vg_map = obj.vertex_groups
+
+    # Build a work-list: (source_name, target_name) for every group present
+    renames = []
+    for vg in list(vg_map):
+        target = _GLB_TO_OUR_BONES.get(vg.name)
+        if target:
+            renames.append((vg.name, target))
+
+    for src_name, dst_name in renames:
+        src_vg = vg_map.get(src_name)
+        if src_vg is None:
+            continue  # already removed in a previous iteration
+
+        dst_vg = vg_map.get(dst_name)
+
+        if dst_vg is None:
+            # Simple rename
+            src_vg.name = dst_name
+        else:
+            # Merge src weights INTO dst (vertex can be in both groups)
+            for v in obj.data.vertices:
+                try:
+                    w = src_vg.weight(v.index)
+                    if w > 0.0:
+                        existing = 0.0
+                        try:
+                            existing = dst_vg.weight(v.index)
+                        except RuntimeError:
+                            pass
+                        dst_vg.add([v.index], min(existing + w, 1.0), 'REPLACE')
+                except RuntimeError:
+                    pass  # vertex not in src group
+            vg_map.remove(src_vg)
+
+    # Remove any leftover groups that have no corresponding rig bone
+    # (IK controls, roll helpers, Root, etc.)
+    our_bones = set(_GLB_TO_OUR_BONES.values())
+    for vg in list(vg_map):
+        if vg.name not in our_bones:
+            vg_map.remove(vg)
+
+    print(f"[template_mesh] Vertex groups after remap: "
+          f"{[vg.name for vg in obj.vertex_groups]}")
 
 
 def _apply_skin_material(obj, skin_tone=None):
@@ -380,8 +481,18 @@ def create_body_from_template(cfg: dict):
     # not a preset value that may not match the template mesh.
     cfg["height"] = actual_height
 
-    # ── Clear vertex groups so auto-weight works cleanly ──────────────────
-    _clear_vertex_groups(mesh_obj)
+    # ── Vertex groups: remap GLB names → our rig names (cartoon), or clear ──
+    # For the Cartoon_Male GLB the artist-made skin weights are perfect.
+    # We remap the GLB bone names to our Humanoid_Armature bone names so
+    # rig.py can use the 'body_obj.vertex_groups → direct Armature modifier'
+    # path instead of the unreliable ARMATURE_AUTO heat-map fallback.
+    #
+    # For NBM .blend files the legacy behaviour (clear → ARMATURE_AUTO) is
+    # preserved because those files' weights were built for a different rig.
+    if use_cartoon_glb:
+        _remap_glb_vertex_groups(mesh_obj)
+    else:
+        mesh_obj.vertex_groups.clear()
 
     # ── Apply edge-split for a clean low-poly look ────────────────────────
     mod = mesh_obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
