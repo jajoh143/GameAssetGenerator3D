@@ -334,9 +334,9 @@ def _build_buzzed(bm, head_z, head_r):
 # Custom cap levels for the short style.
 # Hairline at θ≈19° above the equator (sin 19° ≈ 0.33 → forehead level).
 # h_scale=1.05 keeps the cap tight (~1 mm gap for a 0.10 m head).
-# At z_off=0.33: sphere_xy ≈ 0.944 hr; cap_rx = 0.91 × 1.05 hr = 0.956 hr ✓
+# At z_off=0.33: sphere_xy ≈ 0.944 hr; cap_rx = 0.97 × 1.05 hr = 1.019 hr ✓
 _SHORT_CAP_LEVELS = [
-    (0.33, 0.91, 0.91),   # hairline — upper-forehead elevation (symmetric rx/ry)
+    (0.33, 0.97, 0.97),   # hairline — upper-forehead elevation (symmetric rx/ry)
     (0.50, 0.84, 0.77),   # upper forehead  (unchanged from shared levels)
     (0.86, 0.52, 0.48),   # upper cranium
     (0.97, 0.14, 0.13),   # crown apex
@@ -381,8 +381,8 @@ def _build_short(bm, head_z, head_r):
     ])
 
     # Fringe — 5 overlapping tapered clumps anchored to the raised hairline.
-    # fr_y = front-face Y of hairline ring = −(0.91 × 1.05 × head_r)
-    fr_y = -(head_r * 0.91 * 1.05) - 0.005
+    # fr_y = front-face Y of hairline ring = −(0.97 × 1.05 × head_r)
+    fr_y = -(head_r * 0.97 * 1.05) - 0.005
     # (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
     _fringe_clumps(bm, head_r, hl_z, fr_y, [
         (-0.52, -0.07, 0.05, 0.03, 0.07, 0.14),   # far-left, sweeps left
