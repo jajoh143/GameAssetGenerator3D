@@ -331,16 +331,12 @@ def _build_buzzed(bm, head_z, head_r):
 
 
 
-# Custom cap levels for the short style.  The hairline starts at θ≈19° above
-# the sphere equator (sin 19° ≈ 0.33) — this places the visible front hairline
-# at the forehead, not at the ear/brow line that the equatorial level (0.00)
-# produces.  rx/ry at that elevation must exceed the sphere cross-section so
-# the cap shell stays outside the head mesh at all points:
-#   sphere_xy at z_off=0.33 = √(1-0.33²) ≈ 0.944 × head_r
-#   cap_rx = 0.88 × 1.07 × head_r = 0.942 × head_r  (≈ equal; just clearing)
-#   cap_ry = 0.88 × 1.07 × head_r = 0.942 × head_r  (symmetric for safety)
+# Custom cap levels for the short style.
+# Hairline at θ≈19° above the equator (sin 19° ≈ 0.33 → forehead level).
+# h_scale=1.05 keeps the cap tight (~1 mm gap for a 0.10 m head).
+# At z_off=0.33: sphere_xy ≈ 0.944 hr; cap_rx = 0.91 × 1.05 hr = 0.956 hr ✓
 _SHORT_CAP_LEVELS = [
-    (0.33, 0.88, 0.88),   # hairline — upper-forehead elevation
+    (0.33, 0.91, 0.91),   # hairline — upper-forehead elevation (symmetric rx/ry)
     (0.50, 0.84, 0.77),   # upper forehead  (unchanged from shared levels)
     (0.86, 0.52, 0.48),   # upper cranium
     (0.97, 0.14, 0.13),   # crown apex
@@ -350,43 +346,43 @@ _SHORT_CAP_LEVELS = [
 def _build_short(bm, head_z, head_r):
     """Short hair: forehead-level cap + sphere-conforming back panel + fringe.
 
-    Key fix vs. the old implementation
-    -----------------------------------
-    The old cap used the equatorial hairline level (z_off = 0.00 = sphere
-    centre = ear/eye level), so the hair appeared to start at the ears.
+    Key fixes vs. previous implementation
+    --------------------------------------
+    1. Hairline raised from z_off=0.00 (equator = ear/eye level) to
+       z_off=0.33 (forehead/hairline level).
+    2. h_scale reduced 1.07 → 1.05 so the cap sits ~1 mm off the scalp
+       rather than ~7 mm.  rx_mult raised to 0.91 so the ring still
+       clears the sphere at this elevation.
+    3. Panel dz values are equal small increments (0.16 hr each) that
+       cumulate to 0.63 hr — ending at the nape (z_off ≈ -0.30), NOT
+       at the shoulders.  The previous bug used dz as large steps that
+       accumulated to 1.65 hr, pushing the bottom past shoulder level.
+    4. Panel x/y_scale > 1.0 tracks the sphere widening below the
+       raised hairline before easing inward at the nape.
 
-    The new cap starts at z_off = 0.33 (forehead/hairline level).  Because
-    this ring is *above* the sphere's widest point, the back panel must
-    *widen* slightly for the first two rows (tracking the sphere's expansion
-    toward the equator) before tapering inward at the nape.  The x/y_scale
-    values below are derived so the panel stays ~3-4 % outside the head
-    sphere at every row level.
-
-    Row z_off reference (hairline at +0.33, panel going down):
-      row 1: z_off ≈ +0.17  sphere_xy ≈ 0.985 hr  → scale 1.08 → 1.017 hr ✓
-      row 2: z_off ≈  0.00  sphere_xy ≈ 1.000 hr  → scale 1.10 → 1.036 hr ✓
-      row 3: z_off ≈ -0.17  sphere_xy ≈ 0.985 hr  → scale 1.07 → 1.008 hr ✓
-      row 4: z_off ≈ -0.33  sphere_xy ≈ 0.944 hr  → scale 1.03 → 0.970 hr ✓
-    (hr = head_r; hairline_rx = 0.88 × 1.07 × hr = 0.942 hr)
+    Row z_off reference (hairline +0.33, steps cumulative):
+      row 1  z_off ≈ +0.17  sphere ≈ 0.985 hr  scale 1.06 → 1.013 hr ✓
+      row 2  z_off ≈ +0.01  sphere ≈ 1.000 hr  scale 1.08 → 1.032 hr ✓
+      row 3  z_off ≈ -0.15  sphere ≈ 0.989 hr  scale 1.07 → 1.022 hr ✓
+      row 4  z_off ≈ -0.30  sphere ≈ 0.954 hr  scale 1.03 → 0.984 hr ✓
+    (hr = head_r; hairline_rx = 0.91 × 1.05 hr = 0.9555 hr)
     """
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.07, levels=_SHORT_CAP_LEVELS)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.05, levels=_SHORT_CAP_LEVELS)
     hl = rings[0]
     hl_z = hl[0].co.z   # = head_z + head_r * 0.33
 
-    # Back-half panel — four rows from raised hairline to nape.
-    # x/y_scale > 1.0 for rows 1-2 so the panel tracks the sphere widening;
-    # < 1.0 only at row 4 where the sphere is narrower than the hairline ring.
+    # Back-half panel — four equal steps totalling 0.63 × head_r.
+    # Nape row (row 4) lands at z_off ≈ -0.30, just above the neck joint.
     _panel_rows(bm, _back_half_verts(hl), [
-        (-head_r * 0.16, 1.08, 1.06),   # just below hairline, widen slightly
-        (-head_r * 0.33, 1.10, 1.08),   # equatorial level — widest
-        (-head_r * 0.50, 1.07, 1.05),   # below equator, begin taper
-        (-head_r * 0.66, 1.03, 1.02),   # nape — still just outside sphere
+        (-head_r * 0.16, 1.06, 1.04),   # z_off≈+0.17 — widen to track sphere
+        (-head_r * 0.16, 1.08, 1.06),   # z_off≈+0.01 — equatorial, widest
+        (-head_r * 0.16, 1.07, 1.05),   # z_off≈-0.15 — below equator
+        (-head_r * 0.15, 1.03, 1.02),   # z_off≈-0.30 — nape, begin taper
     ])
 
     # Fringe — 5 overlapping tapered clumps anchored to the raised hairline.
-    # fr_y is the front-face Y of the hairline ring:
-    #   ring ry = head_r × 0.88 × 1.07 = head_r × 0.9416; front vertex y = −ry
-    fr_y = -(head_r * 0.88 * 1.07) - 0.005
+    # fr_y = front-face Y of hairline ring = −(0.91 × 1.05 × head_r)
+    fr_y = -(head_r * 0.91 * 1.05) - 0.005
     # (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
     _fringe_clumps(bm, head_r, hl_z, fr_y, [
         (-0.52, -0.07, 0.05, 0.03, 0.07, 0.14),   # far-left, sweeps left
