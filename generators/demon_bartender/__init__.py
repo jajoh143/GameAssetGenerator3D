@@ -61,9 +61,11 @@ class DemonBartenderGenerator(BaseAssetGenerator):
         import bpy
 
         # 1. Generate humanoid base
+        # humanoid.generate() takes only a config dict (no style argument);
+        # skin_tone is passed via the config instead.
         humanoid_cfg = {k: v for k, v in self.cfg.items() if k in HUMANOID_KEYS}
         from generators.humanoid import generate as humanoid_generate
-        armature = humanoid_generate(humanoid_cfg, self.style)
+        armature = humanoid_generate(humanoid_cfg)
 
         # 2. Find the body mesh (first mesh child of armature)
         body_obj = None
