@@ -294,14 +294,19 @@ _CAP_LEVELS = [
 _CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
 
 
-def _build_cap(bm, head_z, head_r, h_scale=1.07):
+def _build_cap(bm, head_z, head_r, h_scale=1.07, levels=None):
     """Build the shared domed cap from hairline to crown.
 
-    Returns [hairline, forehead, upper, crown] ring lists.
-    Crown is closed; hairline is left open so skin shows below it.
+    Args:
+        levels: list of (z_off, rx_mult, ry_mult) tuples overriding _CAP_LEVELS.
+                Useful for styles that need a non-equatorial hairline start.
+
+    Returns ring lists; crown is closed, hairline is left open.
     """
+    if levels is None:
+        levels = _CAP_LEVELS
     rings = []
-    for z_off, rx_m, ry_m in _CAP_LEVELS:
+    for z_off, rx_m, ry_m in levels:
         z = head_z + head_r * z_off
         rings.append(_ring(bm, 0, 0, z,
                            head_r * rx_m * h_scale,
@@ -325,69 +330,123 @@ def _build_buzzed(bm, head_z, head_r):
     ])
 
 
+
+# Custom cap levels for the short style.
+# Flat close-cropped cap: hairline at z_off=0.33 (forehead), crown
+# compressed to z_off=0.82 so the dome sits low and flat on the head.
+# h_scale=1.10 clears the template-mesh head (wider than sphere approx).
+# At z_off=0.33: sphere_xy ≈ 0.944 hr; cap_rx = 0.97 × 1.10 hr = 1.067 hr ✓
+_SHORT_CAP_LEVELS = [
+    (0.33, 0.97, 0.97),   # hairline — upper-forehead elevation
+    (0.58, 0.80, 0.74),   # mid-cap
+    (0.82, 0.46, 0.42),   # upper — crown compressed for flat look
+    (0.92, 0.18, 0.16),   # crown apex (lower than standard 0.97)
+]
+
+
 def _build_short(bm, head_z, head_r):
-    """Short hair: cap + unified back-half panel + fringe."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.07)
+    """Short flat hair: tight cap with no bangs + back panel to nape.
+
+    Style intent: close-cropped, sits flat on the head, exposed forehead,
+    no fringe.  The dome is deliberately compressed (crown at z_off=0.92
+    rather than 0.97) to read as flat/short rather than rounded/voluminous.
+
+    Back-panel x/y_scale < 1.0 gives a natural inward taper toward the nape.
+    (hr = head_r; hairline_rx = 0.97 × 1.10 hr = 1.067 hr)
+    """
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.10, levels=_SHORT_CAP_LEVELS)
     hl = rings[0]
-    hl_z = hl[0].co.z
 
-    # Unified back-half panel — covers back, left, and right in one strip so
-    # there are no seams or gaps between the old separate panels.  Three rows
-    # taper gently toward the nape; x/y scale is relative to the origin so the
-    # strip naturally pinches inward as it descends.
+    # Back-half panel — four equal steps totalling 0.63 × head_r to nape.
     _panel_rows(bm, _back_half_verts(hl), [
-        (-head_r * 0.22, 1.00, 1.00),
-        (-head_r * 0.42, 0.92, 0.97),
-        (-head_r * 0.58, 0.80, 0.94),
+        (-head_r * 0.16, 0.95, 0.95),   # z_off≈+0.17
+        (-head_r * 0.16, 0.97, 0.97),   # z_off≈+0.01 — equatorial
+        (-head_r * 0.16, 0.95, 0.95),   # z_off≈-0.15
+        (-head_r * 0.15, 0.92, 0.92),   # z_off≈-0.30 — nape
     ])
 
-    # Fringe — 5 overlapping tapered clumps (CGCookie big→medium approach).
-    # fr_y sits flush against the cap front face at h_scale=1.07.
-    fr_y = -(head_r * 0.90 * 1.07) - 0.005
-    # (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
-    _fringe_clumps(bm, head_r, hl_z, fr_y, [
-        (-0.52, -0.07, 0.05, 0.03, 0.07, 0.14),   # far-left, sweeps left
-        (-0.26,  0.00, 0.06, 0.03, 0.07, 0.14),   # left
-        ( 0.00,  0.00, 0.07, 0.03, 0.08, 0.16),   # centre (slightly wider)
-        ( 0.26,  0.00, 0.06, 0.03, 0.07, 0.14),   # right
-        ( 0.52,  0.07, 0.05, 0.03, 0.07, 0.14),   # far-right, sweeps right
-    ])
+
+# Cap levels for the spiky style.  The hairline is lower (z_off=0.20) than
+# the short style so the cap covers more of the sides, giving the spikes a
+# solid base to grow from.  The crown ring is kept small so it blends into
+# the spike bases cleanly.
+_SPIKY_CAP_LEVELS = [
+    (0.20, 0.98, 0.98),   # hairline — low on forehead, wide coverage
+    (0.48, 0.86, 0.79),   # upper sides
+    (0.72, 0.60, 0.55),   # upper cranium
+    (0.88, 0.30, 0.28),   # crown — small ring; spike bases sit at this level
+]
 
 
 def _build_spiky(bm, head_z, head_r):
-    """Toon-style cone spikes radiating from the crown over a tight cap."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.05)
+    """Anime-style spiky hair: tight side/back cap + angular wedge spike crest.
+
+    Redesigned from the old round-cone radial layout to match the anime
+    convention described by the CGCookie/polycount research:
+
+      • Spikes are flat angular *wedges* (4-triangle open pyramid), not
+        round cones.  The narrow X width (0.07 hr) gives a sharp fin
+        silhouette from the front; the wider Y depth (0.09 hr) gives
+        a solid clump silhouette from the side.
+
+      • Spikes form a front-to-back *crest* along the top-centre (X=0)
+        rather than a radial sunburst.  This matches the clustered,
+        directional look of Dragon Ball / Naruto-style hair.
+
+      • Heights follow a bell curve: tallest near the crown centre,
+        shorter toward the forehead and nape.
+
+      • Tips lean slightly backward (+lean in Y) for the "swept-back"
+        anime silhouette.
+
+    Face budget: cap ≈ 48 + back panel ≈ 24 + spikes 6 × 4 = 24 → ~96 total.
+    """
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.10, levels=_SPIKY_CAP_LEVELS)
     hl = rings[0]
 
-    # Minimal back-half coverage — one row keeps ear/nape from showing through
-    _panel_rows(bm, _back_half_verts(hl), [(-head_r * 0.15, 1.0, 1.0)])
+    # Side/back panel — 3 rows, same sphere-tracking taper as short style
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.16, 0.96, 0.96),
+        (-head_r * 0.16, 0.94, 0.94),
+        (-head_r * 0.15, 0.91, 0.91),
+    ])
 
-    # Spike layout: (x_frac, y_frac, height_mult) relative to crown extents
-    crown_z  = head_z + head_r * 0.90
-    crown_rx = head_r * 0.31 * 1.05
-    crown_ry = head_r * 0.28 * 1.05
-    base_r   = head_r * 0.10
-    spike_h  = head_r * 0.80
-    layout = [
-        ( 0.00,  0.00, 1.00),   # centre top
-        ( 0.55,  0.00, 0.85),   # left
-        (-0.55,  0.00, 0.85),   # right
-        ( 0.00,  0.55, 0.80),   # back
-        ( 0.00, -0.55, 0.80),   # front
-        ( 0.40,  0.40, 0.72),   # back-left
-        (-0.40,  0.40, 0.72),   # back-right
-        ( 0.40, -0.40, 0.72),   # front-left
-        (-0.40, -0.40, 0.72),   # front-right
+    # ── Anime wedge spike crest ──────────────────────────────────────────────
+    crown_z = head_z + head_r * 0.88   # aligns with cap crown ring level
+    spike_h = head_r * 0.90            # maximum spike height above crown_z
+    bw      = head_r * 0.07            # half-width in X (sharp/narrow)
+    bd      = head_r * 0.09            # half-depth in Y per spike
+    lean    = head_r * 0.05            # tip leans backward (+Y = swept-back)
+
+    # (y_centre as fraction of head_r, height_multiplier)
+    spike_defs = [
+        (-0.26, 0.58),   # front — shorter, sits over the forehead
+        (-0.10, 0.82),
+        ( 0.05, 1.00),   # tallest — crown centre
+        ( 0.20, 0.86),
+        ( 0.34, 0.66),
+        ( 0.46, 0.48),   # back — shortest
     ]
-    for xf, yf, hm in layout:
-        sx, sy, sz = xf * crown_rx, yf * crown_ry, crown_z
-        h = spike_h * hm
-        base = _ring(bm, sx,        sy,        sz,          base_r,        base_r * 0.88, n=6)
-        mid  = _ring(bm, sx * 1.06, sy * 1.06, sz + h * 0.55, base_r * 0.50, base_r * 0.45, n=6)
-        tip  = _ring(bm, sx * 1.12, sy * 1.12, sz + h,        base_r * 0.12, base_r * 0.12, n=6)
-        _bridge(bm, base, mid)
-        _bridge(bm, mid, tip)
-        _close_ring(bm, tip, top=True)
+
+    for yf, hm in spike_defs:
+        cy  = yf * head_r
+        h   = spike_h * hm
+        fl  = bm.verts.new((-bw, cy - bd, crown_z))
+        fr  = bm.verts.new(( bw, cy - bd, crown_z))
+        bl  = bm.verts.new((-bw, cy + bd, crown_z))
+        br  = bm.verts.new(( bw, cy + bd, crown_z))
+        tip = bm.verts.new((0.0, cy + lean, crown_z + h))
+
+        for fv in [
+            [fl, fr, tip],   # front slope
+            [br, bl, tip],   # back slope
+            [bl, fl, tip],   # left face
+            [fr, br, tip],   # right face
+        ]:
+            try:
+                bm.faces.new(fv)
+            except ValueError:
+                pass
 
 
 def _build_long(bm, head_z, head_r):
