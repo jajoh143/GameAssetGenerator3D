@@ -391,23 +391,49 @@ def create_body_from_template(cfg: dict):
     # ── Materials ─────────────────────────────────────────────────────────
     _apply_skin_material(mesh_obj, skin_tone)
 
-    # ── Derive head geometry parameters from actual mesh height ───────────────
-    # Cartoon_Male has a proportionally larger head than a realistic NBM mesh
-    # (cartoon proportion ~1/4 body height vs realistic ~1/7.5).  Using a
-    # larger head_r multiplier (0.085) keeps hair and eyes sized correctly.
-    # NBM meshes use the original 0.065 multiplier.
-    head_r_mult = 0.085 if use_cartoon_glb else 0.065
-    head_r = actual_height * head_r_mult
-    head_z = actual_height - head_r   # head centre (= neck_top + head_r)
-
-    # ── Measure actual face Y so eye spheres sit inside the mesh ─────────────
-    # The mesh bounding box min-Y ≈ nose tip (most forward point in -Y).
-    # Eyes sit a little behind the nose, which is head_r*0.20 ahead of the
-    # eye socket.  Passing face_y to create_eyes lets it anchor to the real
-    # mesh surface rather than a spherical approximation.
+    # ── Derive head geometry from actual mesh vertices ────────────────────────
+    # Rather than using a fixed height multiplier (which is wrong for cartoon
+    # meshes whose heads are proportionally much larger), we sample every
+    # vertex whose Z is above 78 % of the body height.  In a standard T-pose
+    # that zone contains only the head.
+    #
+    #   head_r  =  maximum X extent of head verts  (half-width of the head)
+    #   head_z  =  crown_z - head_r                (sphere-centre approximation)
+    #   face_y  =  minimum Y of head verts          (nose-tip depth)
+    #
+    # For the legacy NBM .blend meshes we keep the old proportion-based
+    # estimate because they were tuned against it.
     import mathutils as _mu
-    world_verts = [mesh_obj.matrix_world @ _mu.Vector(v) for v in mesh_obj.bound_box]
-    face_y = min(v.y for v in world_verts)   # nose-tip Y ≈ front of face
+
+    if use_cartoon_glb:
+        head_threshold_z = actual_height * 0.78
+        head_xs = []
+        head_ys = []
+        for v in mesh_obj.data.vertices:
+            wco = mesh_obj.matrix_world @ v.co
+            if wco.z > head_threshold_z:
+                head_xs.append(abs(wco.x))
+                head_ys.append(wco.y)
+
+        if head_xs:
+            head_r = max(head_xs)          # head half-width ≈ radius
+            face_y = min(head_ys)          # most-forward point in head region
+        else:
+            # Fallback if no verts found above threshold
+            head_r = actual_height * 0.13
+            world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
+                           for v in mesh_obj.bound_box]
+            face_y = min(v.y for v in world_verts)
+
+        head_z = actual_height - head_r
+        print(f"[template_mesh] Measured head_r={head_r:.4f} m, "
+              f"head_z={head_z:.4f} m, face_y={face_y:.4f} m")
+    else:
+        head_r = actual_height * 0.065
+        head_z = actual_height - head_r
+        world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
+                       for v in mesh_obj.bound_box]
+        face_y = min(v.y for v in world_verts)
 
     # ── Hair ──────────────────────────────────────────────────────────────────
     hair_obj = None

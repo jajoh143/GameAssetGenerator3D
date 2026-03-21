@@ -17,9 +17,10 @@ import math
 # ── Shared geometry constants ─────────────────────────────────────────────────
 
 # Eyes are placed head_r * _EYE_SETBACK behind the nose-tip (face_y).
-# The nose tip extends ~20 % of head_r forward of the eye socket, so a
-# setback of 0.18 hr lands the disc flush with the actual eye socket surface.
-_EYE_SETBACK = 0.18
+# face_y is now sampled from actual head vertices (not the full-body bbox),
+# so it is the true nose-tip depth.  A setback of 0.12 hr places the disc
+# just inside the eye-socket surface for typical cartoon proportions.
+_EYE_SETBACK = 0.12
 
 
 def _eye_geometry(head_z, head_r, face_y):
