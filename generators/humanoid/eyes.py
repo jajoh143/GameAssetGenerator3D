@@ -26,7 +26,7 @@ def _eye_geometry(head_z, head_r, face_y):
     # Position the disc at the eye socket inner ring depth from base_mesh.py:
     # face surface at Y = -0.86 * head_r, socket recess = 0.04 * head_r,
     # so disc sits at Y = -0.82 * head_r (in world coords, body centred at Y=0).
-    disc_y = -(head_r * 0.82)
+    disc_y = -(head_r * 0.62)
     eye_y  = disc_y - eye_r
     return eye_r, eye_x, eye_z, eye_y, disc_y
 
