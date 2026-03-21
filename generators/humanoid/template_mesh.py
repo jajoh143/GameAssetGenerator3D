@@ -132,21 +132,27 @@ def _import_mesh_from_blend(blend_path: str):
 
 
 def _import_glb_mesh(glb_path: str):
-    """Import the first mesh object from a GLB/GLTF file.
+    """Import all mesh objects from a GLB/GLTF file and join them into one.
 
-    Uses bpy.ops.import_scene.gltf() to load the file, then returns the
-    first newly-added MESH object.  Any non-mesh objects (armatures, empties,
-    cameras) added during import are NOT removed here — call
-    _clear_non_mesh_objects() afterward.
+    GLB files frequently contain several separate mesh objects (e.g. body,
+    head, hands).  Returning only the first would cause all other parts to
+    be silently deleted by _clear_non_mesh_objects().  This function:
+
+      1. Imports the GLB via bpy.ops.import_scene.gltf().
+      2. Collects every newly-added MESH object.
+      3. Unparents each from any bundled armature (keeping world transform)
+         and strips armature modifiers — rig.py will re-apply skinning.
+      4. If more than one mesh was imported, joins them all into one object.
+      5. Returns the single combined mesh object.
 
     Args:
         glb_path: Absolute path to the .glb or .gltf file.
 
     Returns:
-        The newly imported Blender mesh object (bpy.types.Object).
+        A single Blender MESH object containing all imported geometry.
 
     Raises:
-        RuntimeError: if no MESH object was added after import.
+        RuntimeError: if no MESH object was found after import.
     """
     import bpy
 
@@ -154,19 +160,52 @@ def _import_glb_mesh(glb_path: str):
 
     bpy.ops.import_scene.gltf(filepath=glb_path)
 
-    after  = {o.name for o in bpy.data.objects}
+    after     = {o.name for o in bpy.data.objects}
     new_names = after - before
 
-    # Return the first mesh object that appeared
-    for name in new_names:
-        obj = bpy.data.objects[name]
-        if obj.type == 'MESH':
-            return obj
+    # Collect every new MESH object
+    mesh_objs = [
+        bpy.data.objects[n]
+        for n in new_names
+        if bpy.data.objects[n].type == 'MESH'
+    ]
 
-    raise RuntimeError(
-        f"No MESH object found after importing {glb_path}. "
-        f"New objects: {list(new_names)}"
-    )
+    if not mesh_objs:
+        raise RuntimeError(
+            f"No MESH object found after importing {glb_path}. "
+            f"New objects: {list(new_names)}"
+        )
+
+    print(f"[template_mesh] GLB imported {len(mesh_objs)} mesh part(s): "
+          f"{[o.name for o in mesh_objs]}")
+
+    # Unparent from bundled armatures (keep world transform) and remove
+    # armature modifiers so rig.py can apply its own skinning cleanly.
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in mesh_objs:
+        if obj.parent is not None:
+            bpy.context.view_layer.objects.active = obj
+            obj.select_set(True)
+            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+            obj.select_set(False)
+        for mod in list(obj.modifiers):
+            if mod.type == 'ARMATURE':
+                obj.modifiers.remove(mod)
+
+    # Single part — return as-is
+    if len(mesh_objs) == 1:
+        return mesh_objs[0]
+
+    # Multiple parts — join into one mesh object
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in mesh_objs:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_objs[0]
+    bpy.ops.object.join()
+
+    joined = bpy.context.view_layer.objects.active
+    print(f"[template_mesh] Joined into single mesh: {joined.name}")
+    return joined
 
 
 def _clear_non_mesh_objects(keep_names: set):
