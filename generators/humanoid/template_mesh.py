@@ -1,24 +1,27 @@
 """Template-mesh import pipeline for humanoid generation.
 
 Instead of procedurally building geometry, this module imports a pre-made
-base mesh from the NBM (Next Base Mesh) .blend files in assets/TemplateMeshes/
-and normalises it to the target height and position.
+base mesh from the assets/TemplateMeshes/ directory and normalises it to the
+target height and position.
 
-The imported mesh provides all the geometry; vertex groups are cleared and
-re-assigned by Blender's heat-map auto-weight when rig.py calls
-parent_set(ARMATURE_AUTO).  This lets the full rig/animation pipeline work
-unchanged regardless of which template was used.
+Primary template
+----------------
+Cartoon_Male.glb — imported via bpy.ops.import_scene.gltf().  Used as the
+default for all male/neutral characters across every LOD tier.
 
-LOD tiers
----------
+NBM fallback (legacy .blend files)
+-----------------------------------
 "very_low"  →  NBM_VeryLowpoly_{sex}.blend   (~<300 faces, mobile/web)
 "low"        →  NBM_Lowpoly_{sex}.blend        (300-500 faces, default)
 "mid"        →  NBM_Midpoly_{sex}.blend        (500+ faces, high quality)
 
+Female characters still use the NBM_*.blend pipeline until a Cartoon_Female
+template is provided.
+
 Gender / sex mapping
 --------------------
-"male" or "neutral"  →  Male variant
-"female"             →  Female variant
+"male" or "neutral"  →  Cartoon_Male.glb  (or NBM Male if GLB absent)
+"female"             →  NBM Female variant
 """
 
 import os
@@ -29,7 +32,10 @@ _TEMPLATE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "TemplateMeshes")
 )
 
-# Map (lod_key, sex_key) → filename stem
+# Cartoon_Male GLB — primary template for male/neutral characters
+CARTOON_MALE_GLB = os.path.join(_TEMPLATE_DIR, "Cartoon_Male.glb")
+
+# Map (lod_key, sex_key) → filename stem (NBM fallback)
 _LOD_SEX_MAP = {
     ("very_low", "Male"):   "NBM_VeryLowpoly_Male",
     ("very_low", "Female"): "NBM_VeryLowpoly_Female",
@@ -122,6 +128,44 @@ def _import_mesh_from_blend(blend_path: str):
     raise RuntimeError(
         f"No MESH type object could be imported from {blend_path}. "
         f"Available objects: {available_objects}"
+    )
+
+
+def _import_glb_mesh(glb_path: str):
+    """Import the first mesh object from a GLB/GLTF file.
+
+    Uses bpy.ops.import_scene.gltf() to load the file, then returns the
+    first newly-added MESH object.  Any non-mesh objects (armatures, empties,
+    cameras) added during import are NOT removed here — call
+    _clear_non_mesh_objects() afterward.
+
+    Args:
+        glb_path: Absolute path to the .glb or .gltf file.
+
+    Returns:
+        The newly imported Blender mesh object (bpy.types.Object).
+
+    Raises:
+        RuntimeError: if no MESH object was added after import.
+    """
+    import bpy
+
+    before = {o.name for o in bpy.data.objects}
+
+    bpy.ops.import_scene.gltf(filepath=glb_path)
+
+    after  = {o.name for o in bpy.data.objects}
+    new_names = after - before
+
+    # Return the first mesh object that appeared
+    for name in new_names:
+        obj = bpy.data.objects[name]
+        if obj.type == 'MESH':
+            return obj
+
+    raise RuntimeError(
+        f"No MESH object found after importing {glb_path}. "
+        f"New objects: {list(new_names)}"
     )
 
 
@@ -269,10 +313,21 @@ def create_body_from_template(cfg: dict):
     scene_before = {o.name for o in bpy.data.objects}
 
     # ── Import template mesh ───────────────────────────────────────────────
-    blend_path = _resolve_blend_path(gender, lod)
-    print(f"[template_mesh] Importing from: {blend_path}")
+    # Prefer Cartoon_Male.glb for male/neutral characters.
+    # Fall back to NBM .blend files if the GLB is absent or gender=female.
+    use_cartoon_glb = (
+        gender in ("male", "neutral")
+        and os.path.exists(CARTOON_MALE_GLB)
+    )
 
-    mesh_obj = _import_mesh_from_blend(blend_path)
+    if use_cartoon_glb:
+        print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
+        mesh_obj = _import_glb_mesh(CARTOON_MALE_GLB)
+    else:
+        blend_path = _resolve_blend_path(gender, lod)
+        print(f"[template_mesh] Importing NBM template from: {blend_path}")
+        mesh_obj = _import_mesh_from_blend(blend_path)
+
     mesh_obj.name = "Humanoid_Body"
 
     # Remove any non-mesh objects that came along (armatures, lights, etc.)
@@ -298,12 +353,12 @@ def create_body_from_template(cfg: dict):
     _apply_skin_material(mesh_obj, skin_tone)
 
     # ── Derive head geometry parameters from actual mesh height ───────────────
-    # head_z = head CENTRE = mesh top − head radius.
-    # With head_r ≈ 0.065 × height the crown lands at head_z + 0.97×head_r,
-    # which is ~3 mm below the top of the mesh — exactly right.
-    # The OLD formula (0.90×height + head_r) pushed the crown ~5 cm above the
-    # mesh for typical NBM heights, so the hair floated off the head.
-    head_r = actual_height * 0.065
+    # Cartoon_Male has a proportionally larger head than a realistic NBM mesh
+    # (cartoon proportion ~1/4 body height vs realistic ~1/7.5).  Using a
+    # larger head_r multiplier (0.085) keeps hair and eyes sized correctly.
+    # NBM meshes use the original 0.065 multiplier.
+    head_r_mult = 0.085 if use_cartoon_glb else 0.065
+    head_r = actual_height * head_r_mult
     head_z = actual_height - head_r   # head centre (= neck_top + head_r)
 
     # ── Measure actual face Y so eye spheres sit inside the mesh ─────────────

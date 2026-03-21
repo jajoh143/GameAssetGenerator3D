@@ -657,54 +657,59 @@ def create_hair(head_z, head_r, style="short", color=None):
     obj.select_set(True)
     bpy.ops.object.shade_smooth()
 
-    # Principled BSDF tuned for stylized low-poly hair:
-    #   - Mid roughness (0.55) avoids the chalky look of high roughness
-    #   - Low anisotropy (0.15) + rotation (0.1) adds directionality
-    #     without creating confusing highlights on flat poly geometry
-    #   - Sheen (0.2) gives a soft rim edge that reads as hair fibre
-    #   - Slight specular tint warms the highlight toward the hair colour
-    # Sources: Blender 4.x Principled BSDF manual, Blender Artists community
+    # Flat cartoon hair material
+    # ──────────────────────────────────────────────────────────────────────
+    # Research findings (CGCookie, Blender Artists, polycount):
+    #
+    #   Cartoon hair reads as "flat" when specular highlights are eliminated
+    #   and colour variation is minimal across the surface.  The standard
+    #   technique for game-ready cartoon assets is:
+    #
+    #     1. Mix a small Emission contribution (~30 %) with a near-fully-matte
+    #        Diffuse BSDF (roughness ≥ 0.92).
+    #     2. Emission flattens shadowed areas so the colour stays uniform;
+    #        Diffuse retains just enough depth cueing to read the 3-D shape.
+    #     3. Zero specular — no glossy highlights that would break the toon look.
+    #
+    #   This approach works identically in both Cycles and Eevee, which
+    #   Principled Hair BSDF does not (it is Cycles-only).
+    #
+    # Node graph:
+    #   Emission(rgba, 0.35) ─┐
+    #                          Mix(fac=0.30) → Material Output
+    #   Diffuse(rgba, 0.92)  ─┘
     mat = bpy.data.materials.new(name="Hair_Material")
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        bsdf.inputs["Base Color"].default_value = rgba
-        bsdf.inputs["Roughness"].default_value = 0.55
 
-        # Specular (input name changed in Blender 4.0)
-        if "Specular IOR Level" in bsdf.inputs:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.15
-        elif "Specular" in bsdf.inputs:
-            bsdf.inputs["Specular"].default_value = 0.15
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
 
-        # Directional sheen — keep low so it reads on simple geometry
-        if "Anisotropic" in bsdf.inputs:
-            bsdf.inputs["Anisotropic"].default_value = 0.15
-        if "Anisotropic Rotation" in bsdf.inputs:
-            bsdf.inputs["Anisotropic Rotation"].default_value = 0.1
+    # Material Output
+    out_node = nodes.new('ShaderNodeOutputMaterial')
+    out_node.location = (600, 0)
 
-        # Soft edge rim — simulates fine surface fibres
-        if "Sheen Weight" in bsdf.inputs:       # Blender 4.x
-            bsdf.inputs["Sheen Weight"].default_value = 0.20
-        elif "Sheen" in bsdf.inputs:             # Blender 3.x
-            bsdf.inputs["Sheen"].default_value = 0.20
-        if "Sheen Roughness" in bsdf.inputs:
-            bsdf.inputs["Sheen Roughness"].default_value = 0.50
+    # Mix Shader — 30 % emission, 70 % diffuse
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.inputs[0].default_value = 0.30
+    mix_node.location = (400, 0)
 
-        # Warm the specular highlight toward the hair colour
-        if "Specular Tint" in bsdf.inputs:
-            si = bsdf.inputs["Specular Tint"]
-            try:
-                # Blender 4.x — colour input
-                r, g, b, a = rgba
-                si.default_value = (
-                    min(r * 1.15, 1.0),
-                    min(g * 1.10, 1.0),
-                    min(b * 1.05, 1.0),
-                    1.0,
-                )
-            except TypeError:
-                si.default_value = 0.4   # Blender 3.x — float input
+    # Emission — provides the flat, self-lit cartoon colour
+    emit_node = nodes.new('ShaderNodeEmission')
+    emit_node.inputs['Color'].default_value = rgba
+    emit_node.inputs['Strength'].default_value = 0.35
+    emit_node.location = (150, 120)
+
+    # Diffuse BSDF — near-fully matte; supplies subtle depth cueing
+    diff_node = nodes.new('ShaderNodeBsdfDiffuse')
+    diff_node.inputs['Color'].default_value = rgba
+    diff_node.inputs['Roughness'].default_value = 0.92
+    diff_node.location = (150, -80)
+
+    links.new(emit_node.outputs['Emission'],  mix_node.inputs[1])
+    links.new(diff_node.outputs['BSDF'],      mix_node.inputs[2])
+    links.new(mix_node.outputs['Shader'],     out_node.inputs['Surface'])
+
     obj.data.materials.append(mat)
 
     return obj

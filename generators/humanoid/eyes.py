@@ -16,13 +16,32 @@ import math
 
 # ── Shared geometry constants ─────────────────────────────────────────────────
 
+# Eyes are placed head_r * _EYE_SETBACK behind the nose-tip (face_y).
+# The nose tip extends ~20 % of head_r forward of the eye socket, so a
+# setback of 0.18 hr lands the disc flush with the actual eye socket surface.
+_EYE_SETBACK = 0.18
+
+
 def _eye_geometry(head_z, head_r, face_y):
-    """Return (eye_r, eye_x, eye_z, eye_y, disc_y) for the current head."""
-    eye_r  = head_r * 0.09
-    eye_z  = head_z - head_r * 0.1
-    eye_x  = head_r * 0.32
-    disc_y = -(head_r * 0.62)
-    eye_y  = disc_y - eye_r
+    """Return (eye_r, eye_x, eye_z, eye_y, disc_y) for the current head.
+
+    disc_y is anchored to face_y (the mesh's most-forward bounding-box Y)
+    when provided, so the eyes sit on the actual face surface rather than
+    a fixed spherical approximation.  This is critical for the Cartoon_Male
+    template which has a different head depth than the NBM meshes.
+    """
+    eye_r  = head_r * 0.11          # slightly larger for cartoon proportions
+    eye_z  = head_z - head_r * 0.05  # just below head centre
+    eye_x  = head_r * 0.34          # lateral separation
+
+    if face_y is not None:
+        # Place disc setback from the actual nose-tip surface
+        disc_y = face_y + head_r * _EYE_SETBACK
+    else:
+        # Fallback: spherical approximation (NBM-era behaviour)
+        disc_y = -(head_r * 0.62)
+
+    eye_y = disc_y - eye_r
     return eye_r, eye_x, eye_z, eye_y, disc_y
 
 
