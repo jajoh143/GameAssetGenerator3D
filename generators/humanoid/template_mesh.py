@@ -139,11 +139,14 @@ def _import_glb_mesh(glb_path: str):
     be silently deleted by _clear_non_mesh_objects().  This function:
 
       1. Imports the GLB via bpy.ops.import_scene.gltf().
-      2. Collects every newly-added MESH object.
-      3. Unparents each from any bundled armature (keeping world transform)
+      2. Moves any mesh objects out of 'glTF_not_exported' (a hidden collection
+         the glTF importer uses for internal helpers) into the scene collection
+         so they are visible and included in the export.
+      3. Collects every newly-added MESH object.
+      4. Unparents each from any bundled armature (keeping world transform)
          and strips armature modifiers — rig.py will re-apply skinning.
-      4. If more than one mesh was imported, joins them all into one object.
-      5. Returns the single combined mesh object.
+      5. If more than one mesh was imported, joins them all into one object.
+      6. Returns the single combined mesh object.
 
     Args:
         glb_path: Absolute path to the .glb or .gltf file.
@@ -162,6 +165,21 @@ def _import_glb_mesh(glb_path: str):
 
     after     = {o.name for o in bpy.data.objects}
     new_names = after - before
+
+    # ── Rescue mesh objects from 'glTF_not_exported' ──────────────────────
+    # Blender's glTF importer places certain objects (including, sometimes,
+    # the body mesh) into a special collection called 'glTF_not_exported'.
+    # Objects in that collection are hidden from the viewport and excluded
+    # from glTF export.  We move every MESH from that collection into the
+    # root scene collection so it is visible and exported correctly.
+    gltf_hidden = bpy.data.collections.get("glTF_not_exported")
+    if gltf_hidden is not None:
+        for obj in list(gltf_hidden.objects):
+            if obj.type == 'MESH':
+                # Link into the scene root collection
+                bpy.context.scene.collection.objects.link(obj)
+                gltf_hidden.objects.unlink(obj)
+                print(f"[template_mesh] Rescued '{obj.name}' from glTF_not_exported")
 
     # Collect every new MESH object
     mesh_objs = [
