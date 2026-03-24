@@ -139,14 +139,13 @@ def _import_glb_mesh(glb_path: str):
     be silently deleted by _clear_non_mesh_objects().  This function:
 
       1. Imports the GLB via bpy.ops.import_scene.gltf().
-      2. Moves any mesh objects out of 'glTF_not_exported' (a hidden collection
-         the glTF importer uses for internal helpers) into the scene collection
-         so they are visible and included in the export.
-      3. Collects every newly-added MESH object.
-      4. Unparents each from any bundled armature (keeping world transform)
+      2. Collects every newly-added MESH object that is in the main scene
+         collection (skips objects in 'glTF_not_exported', which are internal
+         bone-display helpers and must not be merged into the body mesh).
+      3. Unparents each from any bundled armature (keeping world transform)
          and strips armature modifiers — rig.py will re-apply skinning.
-      5. If more than one mesh was imported, joins them all into one object.
-      6. Returns the single combined mesh object.
+      4. If more than one mesh was imported, joins them all into one object.
+      5. Returns the single combined mesh object.
 
     Args:
         glb_path: Absolute path to the .glb or .gltf file.
@@ -166,26 +165,17 @@ def _import_glb_mesh(glb_path: str):
     after     = {o.name for o in bpy.data.objects}
     new_names = after - before
 
-    # ── Rescue mesh objects from 'glTF_not_exported' ──────────────────────
-    # Blender's glTF importer places certain objects (including, sometimes,
-    # the body mesh) into a special collection called 'glTF_not_exported'.
-    # Objects in that collection are hidden from the viewport and excluded
-    # from glTF export.  We move every MESH from that collection into the
-    # root scene collection so it is visible and exported correctly.
+    # Collect every new MESH object that is NOT in the 'glTF_not_exported'
+    # collection.  That collection holds bone-display helper shapes (Icosphere
+    # IK targets, etc.) that must remain isolated — joining them into the body
+    # mesh would add unwanted geometry (e.g. a ball at the feet).
     gltf_hidden = bpy.data.collections.get("glTF_not_exported")
-    if gltf_hidden is not None:
-        for obj in list(gltf_hidden.objects):
-            if obj.type == 'MESH':
-                # Link into the scene root collection
-                bpy.context.scene.collection.objects.link(obj)
-                gltf_hidden.objects.unlink(obj)
-                print(f"[template_mesh] Rescued '{obj.name}' from glTF_not_exported")
+    hidden_names = {o.name for o in gltf_hidden.objects} if gltf_hidden else set()
 
-    # Collect every new MESH object
     mesh_objs = [
         bpy.data.objects[n]
         for n in new_names
-        if bpy.data.objects[n].type == 'MESH'
+        if bpy.data.objects[n].type == 'MESH' and n not in hidden_names
     ]
 
     if not mesh_objs:
@@ -535,7 +525,11 @@ def create_body_from_template(cfg: dict):
     import mathutils as _mu
 
     if use_cartoon_glb:
-        head_threshold_z = actual_height * 0.78
+        # 85 % threshold keeps us well above the shoulders (~70–75 % of height)
+        # so only true head vertices contribute to head_r.  78 % was too low
+        # and captured shoulder geometry, inflating head_r and pushing head_z
+        # down into the model (causing hair to render inside the skull).
+        head_threshold_z = actual_height * 0.85
         head_xs = []
         head_ys = []
         for v in mesh_obj.data.vertices:
@@ -563,6 +557,16 @@ def create_body_from_template(cfg: dict):
         world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
                        for v in mesh_obj.bound_box]
         face_y = min(v.y for v in world_verts)
+
+    # ── Ensure new objects land in the main scene collection ─────────────────
+    # After importing a GLB the active layer-collection can be left pointing
+    # at 'glTF_not_exported'.  Any object created with
+    # bpy.context.collection.objects.link() would then become hidden and
+    # excluded from export.  Reset to the view-layer root so hair, eyes, and
+    # eyebrows end up in the top-level Collection.
+    bpy.context.view_layer.active_layer_collection = (
+        bpy.context.view_layer.layer_collection
+    )
 
     # ── Hair ──────────────────────────────────────────────────────────────────
     hair_obj = None
