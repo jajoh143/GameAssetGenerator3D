@@ -130,6 +130,26 @@ PRESETS = {
         "limb_thickness": 0.75,
         "torso_depth": 0.13,
     },
+    # ── Kenney-style chibi character (reference: Kenney Characters pack) ──
+    # Large round head (~38% of height), very short torso and legs, thick
+    # limbs — the "chibi" / toy-figure proportions used in the Kenney asset
+    # pack.  Use with use_template=True + Cartoon_Male.glb whose mesh already
+    # has the right head-to-body ratio; these values drive clothing placement.
+    "kenney": {
+        "height": 1.50,          # same as average (Cartoon_Male natural height)
+        "shoulder_width": 0.21,  # slightly narrower than average
+        "hip_width": 0.115,
+        "head_size": 0.24,       # larger head for chibi emphasis
+        "arm_length": 0.50,      # shorter arms
+        "leg_length": 0.42,      # shorter legs
+        "torso_length": 0.38,    # shorter torso
+        "neck_length": 0.05,
+        "hand_size": 0.062,
+        "foot_length": 0.18,
+        "foot_width": 0.08,
+        "limb_thickness": 1.10,  # thicker limbs for cartoon look
+        "torso_depth": 0.15,
+    },
 }
 
 

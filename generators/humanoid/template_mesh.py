@@ -723,6 +723,25 @@ def create_body_from_template(cfg: dict):
                                                    else None)
     extra_head_objs.append((mouth_obj, "Head"))
 
+    # ── Mustache (optional) ───────────────────────────────────────────────────
+    # Enabled when cfg["mustache"] is truthy.  cfg["mustache_color"] can be an
+    # RGBA tuple to override the default dark-brown.  Pass the hair color when
+    # mustache_color is not set so it naturally matches the character's hair.
+    if cfg.get("mustache"):
+        mustache_color = cfg.get("mustache_color", None)
+        if mustache_color is None:
+            # Default: derive from hair color for a natural match
+            hc = cfg.get("hair_color", None)
+            if isinstance(hc, str):
+                from .hair import HAIR_COLORS
+                mustache_color = HAIR_COLORS.get(hc, None)
+            elif hc:
+                mustache_color = tuple(hc)
+        mobj = eyes_module.create_mustache(head_z, head_r, face_y=face_y,
+                                           head_r_horiz=head_r_horiz,
+                                           mustache_color=mustache_color)
+        extra_head_objs.append((mobj, "Head"))
+
     # ── Clothing ──────────────────────────────────────────────────────────────
     # Create clothing as separate objects using the same bmesh builders as
     # the procedural pipeline, but positioned to fit the template mesh.
@@ -730,6 +749,10 @@ def create_body_from_template(cfg: dict):
     clothing_spec = cfg.get("clothing", ["tshirt", "pants"])
     if isinstance(clothing_spec, str):
         clothing_spec = [c.strip() for c in clothing_spec.split(",") if c.strip()]
+    # clothing_color may be:
+    #   • a single named color string   → used for every item
+    #   • a single RGBA tuple           → used for every item
+    #   • a dict {ctype: color}         → per-item colors (None means use default)
     clothing_color = cfg.get("clothing_color", None)
 
     from . import clothing as clothing_module
@@ -752,7 +775,13 @@ def create_body_from_template(cfg: dict):
         obj_c = bpy.data.objects.new(f"Clothing_{ctype}", mesh_c)
         bpy.context.collection.objects.link(obj_c)
 
-        rgba_c = clothing_module.resolve_clothing_rgba(ctype, clothing_color)
+        # Resolve per-item color: dict lookup → single override → type default
+        if isinstance(clothing_color, dict):
+            color_for_item = clothing_color.get(ctype, None)
+        else:
+            color_for_item = clothing_color
+        rgba_c = clothing_module.resolve_clothing_rgba(ctype, color_for_item)
+
         mat_c = bpy.data.materials.new(f"Clothing_{ctype}_Mat")
         mat_c.use_nodes = True
         bsdf_c = mat_c.node_tree.nodes.get("Principled BSDF")

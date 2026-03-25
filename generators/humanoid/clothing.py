@@ -29,7 +29,8 @@ import math
 
 # ─── Data constants (no bpy dependency) ────────────────────────────────────
 
-CLOTHING_TYPES = ("none", "tshirt", "jacket", "pants", "shorts", "armor", "robe")
+CLOTHING_TYPES = ("none", "tshirt", "longsleeve", "jacket", "pants", "shorts",
+                  "belt", "armor", "robe")
 
 CLOTHING_COLORS = {
     "white":      (0.85, 0.85, 0.85, 1.0),
@@ -52,12 +53,14 @@ CLOTHING_COLORS = {
 
 # Default color per clothing type
 CLOTHING_DEFAULT_COLORS = {
-    "tshirt":  "grey",
-    "jacket":  "brown",
-    "pants":   "navy",
-    "shorts":  "tan",
-    "armor":   "steel",
-    "robe":    "brown",
+    "tshirt":      "grey",
+    "longsleeve":  "white",
+    "jacket":      "brown",
+    "pants":       "navy",
+    "shorts":      "tan",
+    "belt":        "black",
+    "armor":       "steel",
+    "robe":        "brown",
 }
 
 # Ring vertex count (matches base_mesh.py)
@@ -506,15 +509,133 @@ def _build_robe_template(cfg):
     return bm
 
 
+def _build_longsleeve_template(cfg):
+    """Long-sleeve shirt: torso tube + full arm sleeves down to wrist.
+
+    Identical to tshirt geometry for the torso; sleeves extend all the way
+    to the wrist rather than stopping at the elbow.  The hem is cut a little
+    lower (hip rather than abdomen) so the shirt covers the waistband.
+    Scale factor 1.04 keeps it slightly slimmer than a jacket (1.08).
+    """
+    import bmesh as bmesh_mod
+    bm = bmesh_mod.new()
+
+    sw  = cfg["shoulder_width"]
+    hw  = cfg["hip_width"]
+    td  = cfg.get("torso_depth", 0.20)
+    lt  = cfg.get("limb_thickness", 1.0)
+    leg_len   = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+    arm_len   = cfg["arm_length"]
+
+    foot_top       = 0.06
+    hip_z          = foot_top + leg_len
+    waist_z        = hip_z + torso_len * 0.42
+    lower_chest_z  = hip_z + torso_len * 0.68
+    chest_z        = hip_z + torso_len
+    shirt_hem_z    = hip_z + torso_len * 0.18   # slightly lower than tshirt
+
+    s = 1.04   # snug — sits under a jacket or tshirt if layered
+
+    torso_specs = [
+        (shirt_hem_z,   hw * 0.80 * s, td * 0.44 * s),
+        (waist_z,       sw * 0.65 * s, td * 0.40 * s),
+        (lower_chest_z, sw * 0.90 * s, td * 0.54 * s),
+        (chest_z,       sw * 1.05 * s, td * 0.58 * s),
+    ]
+    torso_rings = []
+    for z, rx, ry in torso_specs:
+        torso_rings.append(_make_ring(bm, (0, 0, z), rx, ry))
+    for i in range(len(torso_rings) - 1):
+        _bridge_rings(bm, torso_rings[i], torso_rings[i + 1])
+    _cap_ring(bm, torso_rings[0], top=False)
+
+    # Full sleeves from shoulder to wrist
+    shoulder_x    = sw + 0.03
+    arm_top_z     = chest_z - 0.02
+    upper_arm_len = arm_len * 0.48
+    elbow_z       = arm_top_z - upper_arm_len
+    lower_arm_len = arm_len * 0.52
+    wrist_z       = elbow_z - lower_arm_len
+
+    for sign in [1, -1]:
+        sx = sign * shoulder_x
+        arm_specs = [
+            (arm_top_z,                        0.078 * lt * s, 0.068 * lt * s),
+            (arm_top_z - upper_arm_len * 0.45, 0.070 * lt * s, 0.062 * lt * s),
+            (elbow_z,                          0.056 * lt * s, 0.054 * lt * s),
+            (elbow_z - lower_arm_len * 0.40,   0.058 * lt * s, 0.054 * lt * s),
+            (wrist_z,                          0.044 * lt * s, 0.040 * lt * s),
+        ]
+        arm_rings = []
+        for z, rx, ry in arm_specs:
+            arm_rings.append(_make_ring(bm, (sx, 0, z), rx, ry))
+        for i in range(len(arm_rings) - 1):
+            _bridge_rings(bm, arm_rings[i], arm_rings[i + 1])
+        _cap_ring(bm, arm_rings[-1], top=False)   # wrist cuff
+
+    return bm
+
+
+def _build_belt_template(cfg):
+    """Thin belt ring at the waist with a small rectangular front buckle.
+
+    The belt sits on top of trousers (s=1.10 vs pants s=1.05).
+    Height ~2.5 cm.  Buckle is a single flat quad centred on the front.
+    """
+    import bmesh as bmesh_mod
+    bm = bmesh_mod.new()
+
+    hw  = cfg["hip_width"]
+    td  = cfg.get("torso_depth", 0.20)
+    leg_len   = cfg["leg_length"]
+    torso_len = cfg["torso_length"]
+
+    foot_top = 0.06
+    hip_z    = foot_top + leg_len
+    belt_z   = hip_z + torso_len * 0.10   # just above hip
+    belt_h   = 0.026
+
+    s = 1.10   # sits outside pants (s=1.05)
+
+    belt_rx = hw * 0.92 * s
+    belt_ry = td * 0.48 * s
+
+    r0 = _make_ring(bm, (0, 0, belt_z),          belt_rx, belt_ry)
+    r1 = _make_ring(bm, (0, 0, belt_z + belt_h), belt_rx, belt_ry)
+    _bridge_rings(bm, r0, r1)
+    _cap_ring(bm, r0, top=False)
+    _cap_ring(bm, r1, top=True)
+
+    # Buckle — small quad on front face, ~6 mm proud of belt surface
+    bw = hw * 0.065
+    bh = belt_h * 0.75
+    by = -(belt_ry + 0.006)   # proud of front surface
+    bz = belt_z + belt_h * 0.12
+
+    bl = bm.verts.new((-bw, by, bz))
+    br = bm.verts.new(( bw, by, bz))
+    tl = bm.verts.new((-bw, by, bz + bh))
+    tr = bm.verts.new(( bw, by, bz + bh))
+    try:
+        bm.faces.new([bl, br, tr, tl])
+    except ValueError:
+        pass
+
+    return bm
+
+
 # ─── Template dispatch ──────────────────────────────────────────────────────
 
 _TEMPLATE_BUILDERS = {
-    "tshirt":  _build_tshirt_template,
-    "jacket":  _build_jacket_template,
-    "pants":   _build_pants_template,
-    "shorts":  _build_shorts_template,
-    "armor":   _build_armor_template,
-    "robe":    _build_robe_template,
+    "tshirt":      _build_tshirt_template,
+    "longsleeve":  _build_longsleeve_template,
+    "jacket":      _build_jacket_template,
+    "pants":       _build_pants_template,
+    "shorts":      _build_shorts_template,
+    "belt":        _build_belt_template,
+    "armor":       _build_armor_template,
+    "robe":        _build_robe_template,
 }
 
 
