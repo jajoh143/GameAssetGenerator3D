@@ -37,7 +37,7 @@ import math
 
 # ── Data constants (no bpy dependency) ────────────────────────────────────────
 
-HAIR_STYLES = ("none", "buzzed", "short", "spiky", "long", "mohawk", "ponytail")
+HAIR_STYLES = ("none", "buzzed", "short", "spiky", "slicked", "long", "mohawk", "ponytail")
 
 HAIR_COLORS = {
     "black":      (0.05, 0.04, 0.04, 1.0),
@@ -468,6 +468,43 @@ def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
                 pass
 
 
+def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
+    """Slicked-back / pompadour hair: full cap + clean back panel + front quiff.
+
+    The fringe clumps rise *upward* from the front hairline rather than
+    drooping forward — creating the swept-back, voluminous-front look of
+    classic 1950s-style slicked hair (à la Freddie Mercury / Kenney char4).
+
+    Cap levels reuse _SHORT_CAP_LEVELS (equatorial hairline → crown).
+    Back panel drops slightly further than "short" for a clean nape.
+    Quiff: 5 clumps with negative z_tip so tips rise above the hairline.
+    """
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.06, levels=_SHORT_CAP_LEVELS,
+                       head_r_horiz=head_r_horiz)
+    hl = rings[0]
+    hl_z = hl[0].co.z
+
+    # Back panel — 4 rows, tucks under the nape cleanly
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.18, 0.97, 0.95),
+        (-head_r * 0.17, 0.94, 0.92),
+        (-head_r * 0.15, 0.90, 0.87),
+        (-head_r * 0.13, 0.85, 0.82),
+    ])
+
+    # Front quiff — clumps start at the hairline, tips sweep UP (negative z_tip)
+    # z_tip = -0.22 → tip Z = hl_z + head_r*0.22 (22 % radius above hairline)
+    fr_y = -(hr_h * 0.90 * 1.06) - 0.003
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.45,  0.10, 0.00, -0.07, -0.18, 0.05),   # far left
+        (-0.22,  0.05, 0.00, -0.08, -0.22, 0.06),
+        ( 0.00,  0.00, 0.00, -0.09, -0.26, 0.07),   # centre — tallest
+        ( 0.22, -0.05, 0.00, -0.08, -0.22, 0.06),
+        ( 0.45, -0.10, 0.00, -0.07, -0.18, 0.05),   # far right
+    ], head_r_horiz=hr_h)
+
+
 def _build_long(bm, head_z, head_r, head_r_horiz=None):
     """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
@@ -620,6 +657,7 @@ _STYLE_BUILDERS = {
     "buzzed":   _build_buzzed,
     "short":    _build_short,
     "spiky":    _build_spiky,
+    "slicked":  _build_slicked,
     "long":     _build_long,
     "mohawk":   _build_mohawk,
     "ponytail": _build_ponytail,

@@ -12,6 +12,7 @@ Public interface
   create_eyebrows(head_z, head_r, face_y, brow_color)  →  brow_obj
   create_nose(head_z, head_r, face_y, head_r_horiz, skin_tone)  →  nose_obj
   create_mouth(head_z, head_r, face_y, head_r_horiz, skin_tone)  →  mouth_obj
+  create_mustache(head_z, head_r, face_y, head_r_horiz, mustache_color)  →  mustache_obj
 """
 
 import math
@@ -388,3 +389,80 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     mouth_obj.data.materials.append(mat)
 
     return mouth_obj
+
+
+def create_mustache(head_z, head_r, face_y=None, head_r_horiz=None,
+                    mustache_color=None):
+    """Build a low-poly cartoon mustache — two curved wings flanking centre.
+
+    The mustache sits between the nose tip and upper lip, protrudes slightly
+    forward from the face surface.  Two flat quad wings (left + right) meet
+    at a narrow centre gap, giving the classic "chevron" / Freddie Mercury look.
+
+    Args:
+        head_z:          Z of the head equator.
+        head_r:          Vertical head radius in metres.
+        head_r_horiz:    Horizontal head half-width for sizing.
+        face_y:          Face-surface Y at eye level (from vertex sampling).
+        mustache_color:  RGBA tuple or None (defaults to dark brown).
+
+    Returns:
+        mustache_obj — one bpy.types.Object (~4 faces).
+    """
+    import bpy
+    import bmesh as bmesh_mod
+
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+
+    color = tuple(mustache_color) if mustache_color else (0.12, 0.07, 0.04, 1.0)
+
+    # Z band: just below nose (~47%), above upper lip (~56%)
+    mz_top = head_z - head_r * 0.46
+    mz_bot = head_z - head_r * 0.58
+    mh = mz_top - mz_bot
+
+    base_y = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)
+    tip_y  = base_y - hr_h * 0.065     # protrudes forward
+
+    # Geometry: two wings meeting at a tiny centre gap
+    mw       = hr_h * 0.155   # outer half-width of each wing
+    mw_inner = hr_h * 0.018   # inner gap from centre
+
+    bm = bmesh_mod.new()
+
+    for x_sign in (1, -1):
+        xi = x_sign * mw_inner
+        xo = x_sign * mw
+        # Inner edge is flush (base_y); outer corner droops for curved look
+        ti = bm.verts.new((xi, base_y, mz_top))
+        to = bm.verts.new((xo, base_y, mz_top))
+        bi = bm.verts.new((xi, tip_y,  mz_bot + mh * 0.15))   # inner bottom — slight lift
+        bo = bm.verts.new((xo, tip_y,  mz_bot))               # outer corner — lower
+
+        try:
+            if x_sign > 0:
+                bm.faces.new([ti, to, bo, bi])
+            else:
+                bm.faces.new([to, ti, bi, bo])
+        except ValueError:
+            pass
+
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    mesh_mu = bpy.data.meshes.new("Mustache_Mesh")
+    bm.to_mesh(mesh_mu)
+    mesh_mu.update()
+    bm.free()
+
+    mobj = bpy.data.objects.new("Mustache", mesh_mu)
+    bpy.context.collection.objects.link(mobj)
+
+    mat = bpy.data.materials.new("Mustache_Mat")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = color
+        bsdf.inputs["Roughness"].default_value = 0.85
+    mobj.data.materials.append(mat)
+
+    return mobj

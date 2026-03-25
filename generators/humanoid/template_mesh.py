@@ -569,23 +569,27 @@ def create_body_from_template(cfg: dict):
         # crown and the eyes end up at forehead level where the face has
         # curved behind the nose-tip Y, making both appear inside the mesh.
         #
-        # Fix: find the vertex with the largest abs(X) above an 80 % floor
-        # (safely above the shoulders at 70–75 %).  That vertex lies on the
-        # widest cross-section of the head — the equatorial ring.
+        # Fix: find the vertex with the largest abs(X) above a conservative
+        # floor, WITH an X cap so T-pose arm/shoulder vertices are excluded.
+        # The Cartoon_Male's shoulders reach ~80 % height with abs(x) ≈ 0.20 m,
+        # nearly identical to the head width — so an 80 % threshold alone is not
+        # enough.  Using 86 % (above shoulder caps) + HEAD_X_CAP = 0.22 m safely
+        # restricts the search to the head region only.
         #
         #   head_z = equator_z   (base of the hair cap, ≈ ear / temple level)
         #   head_r = crown_z - equator_z   (vertical span from equator to top)
         #
         # The hair & eye code already treats head_z as the cap base and uses
         # head_r as a proportional unit, so this is the intended convention.
-        head_threshold_z = actual_height * 0.80
+        HEAD_X_CAP = 0.22          # max abs(x) for head verts (excludes T-pose arms)
+        head_threshold_z = actual_height * 0.86   # safely above shoulders (~78-82 %)
         max_ax = 0.0
-        equator_z = actual_height * 0.87  # fallback
+        equator_z = actual_height * 0.90  # fallback
         head_ys_all = []          # all head-region Y values (for face_y below)
 
         for v in mesh_obj.data.vertices:
             wco = mesh_obj.matrix_world @ v.co
-            if wco.z > head_threshold_z:
+            if wco.z > head_threshold_z and abs(wco.x) < HEAD_X_CAP:
                 ax = abs(wco.x)
                 head_ys_all.append(wco.y)
                 if ax > max_ax:
@@ -720,6 +724,25 @@ def create_body_from_template(cfg: dict):
                                                    else None)
     extra_head_objs.append((mouth_obj, "Head"))
 
+    # ── Mustache (optional) ───────────────────────────────────────────────────
+    # Enabled when cfg["mustache"] is truthy.  cfg["mustache_color"] can be an
+    # RGBA tuple to override the default dark-brown.  Pass the hair color when
+    # mustache_color is not set so it naturally matches the character's hair.
+    if cfg.get("mustache"):
+        mustache_color = cfg.get("mustache_color", None)
+        if mustache_color is None:
+            # Default: derive from hair color for a natural match
+            hc = cfg.get("hair_color", None)
+            if isinstance(hc, str):
+                from .hair import HAIR_COLORS
+                mustache_color = HAIR_COLORS.get(hc, None)
+            elif hc:
+                mustache_color = tuple(hc)
+        mobj = eyes_module.create_mustache(head_z, head_r, face_y=face_y,
+                                           head_r_horiz=head_r_horiz,
+                                           mustache_color=mustache_color)
+        extra_head_objs.append((mobj, "Head"))
+
     # ── Clothing ──────────────────────────────────────────────────────────────
     # Create clothing as separate objects using the same bmesh builders as
     # the procedural pipeline, but positioned to fit the template mesh.
@@ -727,6 +750,10 @@ def create_body_from_template(cfg: dict):
     clothing_spec = cfg.get("clothing", ["tshirt", "pants"])
     if isinstance(clothing_spec, str):
         clothing_spec = [c.strip() for c in clothing_spec.split(",") if c.strip()]
+    # clothing_color may be:
+    #   • a single named color string   → used for every item
+    #   • a single RGBA tuple           → used for every item
+    #   • a dict {ctype: color}         → per-item colors (None means use default)
     clothing_color = cfg.get("clothing_color", None)
 
     from . import clothing as clothing_module
@@ -749,7 +776,13 @@ def create_body_from_template(cfg: dict):
         obj_c = bpy.data.objects.new(f"Clothing_{ctype}", mesh_c)
         bpy.context.collection.objects.link(obj_c)
 
-        rgba_c = clothing_module.resolve_clothing_rgba(ctype, clothing_color)
+        # Resolve per-item color: dict lookup → single override → type default
+        if isinstance(clothing_color, dict):
+            color_for_item = clothing_color.get(ctype, None)
+        else:
+            color_for_item = clothing_color
+        rgba_c = clothing_module.resolve_clothing_rgba(ctype, color_for_item)
+
         mat_c = bpy.data.materials.new(f"Clothing_{ctype}_Mat")
         mat_c.use_nodes = True
         bsdf_c = mat_c.node_tree.nodes.get("Principled BSDF")

@@ -6,9 +6,15 @@ Usage:
 Options:
     --output PATH         Output file (default: assets/humanoid.glb)
     --format FORMAT       Export format: glb, gltf, fbx, obj
-    --preset NAME         Character preset: average, tall, short, child, brute, slender
+    --preset NAME         Character preset: average, tall, short, child, brute, slender, kenney
     --build NAME          Body build: lean, average, stocky, heavy
     --skin-tone NAME      Skin tone name or R,G,B,A values
+    --hair-style NAME     Hair style: none, buzzed, short, spiky, slicked, long, mohawk, ponytail
+    --hair-color NAME     Hair color name or R,G,B,A values
+    --clothing TYPES      Comma-separated clothing list (e.g. "tshirt,pants,belt")
+    --clothing-color CLR  Single named/RGBA color OR item:color pairs (tshirt:red,pants:navy)
+    --mustache            Add a mustache (color matches hair by default)
+    --mustache-color CLR  Override mustache color (name or R,G,B,A)
     --height FLOAT        Override height in meters
     --animations NAMES    Comma-separated animation list or "all"
     --randomize           Add slight random variation to proportions
@@ -50,9 +56,21 @@ def parse_args():
 
     # Hair
     parser.add_argument("--hair-style", default="short",
-                        help="Hair style (none, buzzed, short, spiky, long, mohawk)")
+                        help="Hair style (none, buzzed, short, spiky, slicked, long, mohawk, ponytail)")
     parser.add_argument("--hair-color", default="brown",
                         help="Hair color name or R,G,B,A values")
+
+    # Clothing
+    parser.add_argument("--clothing", default="tshirt,pants",
+                        help="Comma-separated clothing types, e.g. 'longsleeve,pants,belt'")
+    parser.add_argument("--clothing-color", default=None,
+                        help="Single color (red) or per-item pairs (tshirt:red,pants:navy)")
+
+    # Face accessories
+    parser.add_argument("--mustache", action="store_true",
+                        help="Add a mustache (color matches hair by default)")
+    parser.add_argument("--mustache-color", default=None,
+                        help="Override mustache color (name or R,G,B,A)")
 
     # Template mesh (always on by default; --procedural opts back to the old generator)
     parser.add_argument("--procedural", action="store_true",
@@ -103,6 +121,19 @@ def _parse_color_value(value):
 def main():
     args = parse_args()
 
+    # Parse clothing color: single color or "type:color,type:color" dict
+    def _parse_clothing_color(raw):
+        if raw is None:
+            return None
+        if ":" in raw:
+            result = {}
+            for pair in raw.split(","):
+                if ":" in pair:
+                    k, v = pair.split(":", 1)
+                    result[k.strip()] = _parse_color_value(v.strip())
+            return result
+        return _parse_color_value(raw)
+
     # Build config dict
     config = {
         "preset": args.preset,
@@ -111,6 +142,11 @@ def main():
         "skin_tone": _parse_color_value(args.skin_tone),
         "hair_style": args.hair_style,
         "hair_color": _parse_color_value(args.hair_color),
+        "clothing": [c.strip() for c in args.clothing.split(",") if c.strip()],
+        "clothing_color": _parse_clothing_color(args.clothing_color),
+        "mustache": args.mustache,
+        "mustache_color": (_parse_color_value(args.mustache_color)
+                           if args.mustache_color else None),
         "randomize": args.randomize,
         "use_template": not args.procedural,
         "lod": args.lod,
@@ -149,7 +185,9 @@ def main():
     mesh_src = "procedural" if args.procedural else f"template({args.lod})"
     print(f"Generating humanoid: preset={args.preset}, build={args.build}, "
           f"gender={args.gender}, skin={args.skin_tone}, "
-          f"hair={args.hair_style}/{args.hair_color}, mesh={mesh_src}")
+          f"hair={args.hair_style}/{args.hair_color}, "
+          f"clothing={args.clothing}, mustache={args.mustache}, "
+          f"mesh={mesh_src}")
     armature = generate(config)
     print("Generation complete. Exporting...")
 
