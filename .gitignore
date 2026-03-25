@@ -5,6 +5,10 @@ assets/*.fbx
 assets/*.obj
 assets/*.blend
 assets/*.blend1
+# Render scratch files
+assets/_*.png
+assets/preview_v*.png
+assets/prev_*.png
 
 # Python
 __pycache__/
