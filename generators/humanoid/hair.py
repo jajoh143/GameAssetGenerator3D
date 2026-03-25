@@ -352,12 +352,14 @@ _SHORT_CAP_LEVELS = [
 
 
 def _build_short(bm, head_z, head_r, head_r_horiz=None):
-    """Short flat hair: full-circumference cap from ear level to crown + nape panel.
+    """Short flat hair: full-circumference cap from ear level to crown,
+    nape panel, and short fringe clumps over the forehead.
 
     Hairline sits at the equatorial ring (ear/temple level) so hair wraps all
     the way around the head.  A back-half panel drops from the hairline to the
-    nape for coverage below the occipital ridge.
+    nape.  Short fringe clumps fill the front/forehead zone.
     """
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
     rings = _build_cap(bm, head_z, head_r, h_scale=1.06, levels=_SHORT_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
@@ -368,6 +370,18 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None):
         (-head_r * 0.15, 0.93, 0.90),   # nape
         (-head_r * 0.13, 0.88, 0.85),   # lower nape
     ])
+
+    # Short fringe — 5 shallow clumps just above the brow line.
+    # fr_y: front surface of the cap at hairline level.
+    hl_z = hl[0].co.z
+    fr_y = -(hr_h * 0.90 * 1.06) - 0.003
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.46, -0.05, 0.04, 0.04, 0.12, 0.13),   # left temple
+        (-0.22,  0.00, 0.05, 0.04, 0.13, 0.13),
+        ( 0.00,  0.00, 0.05, 0.04, 0.14, 0.15),   # centre
+        ( 0.22,  0.00, 0.05, 0.04, 0.13, 0.13),
+        ( 0.46,  0.05, 0.04, 0.04, 0.12, 0.13),   # right temple
+    ], head_r_horiz=hr_h)
 
 
 # Cap levels for the spiky style.  The hairline is lower (z_off=0.20) than

@@ -10,6 +10,8 @@ Public interface
 ----------------
   create_eyes(head_z, head_r, eye_color, face_y)  →  [eye_disc_obj]
   create_eyebrows(head_z, head_r, face_y, brow_color)  →  brow_obj
+  create_nose(head_z, head_r, face_y, head_r_horiz, skin_tone)  →  nose_obj
+  create_mouth(head_z, head_r, face_y, head_r_horiz, skin_tone)  →  mouth_obj
 """
 
 import math
@@ -36,9 +38,9 @@ def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
                       Y, with a small forward nudge so they sit on the surface.
     """
     hr_h   = head_r_horiz if head_r_horiz is not None else head_r
-    eye_r  = hr_h * 0.085          # scales with horizontal head width
-    eye_z  = head_z - head_r * 0.05  # just below equator (vertical offset)
-    eye_x  = hr_h * 0.28           # lateral separation scales with head width
+    eye_r  = hr_h * 0.075          # scales with horizontal head width
+    eye_z  = head_z - head_r * 0.08  # slightly below equator
+    eye_x  = hr_h * 0.26           # lateral separation scales with head width
 
     if face_y is not None:
         # Place disc slightly forward of (in front of) the face surface
@@ -219,11 +221,11 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
 
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
-    nz       = head_z - head_r * 0.35        # below equator = nose level
-    base_y   = (face_y - hr_h * 0.02) if face_y is not None else -(hr_h * 0.62)
-    tip_y    = base_y - hr_h * 0.07          # tip protrudes forward
-    nw       = hr_h  * 0.050                 # nose half-width
-    nh       = head_r * 0.075                # nose half-height
+    nz       = head_z - head_r * 0.38        # below equator = nose level
+    base_y   = (face_y - hr_h * 0.01) if face_y is not None else -(hr_h * 0.62)
+    tip_y    = base_y - hr_h * 0.12          # tip protrudes forward (more prominent)
+    nw       = hr_h  * 0.075                 # nose half-width (wider)
+    nh       = head_r * 0.115                # nose half-height (taller)
 
     bm = bmesh_mod.new()
     bl  = bm.verts.new((-nw, base_y, nz - nh))
@@ -264,3 +266,80 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     nose_obj.data.materials.append(mat)
 
     return nose_obj
+
+
+def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
+    """Build a simple low-poly cartoon mouth — two lips as flat quads.
+
+    Args:
+        head_z:       Z of the head equator.
+        head_r:       Vertical head radius.
+        head_r_horiz: Horizontal head half-width.
+        face_y:       Face-surface Y at eye level.
+        skin_tone:    RGBA tuple or None (used for skin-coloured lip base).
+
+    Returns:
+        mouth_obj — one bpy.types.Object.
+    """
+    import bpy
+    import bmesh as bmesh_mod
+
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+
+    # Mouth sits below nose, ~60 % of the way to the chin
+    mz       = head_z - head_r * 0.70
+    base_y   = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)
+    lip_y    = base_y - hr_h * 0.04   # lips protrude slightly
+    mw       = hr_h * 0.140           # half-width (smile width)
+    upper_h  = head_r * 0.030         # upper-lip height
+    lower_h  = head_r * 0.040         # lower-lip height (slightly fuller)
+    gap      = head_r * 0.006         # dark gap between lips
+
+    bm = bmesh_mod.new()
+
+    # Upper lip — 4 vertices, slightly arched (centre lower for cupid's bow)
+    u_bl = bm.verts.new((-mw,     base_y, mz + gap * 0.5))
+    u_br = bm.verts.new(( mw,     base_y, mz + gap * 0.5))
+    u_tl = bm.verts.new((-mw,     lip_y,  mz + gap * 0.5 + upper_h))
+    u_tr = bm.verts.new(( mw,     lip_y,  mz + gap * 0.5 + upper_h))
+    u_mc = bm.verts.new(( 0,      lip_y,  mz + gap * 0.5 + upper_h * 0.55))  # centre dip
+    try:
+        bm.faces.new([u_bl, u_br, u_tr, u_tl])
+    except ValueError:
+        pass
+
+    # Lower lip
+    l_tl = bm.verts.new((-mw,     base_y, mz - gap * 0.5))
+    l_tr = bm.verts.new(( mw,     base_y, mz - gap * 0.5))
+    l_bl = bm.verts.new((-mw * 0.85, lip_y,  mz - gap * 0.5 - lower_h))
+    l_br = bm.verts.new(( mw * 0.85, lip_y,  mz - gap * 0.5 - lower_h))
+    try:
+        bm.faces.new([l_tl, l_tr, l_br, l_bl])
+    except ValueError:
+        pass
+
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    mesh_m = bpy.data.meshes.new("Mouth_Mesh")
+    bm.to_mesh(mesh_m)
+    mesh_m.update()
+    bm.free()
+
+    mouth_obj = bpy.data.objects.new("Mouth", mesh_m)
+    bpy.context.collection.objects.link(mouth_obj)
+
+    # Warm pinkish lip colour — slightly darker/redder than skin
+    mat = bpy.data.materials.new("Mouth_Mat")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        if skin_tone:
+            r, g, b, a = skin_tone
+            lip_color = (r * 0.82, g * 0.60, b * 0.58, 1.0)
+        else:
+            lip_color = (0.72, 0.40, 0.38, 1.0)
+        bsdf.inputs["Base Color"].default_value = lip_color
+        bsdf.inputs["Roughness"].default_value  = 0.55
+    mouth_obj.data.materials.append(mat)
+
+    return mouth_obj

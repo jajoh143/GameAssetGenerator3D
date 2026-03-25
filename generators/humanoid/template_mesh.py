@@ -712,6 +712,13 @@ def create_body_from_template(cfg: dict):
                                                  else None)
     extra_head_objs.append((nose_obj, "Head"))
 
+    # ── Mouth ─────────────────────────────────────────────────────────────────
+    mouth_obj = eyes_module.create_mouth(head_z, head_r, face_y=face_y,
+                                         head_r_horiz=head_r_horiz,
+                                         skin_tone=skin_tone if isinstance(skin_tone, tuple)
+                                                   else None)
+    extra_head_objs.append((mouth_obj, "Head"))
+
     # ── Clothing ──────────────────────────────────────────────────────────────
     # Create clothing as separate objects using the same bmesh builders as
     # the procedural pipeline, but positioned to fit the template mesh.
