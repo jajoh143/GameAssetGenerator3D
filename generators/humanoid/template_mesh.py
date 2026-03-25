@@ -655,18 +655,30 @@ def create_body_from_template(cfg: dict):
                 if ax > max_chest_ax:
                     max_chest_ax = ax; detected_chest_z = wco.z
 
+        # Torso depth: max abs(Y) in the chest zone (same verts as shoulder scan)
+        max_torso_ay = 0.0
+        for v in mesh_obj.data.vertices:
+            wco = mesh_obj.matrix_world @ v.co
+            if chest_lo < wco.z < chest_hi and abs(wco.x) < BODY_X_CAP:
+                ay = abs(wco.y)
+                if ay > max_torso_ay:
+                    max_torso_ay = ay
+
         # Overwrite cfg keys used by clothing builders with detected values
         detected_leg_len   = detected_hip_z - foot_top
         detected_torso_len = detected_chest_z - detected_hip_z
+        detected_torso_depth = max_torso_ay if max_torso_ay > 0.05 else 0.20
         cfg["leg_length"]      = detected_leg_len
         cfg["torso_length"]    = detected_torso_len
         cfg["hip_width"]       = max_hip_ax
         cfg["shoulder_width"]  = max_chest_ax
+        cfg["torso_depth"]     = detected_torso_depth
         # arm_length: keep preset (no arm geometry detection needed for basic fit)
         print(f"[template_mesh] Body geometry: hip_z={detected_hip_z:.3f} "
               f"(leg={detected_leg_len:.3f}), chest_z={detected_chest_z:.3f} "
               f"(torso={detected_torso_len:.3f}), "
-              f"hip_w={max_hip_ax:.3f}, chest_w={max_chest_ax:.3f}")
+              f"hip_w={max_hip_ax:.3f}, chest_w={max_chest_ax:.3f}, "
+              f"torso_depth={detected_torso_depth:.3f}")
     else:
         head_r       = actual_height * 0.065
         head_z       = actual_height - head_r
@@ -791,6 +803,26 @@ def create_body_from_template(cfg: dict):
             bsdf_c.inputs["Roughness"].default_value = 0.55  # smooth for stylized look
             bsdf_c.inputs["Specular IOR Level"].default_value = 0.30
         obj_c.data.materials.append(mat_c)
+
+        # Shrinkwrap → body mesh so clothing sits flush instead of floating.
+        # Rings start oversized (s=1.25) so every vertex is outside the body;
+        # NEAREST_SURFACEPOINT + OUTSIDE wrap mode pulls them down to the
+        # surface while the offset keeps them proud of the skin.
+        sw_mod = obj_c.modifiers.new(name="Shrinkwrap", type='SHRINKWRAP')
+        sw_mod.target = mesh_obj
+        sw_mod.wrap_method = 'NEAREST_SURFACEPOINT'
+        sw_mod.wrap_mode = 'OUTSIDE'
+        sw_mod.offset = 0.012  # offset so clothing sits just above skin
+
+        # Edge-split for consistent faceted look matching the body
+        es_mod = obj_c.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
+        es_mod.split_angle = math.radians(38)
+
+        # Smooth shade the clothing to match body
+        bpy.context.view_layer.objects.active = obj_c
+        obj_c.select_set(True)
+        bpy.ops.object.shade_smooth()
+        obj_c.select_set(False)
 
         extra_clothing_objs.append((obj_c, None))   # None → ARMATURE_AUTO skinning
 

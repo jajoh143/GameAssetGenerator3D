@@ -168,9 +168,10 @@ def _build_tshirt_template(cfg):
     # Shirt hem falls at lower abdomen (~25% up the torso)
     shirt_hem_z = hip_z + torso_len * 0.25
 
-    # Scale factor: ~5% larger than body rings so clothing sits proud of skin.
-    # This replaces BVH projection — no z-fighting and fast to compute.
-    s = 1.05
+    # Scale factor: clothing rings must be clearly larger than the template
+    # body mesh so the Shrinkwrap modifier can pull them flush to the surface.
+    # Too small → partially inside the body → rendering artefacts.
+    s = 1.25
 
     # Torso tube
     torso_specs = [
@@ -232,7 +233,7 @@ def _build_jacket_template(cfg):
     lower_chest_z = hip_z + torso_len * 0.68
     chest_z = hip_z + torso_len
 
-    s = 1.08
+    s = 1.30
 
     torso_specs = [
         (hip_z,         (hw + 0.04) * s,  td * 0.52 * s),
@@ -302,7 +303,7 @@ def _build_pants_template(cfg):
     belt_z = hip_z + torso_len * 0.12
     crotch_z = hip_z - (hip_z - knee_z) * 0.15
 
-    s = 1.05
+    s = 1.25
 
     # Waistband / hip section
     waist_specs = [
@@ -357,7 +358,7 @@ def _build_shorts_template(cfg):
     belt_z = hip_z + torso_len * 0.12
     crotch_z = hip_z - (hip_z - knee_z) * 0.15
 
-    s = 1.06
+    s = 1.25
 
     waist_specs = [
         (lower_waist_z, hw * 0.80 * s, td * 0.44 * s),
@@ -409,7 +410,7 @@ def _build_armor_template(cfg):
     lower_chest_z = hip_z + torso_len * 0.68
     chest_z = hip_z + torso_len
 
-    s = 1.12
+    s = 1.30
 
     torso_specs = [
         (hip_z,         (hw + 0.04) * s,  td * 0.52 * s),
@@ -465,7 +466,7 @@ def _build_robe_template(cfg):
     lower_chest_z = hip_z + torso_len * 0.68
     chest_z = hip_z + torso_len
 
-    s = 1.06
+    s = 1.25
 
     body_specs = [
         (foot_top + 0.10, hw + 0.18,          td * 0.65),
@@ -535,7 +536,7 @@ def _build_longsleeve_template(cfg):
     chest_z        = hip_z + torso_len
     shirt_hem_z    = hip_z + torso_len * 0.18   # slightly lower than tshirt
 
-    s = 1.04   # snug — sits under a jacket or tshirt if layered
+    s = 1.22   # snug — sits under a jacket or tshirt if layered
 
     torso_specs = [
         (shirt_hem_z,   hw * 0.80 * s, td * 0.44 * s),
@@ -596,7 +597,7 @@ def _build_belt_template(cfg):
     belt_z   = hip_z + torso_len * 0.10   # just above hip
     belt_h   = 0.026
 
-    s = 1.10   # sits outside pants (s=1.05)
+    s = 1.30   # sits outside pants (s=1.25)
 
     belt_rx = hw * 0.92 * s
     belt_ry = td * 0.48 * s

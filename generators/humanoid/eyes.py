@@ -250,7 +250,10 @@ def create_eyebrows(head_z, head_r, face_y=None, brow_color=None, head_r_horiz=N
 
 
 def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
-    """Build a low-poly cartoon nose — small pyramid protruding from face centre.
+    """Build a low-poly cartoon nose — rounded dome protruding from face centre.
+
+    Uses a half-sphere shape (8 segments) for a soft, cartoony look rather than
+    a sharp pyramid.  The nose is large enough to read at game camera distance.
 
     Args:
         head_z:       Z of the head equator.
@@ -260,37 +263,74 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
         skin_tone:    RGBA tuple or None (defaults to neutral skin).
 
     Returns:
-        nose_obj — one bpy.types.Object (5 faces).
+        nose_obj — one bpy.types.Object.
     """
     import bpy
     import bmesh as bmesh_mod
 
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
-    nz       = head_z - head_r * 0.38        # below equator = nose level
+    nz       = head_z - head_r * 0.35        # below equator = nose bridge level
     base_y   = (face_y - hr_h * 0.01) if face_y is not None else -(hr_h * 0.62)
-    tip_y    = base_y - hr_h * 0.12          # tip protrudes forward (more prominent)
-    nw       = hr_h  * 0.075                 # nose half-width (wider)
-    nh       = head_r * 0.115                # nose half-height (taller)
+    nose_r   = hr_h * 0.10                   # nose radius — prominent cartoon nose
+    protrude = hr_h * 0.18                   # how far the nose tip sticks out
+
+    # Build a half-sphere dome (8 segments, 3 latitude rings + tip)
+    n_seg = 8
+    n_lat = 3  # number of latitude rings
 
     bm = bmesh_mod.new()
-    bl  = bm.verts.new((-nw, base_y, nz - nh))
-    br  = bm.verts.new(( nw, base_y, nz - nh))
-    tl  = bm.verts.new((-nw, base_y, nz + nh))
-    tr  = bm.verts.new(( nw, base_y, nz + nh))
-    tip = bm.verts.new(( 0,  tip_y,  nz))
 
-    for fv in [
-        [bl, br, tip],       # bottom slope
-        [tr, tl, tip],       # top slope
-        [tl, bl, tip],       # left slope
-        [br, tr, tip],       # right slope
-        [bl, tl, tr, br],    # back face (flush with face surface)
-    ]:
+    # Base ring sits on the face surface
+    base_ring = []
+    for i in range(n_seg):
+        angle = 2 * math.pi * i / n_seg
+        x = nose_r * math.cos(angle)
+        z = nz + nose_r * 0.8 * math.sin(angle)  # slightly taller than wide
+        base_ring.append(bm.verts.new((x, base_y, z)))
+
+    # Intermediate latitude rings
+    rings = [base_ring]
+    for lat in range(1, n_lat + 1):
+        t = lat / (n_lat + 1)  # 0→1 from base to tip
+        ring_r = nose_r * (1.0 - t * 0.6)  # radius shrinks toward tip
+        ring_y = base_y - protrude * t      # moves forward
+        ring_z_offset = nose_r * 0.15 * t   # rises slightly toward bridge
+        ring = []
+        for i in range(n_seg):
+            angle = 2 * math.pi * i / n_seg
+            x = ring_r * math.cos(angle)
+            z = nz + ring_z_offset + ring_r * 0.8 * math.sin(angle)
+            ring.append(bm.verts.new((x, ring_y, z)))
+        rings.append(ring)
+
+    # Tip vertex
+    tip = bm.verts.new((0, base_y - protrude, nz + nose_r * 0.2))
+
+    # Bridge rings together
+    for r_idx in range(len(rings) - 1):
+        r_a, r_b = rings[r_idx], rings[r_idx + 1]
+        for i in range(n_seg):
+            j = (i + 1) % n_seg
+            try:
+                bm.faces.new([r_a[i], r_a[j], r_b[j], r_b[i]])
+            except ValueError:
+                pass
+
+    # Close tip with triangle fan
+    last_ring = rings[-1]
+    for i in range(n_seg):
+        j = (i + 1) % n_seg
         try:
-            bm.faces.new(fv)
+            bm.faces.new([last_ring[i], last_ring[j], tip])
         except ValueError:
             pass
+
+    # Cap the base (back face flush with skin)
+    try:
+        bm.faces.new(list(reversed(base_ring)))
+    except ValueError:
+        pass
 
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
@@ -302,20 +342,37 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     nose_obj = bpy.data.objects.new("Nose", mesh_n)
     bpy.context.collection.objects.link(nose_obj)
 
+    # Smooth shade for a soft rounded look
+    bpy.context.view_layer.objects.active = nose_obj
+    nose_obj.select_set(True)
+    bpy.ops.object.shade_smooth()
+    nose_obj.select_set(False)
+
     mat = bpy.data.materials.new("Nose_Mat")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        color = skin_tone if skin_tone else (0.65, 0.55, 0.45, 1.0)
+        # Slightly warmer/pinker than base skin so nose reads as distinct
+        if skin_tone:
+            r, g, b, a = skin_tone
+            color = (min(r * 1.05, 1.0), g * 0.92, b * 0.88, 1.0)
+        else:
+            color = (0.70, 0.52, 0.42, 1.0)
         bsdf.inputs["Base Color"].default_value = color
-        bsdf.inputs["Roughness"].default_value = 0.69
+        bsdf.inputs["Roughness"].default_value = 0.45
+        bsdf.inputs["Specular IOR Level"].default_value = 0.35
     nose_obj.data.materials.append(mat)
 
     return nose_obj
 
 
 def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
-    """Build a simple low-poly cartoon mouth — two lips as flat quads.
+    """Build a visible, curved cartoon mouth with upper and lower lips.
+
+    The mouth is built as a smooth curved strip with multiple segments for
+    a friendly smile shape.  Both lips have distinct pinkish-red colouring
+    that reads clearly against the skin, and enough forward protrusion to
+    catch light from the 3-point setup.
 
     Args:
         head_z:       Z of the head equator.
@@ -329,40 +386,59 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     """
     import bpy
     import bmesh as bmesh_mod
+    import math
 
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
-    # Mouth sits below nose, ~60 % of the way to the chin
-    mz       = head_z - head_r * 0.70
-    base_y   = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)
-    lip_y    = base_y - hr_h * 0.04   # lips protrude slightly
-    mw       = hr_h * 0.140           # half-width (smile width)
-    upper_h  = head_r * 0.030         # upper-lip height
-    lower_h  = head_r * 0.040         # lower-lip height (slightly fuller)
-    gap      = head_r * 0.006         # dark gap between lips
+    # Position: well below nose, about 68% down from equator toward chin
+    mz_centre = head_z - head_r * 0.68
+    base_y    = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)
+    protrude  = hr_h * 0.08            # how far lips push forward from face
+
+    # Sizing — wider and taller than before so the mouth is clearly visible
+    half_w    = hr_h * 0.22            # smile half-width (was 0.14)
+    upper_h   = head_r * 0.045         # upper lip height (was 0.03)
+    lower_h   = head_r * 0.055         # lower lip height (was 0.04)
+    gap       = head_r * 0.008         # dark line between lips
+    n_seg     = 8                      # segments along the smile curve
 
     bm = bmesh_mod.new()
 
-    # Upper lip — 4 vertices, slightly arched (centre lower for cupid's bow)
-    u_bl = bm.verts.new((-mw,     base_y, mz + gap * 0.5))
-    u_br = bm.verts.new(( mw,     base_y, mz + gap * 0.5))
-    u_tl = bm.verts.new((-mw,     lip_y,  mz + gap * 0.5 + upper_h))
-    u_tr = bm.verts.new(( mw,     lip_y,  mz + gap * 0.5 + upper_h))
-    u_mc = bm.verts.new(( 0,      lip_y,  mz + gap * 0.5 + upper_h * 0.55))  # centre dip
-    try:
-        bm.faces.new([u_bl, u_br, u_tr, u_tl])
-    except ValueError:
-        pass
+    # Helper: generate a row of vertices along a smile arc.
+    # x sweeps from -half_w to +half_w.  The smile_curve lifts the
+    # corners slightly (cosine ease) to give a gentle upward curl.
+    def _arc_row(z_base, y_off, smile_lift, n):
+        """Return a list of n+1 verts along a horizontal smile arc."""
+        verts = []
+        for i in range(n + 1):
+            t = i / n                       # 0 → 1 across the mouth
+            x = -half_w + 2 * half_w * t
+            # Cosine curve: centre is lowest, corners lift up
+            curve = smile_lift * (math.cos(math.pi * t) * -0.5 + 0.5)
+            z = z_base + curve
+            # Protrusion peaks at centre, tapers at corners
+            bulge = protrude * math.cos(math.pi * 0.5 * (2 * t - 1))
+            y = base_y - bulge + y_off
+            verts.append(bm.verts.new((x, y, z)))
+        return verts
 
-    # Lower lip
-    l_tl = bm.verts.new((-mw,     base_y, mz - gap * 0.5))
-    l_tr = bm.verts.new(( mw,     base_y, mz - gap * 0.5))
-    l_bl = bm.verts.new((-mw * 0.85, lip_y,  mz - gap * 0.5 - lower_h))
-    l_br = bm.verts.new(( mw * 0.85, lip_y,  mz - gap * 0.5 - lower_h))
-    try:
-        bm.faces.new([l_tl, l_tr, l_br, l_bl])
-    except ValueError:
-        pass
+    # Build four vertex rows (top of upper → seam → seam → bottom of lower)
+    smile_lift = head_r * 0.03   # how much corners curl up
+    row_upper_top = _arc_row(mz_centre + gap * 0.5 + upper_h, 0.0,        smile_lift, n_seg)
+    row_upper_bot = _arc_row(mz_centre + gap * 0.5,           0.0,        smile_lift * 0.5, n_seg)
+    row_lower_top = _arc_row(mz_centre - gap * 0.5,           0.0,        smile_lift * 0.5, n_seg)
+    row_lower_bot = _arc_row(mz_centre - gap * 0.5 - lower_h, protrude * 0.15, smile_lift * 0.3, n_seg)
+
+    # Stitch quads between adjacent rows
+    def _stitch(row_a, row_b):
+        for i in range(len(row_a) - 1):
+            try:
+                bm.faces.new([row_a[i], row_a[i + 1], row_b[i + 1], row_b[i]])
+            except ValueError:
+                pass
+
+    _stitch(row_upper_top, row_upper_bot)   # upper lip surface
+    _stitch(row_lower_top, row_lower_bot)   # lower lip surface
 
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
@@ -374,18 +450,26 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     mouth_obj = bpy.data.objects.new("Mouth", mesh_m)
     bpy.context.collection.objects.link(mouth_obj)
 
-    # Warm pinkish lip colour — slightly darker/redder than skin
+    # Smooth shading for a soft, rounded look
+    bpy.context.view_layer.objects.active = mouth_obj
+    mouth_obj.select_set(True)
+    bpy.ops.object.shade_smooth()
+    mouth_obj.select_set(False)
+
+    # Warm rosy-pink lip colour — clearly distinct from surrounding skin
     mat = bpy.data.materials.new("Mouth_Mat")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         if skin_tone:
             r, g, b, a = skin_tone
-            lip_color = (r * 0.82, g * 0.60, b * 0.58, 1.0)
+            # Boost red, reduce green/blue for visible rosy lips
+            lip_color = (min(r * 1.10, 1.0), g * 0.55, b * 0.50, 1.0)
         else:
-            lip_color = (0.72, 0.40, 0.38, 1.0)
+            lip_color = (0.78, 0.38, 0.35, 1.0)
         bsdf.inputs["Base Color"].default_value = lip_color
-        bsdf.inputs["Roughness"].default_value  = 0.55
+        bsdf.inputs["Roughness"].default_value  = 0.42
+        bsdf.inputs["Specular IOR Level"].default_value = 0.35
     mouth_obj.data.materials.append(mat)
 
     return mouth_obj
