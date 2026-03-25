@@ -338,38 +338,35 @@ def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
 
 
 
-# Custom cap levels for the short style.
-# Flat close-cropped cap: hairline at z_off=0.33 (forehead), crown
-# compressed to z_off=0.82 so the dome sits low and flat on the head.
-# h_scale=1.10 clears the template-mesh head (wider than sphere approx).
-# At z_off=0.33: sphere_xy ≈ 0.944 hr; cap_rx = 0.97 × 1.10 hr = 1.067 hr ✓
+# Cap levels for the short style.
+# Hairline starts at z_off=0.00 (equatorial = ear/temple level) so the cap
+# wraps fully around the head circumference.  Crown compressed to z_off=0.92
+# for a flat low-profile look.  h_scale=1.06 gives ~3 % clearance from the
+# head surface using the actual horizontal radius (head_r_horiz).
 _SHORT_CAP_LEVELS = [
-    (0.33, 0.97, 0.97),   # hairline — upper-forehead elevation
-    (0.58, 0.80, 0.74),   # mid-cap
-    (0.82, 0.46, 0.42),   # upper — crown compressed for flat look
-    (0.92, 0.18, 0.16),   # crown apex (lower than standard 0.97)
+    (0.00, 0.97, 0.90),   # hairline — equatorial (ear/temple, full circumference)
+    (0.45, 0.86, 0.79),   # upper sides
+    (0.78, 0.55, 0.50),   # upper cranium
+    (0.92, 0.18, 0.16),   # crown apex
 ]
 
 
 def _build_short(bm, head_z, head_r, head_r_horiz=None):
-    """Short flat hair: tight cap with no bangs + back panel to nape.
+    """Short flat hair: full-circumference cap from ear level to crown + nape panel.
 
-    Style intent: close-cropped, sits flat on the head, exposed forehead,
-    no fringe.  The dome is deliberately compressed (crown at z_off=0.92
-    rather than 0.97) to read as flat/short rather than rounded/voluminous.
-
-    Back-panel x/y_scale < 1.0 gives a natural inward taper toward the nape.
+    Hairline sits at the equatorial ring (ear/temple level) so hair wraps all
+    the way around the head.  A back-half panel drops from the hairline to the
+    nape for coverage below the occipital ridge.
     """
     rings = _build_cap(bm, head_z, head_r, h_scale=1.06, levels=_SHORT_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
 
-    # Back-half panel — four equal steps totalling 0.63 × head_r to nape.
+    # Back-half panel — 3 rows from ear level down to nape.
     _panel_rows(bm, _back_half_verts(hl), [
-        (-head_r * 0.16, 0.95, 0.95),   # z_off≈+0.17
-        (-head_r * 0.16, 0.97, 0.97),   # z_off≈+0.01 — equatorial
-        (-head_r * 0.16, 0.95, 0.95),   # z_off≈-0.15
-        (-head_r * 0.15, 0.92, 0.92),   # z_off≈-0.30 — nape
+        (-head_r * 0.16, 0.97, 0.95),   # just below ear level
+        (-head_r * 0.15, 0.93, 0.90),   # nape
+        (-head_r * 0.13, 0.88, 0.85),   # lower nape
     ])
 
 

@@ -508,6 +508,15 @@ def create_body_from_template(cfg: dict):
     # holds an extra reference via the bone's custom_shape pointer).
     _purge_gltf_not_exported()
 
+    # Final sweep: purge any orphaned data blocks (meshes, objects, armatures)
+    # that survived due to reference chains (e.g. bone custom_shape → mesh).
+    try:
+        bpy.ops.outliner.orphans_purge(
+            do_local_ids=True, do_linked_ids=True, do_recursive=True
+        )
+    except Exception:
+        pass
+
     # ── Scale to preset proportions ────────────────────────────────────────
     actual_height = _normalise_mesh(mesh_obj, target_height, x_scale, y_scale)
 
@@ -608,6 +617,51 @@ def create_body_from_template(cfg: dict):
         print(f"[template_mesh] Equator method: equator_z={equator_z:.4f} m, "
               f"head_r={head_r:.4f} m, head_r_horiz={head_r_horiz:.4f} m, "
               f"head_z={head_z:.4f} m, face_y={face_y:.4f} m")
+
+        # ── Detect body proportions for clothing fit ────────────────────────
+        # Sample mesh vertices to find actual hip and chest geometry so
+        # clothing builders use the true template proportions rather than the
+        # preset values (which were designed for the procedural mesh).
+        #
+        # Arm vertices in T-pose sit at abs(x) > body_width; capping at 0.25 m
+        # restricts the search to the torso region.
+        BODY_X_CAP = 0.25   # max abs(x) for torso body verts (excludes arms)
+        foot_top = 0.06
+
+        # Hip zone: 27-52 % of height (pelvis / waist area)
+        hip_lo = actual_height * 0.27
+        hip_hi = actual_height * 0.52
+        max_hip_ax = 0.0; detected_hip_z = actual_height * 0.35
+        for v in mesh_obj.data.vertices:
+            wco = mesh_obj.matrix_world @ v.co
+            if hip_lo < wco.z < hip_hi and abs(wco.x) < BODY_X_CAP:
+                ax = abs(wco.x)
+                if ax > max_hip_ax:
+                    max_hip_ax = ax; detected_hip_z = wco.z
+
+        # Chest zone: 52-72 % of height (torso / shoulder)
+        chest_lo = actual_height * 0.52
+        chest_hi = actual_height * 0.72
+        max_chest_ax = 0.0; detected_chest_z = actual_height * 0.63
+        for v in mesh_obj.data.vertices:
+            wco = mesh_obj.matrix_world @ v.co
+            if chest_lo < wco.z < chest_hi and abs(wco.x) < BODY_X_CAP:
+                ax = abs(wco.x)
+                if ax > max_chest_ax:
+                    max_chest_ax = ax; detected_chest_z = wco.z
+
+        # Overwrite cfg keys used by clothing builders with detected values
+        detected_leg_len   = detected_hip_z - foot_top
+        detected_torso_len = detected_chest_z - detected_hip_z
+        cfg["leg_length"]      = detected_leg_len
+        cfg["torso_length"]    = detected_torso_len
+        cfg["hip_width"]       = max_hip_ax
+        cfg["shoulder_width"]  = max_chest_ax
+        # arm_length: keep preset (no arm geometry detection needed for basic fit)
+        print(f"[template_mesh] Body geometry: hip_z={detected_hip_z:.3f} "
+              f"(leg={detected_leg_len:.3f}), chest_z={detected_chest_z:.3f} "
+              f"(torso={detected_torso_len:.3f}), "
+              f"hip_w={max_hip_ax:.3f}, chest_w={max_chest_ax:.3f}")
     else:
         head_r       = actual_height * 0.065
         head_z       = actual_height - head_r
@@ -651,4 +705,51 @@ def create_body_from_template(cfg: dict):
                                            head_r_horiz=head_r_horiz)
     extra_head_objs.append((brow_obj, "Head"))
 
-    return mesh_obj, hair_obj, extra_head_objs
+    # ── Nose ──────────────────────────────────────────────────────────────────
+    nose_obj = eyes_module.create_nose(head_z, head_r, face_y=face_y,
+                                       head_r_horiz=head_r_horiz,
+                                       skin_tone=skin_tone if isinstance(skin_tone, tuple)
+                                                 else None)
+    extra_head_objs.append((nose_obj, "Head"))
+
+    # ── Clothing ──────────────────────────────────────────────────────────────
+    # Create clothing as separate objects using the same bmesh builders as
+    # the procedural pipeline, but positioned to fit the template mesh.
+    # bone_name=None → auto-weight skinned to armature (arms/legs follow rig).
+    clothing_spec = cfg.get("clothing", ["tshirt", "pants"])
+    if isinstance(clothing_spec, str):
+        clothing_spec = [c.strip() for c in clothing_spec.split(",") if c.strip()]
+    clothing_color = cfg.get("clothing_color", None)
+
+    from . import clothing as clothing_module
+    import bmesh as _bmesh
+
+    extra_clothing_objs = []
+    for ctype in clothing_spec:
+        if ctype == "none":
+            continue
+        bm_c = clothing_module.build_clothing_bmesh_for_type(cfg, ctype)
+        if bm_c is None:
+            continue
+        _bmesh.ops.recalc_face_normals(bm_c, faces=bm_c.faces)
+
+        mesh_c = bpy.data.meshes.new(f"Clothing_{ctype}_Mesh")
+        bm_c.to_mesh(mesh_c)
+        mesh_c.update()
+        bm_c.free()
+
+        obj_c = bpy.data.objects.new(f"Clothing_{ctype}", mesh_c)
+        bpy.context.collection.objects.link(obj_c)
+
+        rgba_c = clothing_module.resolve_clothing_rgba(ctype, clothing_color)
+        mat_c = bpy.data.materials.new(f"Clothing_{ctype}_Mat")
+        mat_c.use_nodes = True
+        bsdf_c = mat_c.node_tree.nodes.get("Principled BSDF")
+        if bsdf_c:
+            bsdf_c.inputs["Base Color"].default_value = rgba_c
+            bsdf_c.inputs["Roughness"].default_value = 0.80
+        obj_c.data.materials.append(mat_c)
+
+        extra_clothing_objs.append((obj_c, None))   # None → ARMATURE_AUTO skinning
+
+    return mesh_obj, hair_obj, extra_head_objs + extra_clothing_objs

@@ -199,3 +199,68 @@ def create_eyebrows(head_z, head_r, face_y=None, brow_color=None, head_r_horiz=N
     brow_obj.data.materials.append(brow_mat)
 
     return brow_obj
+
+
+def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
+    """Build a low-poly cartoon nose — small pyramid protruding from face centre.
+
+    Args:
+        head_z:       Z of the head equator.
+        head_r:       Vertical head radius.
+        head_r_horiz: Horizontal head half-width — used for nose sizing.
+        face_y:       Face-surface Y at eye level (from vertex sampling).
+        skin_tone:    RGBA tuple or None (defaults to neutral skin).
+
+    Returns:
+        nose_obj — one bpy.types.Object (5 faces).
+    """
+    import bpy
+    import bmesh as bmesh_mod
+
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+
+    nz       = head_z - head_r * 0.35        # below equator = nose level
+    base_y   = (face_y - hr_h * 0.02) if face_y is not None else -(hr_h * 0.62)
+    tip_y    = base_y - hr_h * 0.07          # tip protrudes forward
+    nw       = hr_h  * 0.050                 # nose half-width
+    nh       = head_r * 0.075                # nose half-height
+
+    bm = bmesh_mod.new()
+    bl  = bm.verts.new((-nw, base_y, nz - nh))
+    br  = bm.verts.new(( nw, base_y, nz - nh))
+    tl  = bm.verts.new((-nw, base_y, nz + nh))
+    tr  = bm.verts.new(( nw, base_y, nz + nh))
+    tip = bm.verts.new(( 0,  tip_y,  nz))
+
+    for fv in [
+        [bl, br, tip],       # bottom slope
+        [tr, tl, tip],       # top slope
+        [tl, bl, tip],       # left slope
+        [br, tr, tip],       # right slope
+        [bl, tl, tr, br],    # back face (flush with face surface)
+    ]:
+        try:
+            bm.faces.new(fv)
+        except ValueError:
+            pass
+
+    bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    mesh_n = bpy.data.meshes.new("Nose_Mesh")
+    bm.to_mesh(mesh_n)
+    mesh_n.update()
+    bm.free()
+
+    nose_obj = bpy.data.objects.new("Nose", mesh_n)
+    bpy.context.collection.objects.link(nose_obj)
+
+    mat = bpy.data.materials.new("Nose_Mat")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        color = skin_tone if skin_tone else (0.65, 0.55, 0.45, 1.0)
+        bsdf.inputs["Base Color"].default_value = color
+        bsdf.inputs["Roughness"].default_value = 0.69
+    nose_obj.data.materials.append(mat)
+
+    return nose_obj
