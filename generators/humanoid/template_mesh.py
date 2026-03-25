@@ -216,6 +216,27 @@ def _import_glb_mesh(glb_path: str):
     return joined
 
 
+def _purge_gltf_not_exported():
+    """Delete the glTF_not_exported collection and every object inside it.
+
+    Blender's glTF importer puts bone display-shape meshes (Icospheres for IK
+    targets, etc.) in this collection.  They can survive _clear_non_mesh_objects
+    if Blender holds a reference through the bone's custom_shape pointer.
+    Removing the collection explicitly ensures they do not appear in the viewport
+    or the outliner after the import step.
+    """
+    import bpy
+    col = bpy.data.collections.get("glTF_not_exported")
+    if col is None:
+        return
+    for obj in list(col.objects):
+        try:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        except Exception:
+            pass
+    bpy.data.collections.remove(col)
+
+
 def _clear_non_mesh_objects(keep_names: set):
     """Remove any objects added during import that are not the target mesh.
 
@@ -482,6 +503,11 @@ def create_body_from_template(cfg: dict):
     keep = scene_before | {mesh_obj.name}
     _clear_non_mesh_objects(keep)
 
+    # Explicitly purge the glTF_not_exported collection (IK bone custom-shape
+    # Icospheres live here and can survive _clear_non_mesh_objects when Blender
+    # holds an extra reference via the bone's custom_shape pointer).
+    _purge_gltf_not_exported()
+
     # ── Scale to preset proportions ────────────────────────────────────────
     actual_height = _normalise_mesh(mesh_obj, target_height, x_scale, y_scale)
 
@@ -525,32 +551,63 @@ def create_body_from_template(cfg: dict):
     import mathutils as _mu
 
     if use_cartoon_glb:
-        # 85 % threshold keeps us well above the shoulders (~70–75 % of height)
-        # so only true head vertices contribute to head_r.  78 % was too low
-        # and captured shoulder geometry, inflating head_r and pushing head_z
-        # down into the model (causing hair to render inside the skull).
-        head_threshold_z = actual_height * 0.85
-        head_xs = []
-        head_ys = []
+        # ── Equator method ─────────────────────────────────────────────────
+        # Problem with max(head_xs): it returns the horizontal half-width,
+        # which is less than the vertical radius for any non-spherical (e.g.
+        # egg-shaped) head.  Substituting it into  head_z = height - head_r
+        # then places head_z too high → the hair cap base lands near the
+        # crown and the eyes end up at forehead level where the face has
+        # curved behind the nose-tip Y, making both appear inside the mesh.
+        #
+        # Fix: find the vertex with the largest abs(X) above an 80 % floor
+        # (safely above the shoulders at 70–75 %).  That vertex lies on the
+        # widest cross-section of the head — the equatorial ring.
+        #
+        #   head_z = equator_z   (base of the hair cap, ≈ ear / temple level)
+        #   head_r = crown_z - equator_z   (vertical span from equator to top)
+        #
+        # The hair & eye code already treats head_z as the cap base and uses
+        # head_r as a proportional unit, so this is the intended convention.
+        head_threshold_z = actual_height * 0.80
+        max_ax = 0.0
+        equator_z = actual_height * 0.87  # fallback
+        head_ys_all = []          # all head-region Y values (for face_y below)
+
         for v in mesh_obj.data.vertices:
             wco = mesh_obj.matrix_world @ v.co
             if wco.z > head_threshold_z:
-                head_xs.append(abs(wco.x))
-                head_ys.append(wco.y)
+                ax = abs(wco.x)
+                head_ys_all.append(wco.y)
+                if ax > max_ax:
+                    max_ax = ax
+                    equator_z = wco.z
 
-        if head_xs:
-            head_r = max(head_xs)          # head half-width ≈ radius
-            face_y = min(head_ys)          # most-forward point in head region
+        head_z = equator_z
+        head_r = actual_height - equator_z   # vertical: crown → equator
+
+        # ── face_y: nose-tip Y for eye-disc placement ──────────────────────
+        # Sample only the nose / brow band (83–92 % height), restricted to
+        # the central 50 % of head width, so the jaw / chin vertices (which
+        # are the most-forward at 80–83 %) cannot pull face_y too far
+        # forward and push the eye discs in front of the face.
+        nose_lo = actual_height * 0.83
+        nose_hi = actual_height * 0.92
+        nose_ys = []
+        for v in mesh_obj.data.vertices:
+            wco = mesh_obj.matrix_world @ v.co
+            if nose_lo < wco.z < nose_hi and abs(wco.x) < max_ax * 0.5:
+                nose_ys.append(wco.y)
+
+        if nose_ys:
+            face_y = min(nose_ys)          # nose-tip Y in the nose/brow band
+        elif head_ys_all:
+            face_y = min(head_ys_all)      # fallback: any head vertex
         else:
-            # Fallback if no verts found above threshold
-            head_r = actual_height * 0.13
-            world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
-                           for v in mesh_obj.bound_box]
-            face_y = min(v.y for v in world_verts)
+            face_y = 0.0
 
-        head_z = actual_height - head_r
-        print(f"[template_mesh] Measured head_r={head_r:.4f} m, "
-              f"head_z={head_z:.4f} m, face_y={face_y:.4f} m")
+        print(f"[template_mesh] Equator method: equator_z={equator_z:.4f} m, "
+              f"head_r={head_r:.4f} m, head_z={head_z:.4f} m, "
+              f"face_y={face_y:.4f} m")
     else:
         head_r = actual_height * 0.065
         head_z = actual_height - head_r
