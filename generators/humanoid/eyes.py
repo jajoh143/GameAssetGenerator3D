@@ -38,9 +38,9 @@ def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
                       Y, with a small forward nudge so they sit on the surface.
     """
     hr_h   = head_r_horiz if head_r_horiz is not None else head_r
-    eye_r  = hr_h * 0.075          # scales with horizontal head width
-    eye_z  = head_z - head_r * 0.08  # slightly below equator
-    eye_x  = hr_h * 0.26           # lateral separation scales with head width
+    eye_r  = hr_h * 0.12           # larger for expressive cartoon look
+    eye_z  = head_z - head_r * 0.07  # slightly below equator
+    eye_x  = hr_h * 0.25           # lateral separation scales with head width
 
     if face_y is not None:
         # Place disc slightly forward of (in front of) the face surface
@@ -75,10 +75,10 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None, head_r_horiz=None):
 
     eye_r, eye_x, eye_z, _eye_y, disc_y = _eye_geometry(head_z, head_r, face_y, head_r_horiz)
 
-    # Oval proportions — wider than tall
-    rx = eye_r * 1.40
-    ry = eye_r * 0.90
-    n  = 8
+    # Oval proportions — wider than tall, more stylized
+    rx = eye_r * 1.50
+    ry = eye_r * 1.10
+    n  = 10  # smoother disc with more segments
 
     bm = bmesh_mod.new()
 
@@ -120,11 +120,56 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None, head_r_horiz=None):
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.01, 0.01, 0.01, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.10
+        bsdf.inputs["Base Color"].default_value = (0.02, 0.02, 0.05, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.05
+        # Glossy eyes catch light better
+        bsdf.inputs["Specular IOR Level"].default_value = 0.8
     eye_obj.data.materials.append(mat)
 
-    return [eye_obj]
+    # ── White highlight dots ────────────────────────────────────────
+    bm2 = bmesh_mod.new()
+    highlight_r = eye_r * 0.28  # bigger highlights for more life
+    hl_n = 6
+    for x_sign in (1, -1):
+        cx = x_sign * eye_x + rx * 0.30  # offset upper-right of each eye
+        hz = eye_z + ry * 0.35
+        hy = disc_y - highlight_r * 0.5   # slightly in front of eye disc
+        center_h = bm2.verts.new((cx, hy, hz))
+        ring_h = [
+            bm2.verts.new((
+                cx + highlight_r * math.cos(2 * math.pi * i / hl_n),
+                hy,
+                hz + highlight_r * math.sin(2 * math.pi * i / hl_n),
+            ))
+            for i in range(hl_n)
+        ]
+        for i in range(hl_n):
+            j = (i + 1) % hl_n
+            try:
+                if x_sign > 0:
+                    bm2.faces.new([center_h, ring_h[i], ring_h[j]])
+                else:
+                    bm2.faces.new([center_h, ring_h[j], ring_h[i]])
+            except ValueError:
+                pass
+    bmesh_mod.ops.recalc_face_normals(bm2, faces=bm2.faces)
+    hl_mesh = bpy.data.meshes.new("Eye_Highlight_Mesh")
+    bm2.to_mesh(hl_mesh)
+    hl_mesh.update()
+    bm2.free()
+    hl_obj = bpy.data.objects.new("Eye_Highlights", hl_mesh)
+    bpy.context.collection.objects.link(hl_obj)
+    hl_mat = bpy.data.materials.new("Eye_Highlight_Mat")
+    hl_mat.use_nodes = True
+    hl_bsdf = hl_mat.node_tree.nodes.get("Principled BSDF")
+    if hl_bsdf:
+        hl_bsdf.inputs["Base Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+        hl_bsdf.inputs["Roughness"].default_value = 0.0
+        hl_bsdf.inputs["Emission Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+        hl_bsdf.inputs["Emission Strength"].default_value = 2.0
+    hl_obj.data.materials.append(hl_mat)
+
+    return [eye_obj, hl_obj]
 
 
 def create_eyebrows(head_z, head_r, face_y=None, brow_color=None, head_r_horiz=None):

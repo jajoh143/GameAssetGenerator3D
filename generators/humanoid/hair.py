@@ -722,7 +722,7 @@ def create_hair(head_z, head_r, style="short", color=None, head_r_horiz=None):
     # Emission — provides the flat, self-lit cartoon colour
     emit_node = nodes.new('ShaderNodeEmission')
     emit_node.inputs['Color'].default_value = rgba
-    emit_node.inputs['Strength'].default_value = 0.35
+    emit_node.inputs['Strength'].default_value = 0.50
     emit_node.location = (150, 120)
 
     # Diffuse BSDF — near-fully matte; supplies subtle depth cueing

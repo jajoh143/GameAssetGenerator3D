@@ -32,7 +32,8 @@ def _apply_material(obj, skin_tone=None):
     if bsdf:
         color = skin_tone if skin_tone else (0.65, 0.55, 0.45, 1.0)
         bsdf.inputs["Base Color"].default_value = color
-        bsdf.inputs["Roughness"].default_value = 0.69
+        bsdf.inputs["Roughness"].default_value = 0.50  # more sheen for stylized look
+        bsdf.inputs["Specular IOR Level"].default_value = 0.35
     obj.data.materials.append(mat)
 
 

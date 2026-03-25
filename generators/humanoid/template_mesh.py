@@ -424,9 +424,10 @@ def _apply_skin_material(obj, skin_tone=None):
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        color = skin_tone if skin_tone else (0.65, 0.55, 0.45, 1.0)
+        color = skin_tone if skin_tone else (0.72, 0.55, 0.42, 1.0)
         bsdf.inputs["Base Color"].default_value = color
-        bsdf.inputs["Roughness"].default_value = 0.69
+        bsdf.inputs["Roughness"].default_value = 0.42  # smooth toy-like sheen
+        bsdf.inputs["Specular IOR Level"].default_value = 0.45
         # Slight subsurface for skin realism
         if "Subsurface Weight" in bsdf.inputs:
             bsdf.inputs["Subsurface Weight"].default_value = 0.05
@@ -539,7 +540,7 @@ def create_body_from_template(cfg: dict):
 
     # ── Apply edge-split for a clean low-poly look ────────────────────────
     mod = mesh_obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
-    mod.split_angle = math.radians(50)
+    mod.split_angle = math.radians(38)  # tighter angle for crisp faceted low-poly look
     bpy.ops.object.shade_smooth()
 
     # ── Materials ─────────────────────────────────────────────────────────
@@ -754,7 +755,8 @@ def create_body_from_template(cfg: dict):
         bsdf_c = mat_c.node_tree.nodes.get("Principled BSDF")
         if bsdf_c:
             bsdf_c.inputs["Base Color"].default_value = rgba_c
-            bsdf_c.inputs["Roughness"].default_value = 0.80
+            bsdf_c.inputs["Roughness"].default_value = 0.55  # smooth for stylized look
+            bsdf_c.inputs["Specular IOR Level"].default_value = 0.30
         obj_c.data.materials.append(mat_c)
 
         extra_clothing_objs.append((obj_c, None))   # None → ARMATURE_AUTO skinning
