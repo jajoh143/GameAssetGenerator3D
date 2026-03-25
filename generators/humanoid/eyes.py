@@ -16,37 +16,42 @@ import math
 
 # ── Shared geometry constants ─────────────────────────────────────────────────
 
-# Eyes are placed head_r * _EYE_SETBACK behind the nose-tip (face_y).
-# face_y is now sampled from actual head vertices (not the full-body bbox),
-# so it is the true nose-tip depth.  A setback of 0.12 hr places the disc
-# just inside the eye-socket surface for typical cartoon proportions.
-_EYE_SETBACK = 0.12
+# Eyes sit at or very slightly in front of the face surface (disc_y = face_y).
+# face_y is sampled from actual head vertices at eye level, so it is the
+# true face-surface depth at the eye socket.  A small forward nudge (negative
+# fraction of head_r_horiz) lets the cartoon disc "pop" just off the surface.
+_EYE_FORWARD = 0.02   # disc protrudes 2 % of horizontal head radius forward
 
 
-def _eye_geometry(head_z, head_r, face_y):
+def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
     """Return (eye_r, eye_x, eye_z, eye_y, disc_y) for the current head.
 
-    disc_y is anchored to face_y (the mesh's most-forward bounding-box Y)
-    when provided, so the eyes sit on the actual face surface rather than
-    a fixed spherical approximation.  This is critical for the Cartoon_Male
-    template which has a different head depth than the NBM meshes.
+    Args:
+        head_r:       Vertical head radius — used for Z offsets only.
+        head_r_horiz: Horizontal head half-width — used for eye_r and eye_x
+                      sizing so eyes scale with the actual head width.
+                      Falls back to head_r when None.
+        face_y:       Most-forward Y of the face at eye level (from vertex
+                      sampling in template_mesh).  Eyes are placed at this
+                      Y, with a small forward nudge so they sit on the surface.
     """
-    eye_r  = head_r * 0.11          # slightly larger for cartoon proportions
-    eye_z  = head_z - head_r * 0.05  # just below head centre
-    eye_x  = head_r * 0.34          # lateral separation
+    hr_h   = head_r_horiz if head_r_horiz is not None else head_r
+    eye_r  = hr_h * 0.085          # scales with horizontal head width
+    eye_z  = head_z - head_r * 0.05  # just below equator (vertical offset)
+    eye_x  = hr_h * 0.28           # lateral separation scales with head width
 
     if face_y is not None:
-        # Place disc setback from the actual nose-tip surface
-        disc_y = face_y + head_r * _EYE_SETBACK
+        # Place disc slightly forward of (in front of) the face surface
+        disc_y = face_y - hr_h * _EYE_FORWARD
     else:
         # Fallback: spherical approximation (NBM-era behaviour)
-        disc_y = -(head_r * 0.62)
+        disc_y = -(hr_h * 0.62)
 
     eye_y = disc_y - eye_r
     return eye_r, eye_x, eye_z, eye_y, disc_y
 
 
-def create_eyes(head_z, head_r, eye_color=None, face_y=None):
+def create_eyes(head_z, head_r, eye_color=None, face_y=None, head_r_horiz=None):
     """Build flat low-poly black oval eyes for left and right eyes.
 
     Each eye is a single flat elliptical disc — a triangle fan from the
@@ -54,10 +59,11 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     no zones.
 
     Args:
-        head_z:    Z of the head centre.
-        head_r:    Head radius in metres.
-        eye_color: Ignored (kept for API compatibility).
-        face_y:    Most-forward Y of the body mesh (nose-tip bounding-box Y).
+        head_z:       Z of the head equator.
+        head_r:       Vertical head radius in metres.
+        head_r_horiz: Horizontal head half-width — used for eye sizing.
+        eye_color:    Ignored (kept for API compatibility).
+        face_y:       Face-surface Y at eye level (from vertex sampling).
 
     Returns:
         [eye_disc_obj]  — one bpy.types.Object containing both eyes (~16 faces).
@@ -65,7 +71,7 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     import bpy
     import bmesh as bmesh_mod
 
-    eye_r, eye_x, eye_z, _eye_y, disc_y = _eye_geometry(head_z, head_r, face_y)
+    eye_r, eye_x, eye_z, _eye_y, disc_y = _eye_geometry(head_z, head_r, face_y, head_r_horiz)
 
     # Oval proportions — wider than tall
     rx = eye_r * 1.40
@@ -119,14 +125,15 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None):
     return [eye_obj]
 
 
-def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
+def create_eyebrows(head_z, head_r, face_y=None, brow_color=None, head_r_horiz=None):
     """Build low-poly eyebrow strips sitting just above the eye sockets.
 
     Args:
-        head_z:     Z of the head centre.
-        head_r:     Head radius in metres.
-        face_y:     Most-forward Y of the body mesh (nose-tip bounding-box Y).
-        brow_color: RGBA tuple or None (defaults to dark brown).
+        head_z:       Z of the head equator.
+        head_r:       Vertical head radius in metres.
+        head_r_horiz: Horizontal head half-width — used for brow sizing.
+        face_y:       Face-surface Y at eye level (from vertex sampling).
+        brow_color:   RGBA tuple or None (defaults to dark brown).
 
     Returns:
         brow_obj — one bpy.types.Object containing both brow strips.
@@ -139,11 +146,12 @@ def create_eyebrows(head_z, head_r, face_y=None, brow_color=None):
     else:
         brow_rgba = tuple(brow_color)
 
-    eye_r, eye_x, eye_z, _, disc_y = _eye_geometry(head_z, head_r, face_y)
+    eye_r, eye_x, eye_z, _, disc_y = _eye_geometry(head_z, head_r, face_y, head_r_horiz)
 
+    hr_h        = head_r_horiz if head_r_horiz is not None else head_r
     brow_z      = eye_z + eye_r + head_r * 0.015
-    brow_h      = head_r * 0.028
-    brow_half_w = head_r * 0.18
+    brow_h      = hr_h * 0.028
+    brow_half_w = hr_h * 0.18
     brow_y      = disc_y
     n_segs      = 5
 

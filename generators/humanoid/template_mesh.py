@@ -582,35 +582,36 @@ def create_body_from_template(cfg: dict):
                     max_ax = ax
                     equator_z = wco.z
 
-        head_z = equator_z
-        head_r = actual_height - equator_z   # vertical: crown → equator
+        head_z       = equator_z
+        head_r       = actual_height - equator_z   # vertical: crown → equator
+        head_r_horiz = max_ax                       # horizontal half-width at equator
 
-        # ── face_y: nose-tip Y for eye-disc placement ──────────────────────
-        # Sample only the nose / brow band (83–92 % height), restricted to
-        # the central 50 % of head width, so the jaw / chin vertices (which
-        # are the most-forward at 80–83 %) cannot pull face_y too far
-        # forward and push the eye discs in front of the face.
-        nose_lo = actual_height * 0.83
-        nose_hi = actual_height * 0.92
-        nose_ys = []
+        # ── face_y: face-surface Y at eye level for eye-disc placement ─────
+        # Sample vertices in a narrow band around the equator (= eye/temple
+        # level), restricted to the central X half, so we find the actual
+        # face surface where the eye sockets are — not jaw or crown vertices.
+        face_lo = equator_z - head_r * 0.20
+        face_hi = equator_z + head_r * 0.20
+        face_ys = []
         for v in mesh_obj.data.vertices:
             wco = mesh_obj.matrix_world @ v.co
-            if nose_lo < wco.z < nose_hi and abs(wco.x) < max_ax * 0.5:
-                nose_ys.append(wco.y)
+            if face_lo < wco.z < face_hi and abs(wco.x) < max_ax * 0.5:
+                face_ys.append(wco.y)
 
-        if nose_ys:
-            face_y = min(nose_ys)          # nose-tip Y in the nose/brow band
+        if face_ys:
+            face_y = min(face_ys)
         elif head_ys_all:
-            face_y = min(head_ys_all)      # fallback: any head vertex
+            face_y = min(head_ys_all)
         else:
             face_y = 0.0
 
         print(f"[template_mesh] Equator method: equator_z={equator_z:.4f} m, "
-              f"head_r={head_r:.4f} m, head_z={head_z:.4f} m, "
-              f"face_y={face_y:.4f} m")
+              f"head_r={head_r:.4f} m, head_r_horiz={head_r_horiz:.4f} m, "
+              f"head_z={head_z:.4f} m, face_y={face_y:.4f} m")
     else:
-        head_r = actual_height * 0.065
-        head_z = actual_height - head_r
+        head_r       = actual_height * 0.065
+        head_z       = actual_height - head_r
+        head_r_horiz = None   # NBM path: no horizontal measurement, fall back to head_r
         world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
                        for v in mesh_obj.bound_box]
         face_y = min(v.y for v in world_verts)
@@ -630,12 +631,14 @@ def create_body_from_template(cfg: dict):
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
     if hair_style and hair_style != "none":
-        hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color)
+        hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color,
+                                           head_r_horiz=head_r_horiz)
 
     # ── Eyes ──────────────────────────────────────────────────────────────────
     from . import eyes as eyes_module
     eye_color = cfg.get("eye_color", None)
-    eye_objs = eyes_module.create_eyes(head_z, head_r, eye_color, face_y=face_y)
+    eye_objs = eyes_module.create_eyes(head_z, head_r, eye_color, face_y=face_y,
+                                       head_r_horiz=head_r_horiz)
 
     # Return eye objects as (obj, "Head") tuples so the rig can parent them
     # rigidly to the Head bone, matching how hair is handled.
@@ -644,7 +647,8 @@ def create_body_from_template(cfg: dict):
     # ── Eyebrows ──────────────────────────────────────────────────────────────
     brow_color = cfg.get("brow_color", None)
     brow_obj = eyes_module.create_eyebrows(head_z, head_r, face_y=face_y,
-                                           brow_color=brow_color)
+                                           brow_color=brow_color,
+                                           head_r_horiz=head_r_horiz)
     extra_head_objs.append((brow_obj, "Head"))
 
     return mesh_obj, hair_obj, extra_head_objs
