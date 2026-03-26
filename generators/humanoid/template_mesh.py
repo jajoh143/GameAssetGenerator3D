@@ -656,9 +656,9 @@ def create_body_from_template(cfg: dict):
         # ── face_y: face-surface Y at eye level ──────────────────────────
         # Sample vertices near the head centre (where eyes go), restricted
         # to the central X third, to find the face surface depth.
-        eye_level_z = head_z - head_r * 0.05  # slightly below centre
-        face_lo = eye_level_z - head_r * 0.25
-        face_hi = eye_level_z + head_r * 0.25
+        eye_level_z = head_z + head_r * 0.15  # eyes sit above centre on chibi
+        face_lo = eye_level_z - head_r * 0.30
+        face_hi = eye_level_z + head_r * 0.30
         face_ys = []
         head_ys_all = []
         for wco in head_candidate_verts:
@@ -854,13 +854,17 @@ def create_body_from_template(cfg: dict):
     # vertices beyond the torso X cap (i.e. arm/shoulder verts).
     # Ranges are deliberately generous — better to slightly over-cover than
     # leave skin showing through gaps.
+    # Clothing zones: z_lo, z_hi, include_arms
+    # IMPORTANT: tshirt bottom and pants top must NOT overlap at the hip
+    # or they blend into one solid block.  Leave a ~2cm skin gap at the waist.
+    _waist_gap = 0.02
     _CLOTHING_ZONES = {
-        "tshirt":     (_hip_z - 0.02,                        _chest_z + 0.05, True),
-        "longsleeve": (_hip_z - 0.02,                        _chest_z + 0.05, True),
-        "jacket":     (_hip_z - 0.04,                        _chest_z + 0.06, True),
-        "pants":      (foot_top - 0.02,                      _hip_z + cfg["torso_length"] * 0.25, False),
-        "shorts":     (foot_top + cfg["leg_length"] * 0.38,  _hip_z + cfg["torso_length"] * 0.25, False),
-        "armor":      (_hip_z - 0.02,                        _chest_z + 0.05, True),
+        "tshirt":     (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
+        "longsleeve": (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
+        "jacket":     (_hip_z - 0.02,                        _chest_z + 0.06, True),
+        "pants":      (foot_top - 0.02,                      _hip_z + cfg["torso_length"] * 0.10, False),
+        "shorts":     (foot_top + cfg["leg_length"] * 0.38,  _hip_z + cfg["torso_length"] * 0.10, False),
+        "armor":      (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
         "robe":       (foot_top,                             _chest_z + 0.05, True),
     }
 

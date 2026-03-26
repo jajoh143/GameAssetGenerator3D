@@ -297,7 +297,7 @@ _CAP_LEVELS = [
 _CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
 
 
-def _build_cap(bm, head_z, head_r, h_scale=1.07, levels=None, head_r_horiz=None):
+def _build_cap(bm, head_z, head_r, h_scale=1.20, levels=None, head_r_horiz=None):
     """Build the shared domed cap from hairline to crown.
 
     Args:
@@ -329,7 +329,7 @@ def _build_cap(bm, head_z, head_r, h_scale=1.07, levels=None, head_r_horiz=None)
 
 def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
     """Skullcap hugging the head tightly — very short all over."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.03, head_r_horiz=head_r_horiz)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.15, head_r_horiz=head_r_horiz)
     hl = rings[0]
     # Single unified row around the back 270° for seamless ear/nape coverage
     _panel_rows(bm, _back_half_verts(hl), [
@@ -341,7 +341,7 @@ def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
 # Cap levels for the short style.
 # Hairline starts at z_off=0.00 (equatorial = ear/temple level) so the cap
 # wraps fully around the head circumference.  Crown compressed to z_off=0.92
-# for a flat low-profile look.  h_scale=1.06 gives ~3 % clearance from the
+# for a flat low-profile look.  h_scale=1.20 gives ~3 % clearance from the
 # head surface using the actual horizontal radius (head_r_horiz).
 _SHORT_CAP_LEVELS = [
     (0.00, 0.97, 0.90),   # hairline — equatorial (ear/temple, full circumference)
@@ -360,7 +360,7 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None):
     nape.  Short fringe clumps fill the front/forehead zone.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.06, levels=_SHORT_CAP_LEVELS,
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SHORT_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
 
@@ -419,7 +419,7 @@ def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
 
     Face budget: cap ≈ 48 + back panel ≈ 24 + spikes 6 × 4 = 24 → ~96 total.
     """
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.06, levels=_SPIKY_CAP_LEVELS,
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SPIKY_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
 
@@ -480,7 +480,7 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
     Quiff: 5 clumps with negative z_tip so tips rise above the hairline.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.06, levels=_SHORT_CAP_LEVELS,
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SHORT_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
     hl_z = hl[0].co.z
@@ -508,7 +508,7 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
 def _build_long(bm, head_z, head_r, head_r_horiz=None):
     """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.09, head_r_horiz=hr_h)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.22, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -588,7 +588,7 @@ def _build_mohawk(bm, head_z, head_r, head_r_horiz=None):
 def _build_ponytail(bm, head_z, head_r, head_r_horiz=None):
     """Short front/sides with a gathered bundle hanging at the back."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.07, head_r_horiz=hr_h)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
