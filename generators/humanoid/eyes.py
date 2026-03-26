@@ -41,7 +41,7 @@ def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
     """
     hr_h   = head_r_horiz if head_r_horiz is not None else head_r
     eye_r  = hr_h * 0.18           # expressive cartoon eyes, proportional to head
-    eye_z  = head_z + head_r * 0.15  # ABOVE head centre — chibi eyes sit high
+    eye_z  = head_z + head_r * -0.80  # ABOVE head centre — chibi eyes sit high
     eye_x  = hr_h * 0.36           # wide lateral separation
 
     if face_y is not None:
@@ -279,7 +279,7 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     # head_z is the centre of the full head; nose sits below centre.
     # 0.50 puts the nose at ~25 % from the bottom of the full head —
     # the classic cartoon midpoint between eyes (~57.5 %) and chin (0 %).
-    nz       = head_z - head_r * 0.50
+    nz       = head_z - head_r * 1.50
     # face_y here is sampled at nose level, so base_y is the actual face
     # surface at this Z; add a small forward nudge so the nose clears it.
     base_y   = (face_y - hr_h * 0.06) if face_y is not None else -(hr_h * 0.62)
@@ -405,7 +405,7 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     # Position: below nose, in the lower third of the head.
     # 0.70 puts the mouth at ~15 % from bottom of the full head —
     # in the lower third of the face, below the nose (at 25 %).
-    mz_centre = head_z - head_r * 0.70
+    mz_centre = head_z - head_r * 2.25
     # face_y is sampled at mouth level (front-facing verts only);
     # extra forward nudge clears the inward-curving chin surface.
     base_y    = (face_y - hr_h * 0.10) if face_y is not None else -(hr_h * 0.62)
