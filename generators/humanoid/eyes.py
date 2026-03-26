@@ -283,8 +283,9 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     # face_y here is sampled at nose level, so base_y is the actual face
     # surface at this Z; add a small forward nudge so the nose clears it.
     base_y   = (face_y - hr_h * 0.06) if face_y is not None else -(hr_h * 0.62)
-    nose_r   = hr_h * 0.14                   # visible cartoon nose
-    protrude = hr_h * 0.50                   # prominent forward protrusion
+    nose_r   = hr_h * 0.15          # radius of the nose disc
+    protrude = hr_h * 0.16          # flat button nose — only a small bump forward
+    z_scale  = 0.45                 # squish the Z cross-section (wider than tall)
     print(f"[nose] nz={nz:.4f}, base_y={base_y:.4f}, tip_y={base_y - protrude:.4f}, nose_r={nose_r:.4f}")
 
     # Build a half-sphere dome (8 segments, 3 latitude rings + tip)
@@ -293,31 +294,31 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
 
     bm = bmesh_mod.new()
 
-    # Base ring sits on the face surface
+    # Base ring sits on the face surface — squished ellipse (wide, flat)
     base_ring = []
     for i in range(n_seg):
         angle = 2 * math.pi * i / n_seg
         x = nose_r * math.cos(angle)
-        z = nz + nose_r * 0.8 * math.sin(angle)  # slightly taller than wide
+        z = nz + nose_r * z_scale * math.sin(angle)
         base_ring.append(bm.verts.new((x, base_y, z)))
 
-    # Intermediate latitude rings
+    # Intermediate latitude rings — shrink toward tip, move forward gently
     rings = [base_ring]
     for lat in range(1, n_lat + 1):
-        t = lat / (n_lat + 1)  # 0→1 from base to tip
-        ring_r = nose_r * (1.0 - t * 0.6)  # radius shrinks toward tip
-        ring_y = base_y - protrude * t      # moves forward
-        ring_z_offset = nose_r * 0.15 * t   # rises slightly toward bridge
+        t = lat / (n_lat + 1)
+        ring_r = nose_r * (1.0 - t * 0.55)
+        ring_y = base_y - protrude * t
+        ring_z_offset = nose_r * z_scale * 0.10 * t   # tiny upward drift
         ring = []
         for i in range(n_seg):
             angle = 2 * math.pi * i / n_seg
             x = ring_r * math.cos(angle)
-            z = nz + ring_z_offset + ring_r * 0.8 * math.sin(angle)
+            z = nz + ring_z_offset + ring_r * z_scale * math.sin(angle)
             ring.append(bm.verts.new((x, ring_y, z)))
         rings.append(ring)
 
-    # Tip vertex
-    tip = bm.verts.new((0, base_y - protrude, nz + nose_r * 0.2))
+    # Tip vertex — centred, only slightly forward (flat nose)
+    tip = bm.verts.new((0, base_y - protrude, nz))
 
     # Bridge rings together
     for r_idx in range(len(rings) - 1):
@@ -409,44 +410,52 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     # face_y is sampled at mouth level (front-facing verts only);
     # extra forward nudge clears the inward-curving chin surface.
     base_y    = (face_y - hr_h * 0.10) if face_y is not None else -(hr_h * 0.62)
-    protrude  = hr_h * 0.35            # prominent — must clear face mesh
+    protrude  = hr_h * 0.28            # forward peak of each lip
     print(f"[mouth] mz={mz_centre:.4f}, base_y={base_y:.4f}, protrude={protrude:.4f}")
 
-    # Sizing — big and visible, proportional to full head width
-    half_w    = hr_h * 0.28            # wide smile
-    upper_h   = head_r * 0.14          # tall upper lip (was 0.06 — invisible)
-    lower_h   = head_r * 0.16          # tall lower lip (was 0.07 — invisible)
-    gap       = head_r * 0.012         # visible dark line between lips
-    n_seg     = 8                      # segments along the smile curve
+    # Sizing
+    half_w    = hr_h * 0.30            # smile width
+    upper_h   = head_r * 0.13          # upper lip height
+    lower_h   = head_r * 0.15          # lower lip height (slightly taller)
+    seam_y    = base_y - protrude * 0.40   # Y of the inner lip seam (recessed)
+    inner_y   = base_y + head_r * 0.015   # Y of inner-mouth cavity (set back)
+    n_seg     = 8
 
     bm = bmesh_mod.new()
 
-    # Helper: generate a row of vertices along a smile arc.
-    # x sweeps from -half_w to +half_w.  The smile_curve lifts the
-    # corners slightly (cosine ease) to give a gentle upward curl.
-    def _arc_row(z_base, y_off, smile_lift, n):
-        """Return a list of n+1 verts along a horizontal smile arc."""
+    smile_lift = head_r * 0.025   # corners curl up slightly
+
+    def _arc_row(z_base, y_val, smile_lift_frac, n):
+        """One row of n+1 verts along a smile arc at a fixed Y depth."""
         verts = []
         for i in range(n + 1):
-            t = i / n                       # 0 → 1 across the mouth
-            x = -half_w + 2 * half_w * t
-            # Cosine curve: centre is lowest, corners lift up
-            curve = smile_lift * (math.cos(math.pi * t) * -0.5 + 0.5)
-            z = z_base + curve
-            # Protrusion peaks at centre, tapers at corners
-            bulge = protrude * math.cos(math.pi * 0.5 * (2 * t - 1))
-            y = base_y - bulge + y_off
-            verts.append(bm.verts.new((x, y, z)))
+            t  = i / n
+            x  = -half_w + 2 * half_w * t
+            # cosine lift: corners rise, centre stays
+            curve = smile_lift * smile_lift_frac * (math.cos(math.pi * t) * -0.5 + 0.5)
+            z  = z_base + curve
+            # Y depth varies with this row's y_val (no per-row bulge)
+            verts.append(bm.verts.new((x, y_val, z)))
         return verts
 
-    # Build four vertex rows (top of upper → seam → seam → bottom of lower)
-    smile_lift = head_r * 0.03   # how much corners curl up
-    row_upper_top = _arc_row(mz_centre + gap * 0.5 + upper_h, 0.0,        smile_lift, n_seg)
-    row_upper_bot = _arc_row(mz_centre + gap * 0.5,           0.0,        smile_lift * 0.5, n_seg)
-    row_lower_top = _arc_row(mz_centre - gap * 0.5,           0.0,        smile_lift * 0.5, n_seg)
-    row_lower_bot = _arc_row(mz_centre - gap * 0.5 - lower_h, protrude * 0.15, smile_lift * 0.3, n_seg)
+    # ── Upper lip: 3 rows giving it a rounded cross-section ──────────────────
+    # row_ul_top  : top edge, flush with face (farthest back)
+    # row_ul_peak : front peak of the upper lip (most forward)
+    # row_ul_seam : inner edge where lips touch (mid depth)
+    row_ul_top  = _arc_row(mz_centre + upper_h,        base_y,   1.0,  n_seg)
+    row_ul_peak = _arc_row(mz_centre + upper_h * 0.35, base_y - protrude,        0.85, n_seg)
+    row_ul_seam = _arc_row(mz_centre,                  seam_y,   0.40, n_seg)
 
-    # Stitch quads between adjacent rows
+    # ── Inner mouth cavity: dark strip between the lips ───────────────────────
+    # Sits at the lip-seam Z, pushed back behind the face surface
+    row_inner_top = _arc_row(mz_centre,         inner_y, 0.20, n_seg)
+    row_inner_bot = _arc_row(mz_centre - head_r * 0.015, inner_y, 0.20, n_seg)
+
+    # ── Lower lip: 3 rows ─────────────────────────────────────────────────────
+    row_ll_seam = _arc_row(mz_centre - head_r * 0.018, seam_y,           0.35, n_seg)
+    row_ll_peak = _arc_row(mz_centre - lower_h * 0.40, base_y - protrude, 0.25, n_seg)
+    row_ll_bot  = _arc_row(mz_centre - lower_h,        base_y,            0.10, n_seg)
+
     def _stitch(row_a, row_b):
         for i in range(len(row_a) - 1):
             try:
@@ -454,8 +463,29 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
             except ValueError:
                 pass
 
-    _stitch(row_upper_top, row_upper_bot)   # upper lip surface
-    _stitch(row_lower_top, row_lower_bot)   # lower lip surface
+    # Upper lip faces
+    _stitch(row_ul_top,  row_ul_peak)
+    _stitch(row_ul_peak, row_ul_seam)
+    # Inner mouth faces (will get dark material)
+    inner_face_start = len(bm.faces)
+    _stitch(row_ul_seam,    row_inner_top)
+    _stitch(row_inner_top,  row_inner_bot)
+    _stitch(row_inner_bot,  row_ll_seam)
+    inner_face_end = len(bm.faces)
+    # Lower lip faces
+    _stitch(row_ll_seam, row_ll_peak)
+    _stitch(row_ll_peak, row_ll_bot)
+
+    # Corner end-caps — small triangles sealing the left and right ends
+    for col in (0, n_seg):
+        try:
+            bm.faces.new([row_ul_top[col], row_ul_seam[col], row_ul_peak[col]])
+        except ValueError:
+            pass
+        try:
+            bm.faces.new([row_ll_seam[col], row_ll_bot[col], row_ll_peak[col]])
+        except ValueError:
+            pass
 
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
@@ -467,27 +497,39 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     mouth_obj = bpy.data.objects.new("Mouth", mesh_m)
     bpy.context.collection.objects.link(mouth_obj)
 
-    # Smooth shading for a soft, rounded look
     bpy.context.view_layer.objects.active = mouth_obj
     mouth_obj.select_set(True)
     bpy.ops.object.shade_smooth()
     mouth_obj.select_set(False)
 
-    # Warm rosy-pink lip colour — clearly distinct from surrounding skin
-    mat = bpy.data.materials.new("Mouth_Mat")
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    # ── Material slot 0: rosy lip colour ─────────────────────────────────────
+    mat_lip = bpy.data.materials.new("Mouth_Lip_Mat")
+    mat_lip.use_nodes = True
+    bsdf = mat_lip.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         if skin_tone:
             r, g, b, a = skin_tone
-            # Strong rosy red — clearly distinct from skin at any distance
             lip_color = (min(r * 1.20, 1.0), g * 0.40, b * 0.35, 1.0)
         else:
             lip_color = (0.82, 0.30, 0.28, 1.0)
         bsdf.inputs["Base Color"].default_value = lip_color
         bsdf.inputs["Roughness"].default_value  = 0.42
         bsdf.inputs["Specular IOR Level"].default_value = 0.35
-    mouth_obj.data.materials.append(mat)
+    mouth_obj.data.materials.append(mat_lip)
+
+    # ── Material slot 1: dark inner-mouth cavity ──────────────────────────────
+    mat_inner = bpy.data.materials.new("Mouth_Inner_Mat")
+    mat_inner.use_nodes = True
+    bsdf2 = mat_inner.node_tree.nodes.get("Principled BSDF")
+    if bsdf2:
+        bsdf2.inputs["Base Color"].default_value = (0.02, 0.01, 0.01, 1.0)
+        bsdf2.inputs["Roughness"].default_value  = 1.0
+        bsdf2.inputs["Specular IOR Level"].default_value = 0.0
+    mouth_obj.data.materials.append(mat_inner)
+
+    # Assign inner-mouth faces to slot 1
+    for fi in range(inner_face_start, inner_face_end):
+        mouth_obj.data.polygons[fi].material_index = 1
 
     return mouth_obj
 

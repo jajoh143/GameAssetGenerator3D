@@ -283,9 +283,9 @@ def _panel_rows(bm, top_verts, rows_spec):
 # 12-sided rings (n=12) ensure the silhouette reads as circular.
 #
 # h_scale pushes the cap shell outward from the head surface:
-#   1.03 → near skin-tight (buzz cut)
-#   1.07 → normal short/medium hair
-#   1.09 → voluminous long hair
+#   1.15 → near skin-tight (buzz cut)
+#   1.35 → normal short/medium/long hair
+#   1.40 → very voluminous
 
 _CAP_LEVELS = [
     (0.00, 0.97, 0.90),   # hairline / brow  — equatorial
@@ -360,7 +360,7 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None):
     nape.  Short fringe clumps fill the front/forehead zone.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SHORT_CAP_LEVELS,
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, levels=_SHORT_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
 
@@ -419,7 +419,7 @@ def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
 
     Face budget: cap ≈ 48 + back panel ≈ 24 + spikes 6 × 4 = 24 → ~96 total.
     """
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SPIKY_CAP_LEVELS,
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, levels=_SPIKY_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
 
@@ -480,7 +480,7 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
     Quiff: 5 clumps with negative z_tip so tips rise above the hairline.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SHORT_CAP_LEVELS,
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, levels=_SHORT_CAP_LEVELS,
                        head_r_horiz=head_r_horiz)
     hl = rings[0]
     hl_z = hl[0].co.z
@@ -508,7 +508,7 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
 def _build_long(bm, head_z, head_r, head_r_horiz=None):
     """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.22, head_r_horiz=hr_h)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -588,7 +588,7 @@ def _build_mohawk(bm, head_z, head_r, head_r_horiz=None):
 def _build_ponytail(bm, head_z, head_r, head_r_horiz=None):
     """Short front/sides with a gathered bundle hanging at the back."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, head_r_horiz=hr_h)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
