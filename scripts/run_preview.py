@@ -54,16 +54,16 @@ def _add_camera(name, location, look_at=(0, 0, 0.85)):
 bpy.ops.object.light_add(type='SUN', location=(4, -3, 8))
 key = bpy.context.active_object
 key.name = "Key_Light"
-key.data.energy = 5.5
-key.data.color = (1.0, 0.94, 0.84)  # warm golden white
+key.data.energy = 3.5
+key.data.color = (1.0, 0.97, 0.92)  # near-neutral warm white
 key.rotation_euler = (math.radians(40), 0, math.radians(25))
 
 # Fill light — slightly warm, brighter for better shadow fill
 bpy.ops.object.light_add(type='SUN', location=(-3, -4, 5))
 fill = bpy.context.active_object
 fill.name = "Fill_Light"
-fill.data.energy = 2.0
-fill.data.color = (0.88, 0.90, 1.0)  # cooler fill for contrast with warm key
+fill.data.energy = 1.5
+fill.data.color = (0.95, 0.95, 0.98)  # near-neutral, barely cool
 fill.rotation_euler = (math.radians(55), 0, math.radians(-35))
 
 # Rim light — from behind for edge definition
@@ -125,6 +125,12 @@ scene.render.film_transparent = False
 scene.render.resolution_x = 768
 scene.render.resolution_y = 768
 scene.render.image_settings.file_format = 'PNG'
+
+# Use Standard color management so material colors render true-to-value.
+# Filmic (Blender's default) desaturates and compresses vivid colours,
+# making bright reds appear salmon/pink.
+scene.view_settings.view_transform = 'Standard'
+scene.view_settings.look = 'None'
 
 out_dir = os.path.join(PROJECT_ROOT, "assets")
 os.makedirs(out_dir, exist_ok=True)

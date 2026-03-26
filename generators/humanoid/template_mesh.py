@@ -561,55 +561,110 @@ def create_body_from_template(cfg: dict):
     import mathutils as _mu
 
     if use_cartoon_glb:
-        # ── Equator method ─────────────────────────────────────────────────
-        # Problem with max(head_xs): it returns the horizontal half-width,
-        # which is less than the vertical radius for any non-spherical (e.g.
-        # egg-shaped) head.  Substituting it into  head_z = height - head_r
-        # then places head_z too high → the hair cap base lands near the
-        # crown and the eyes end up at forehead level where the face has
-        # curved behind the nose-tip Y, making both appear inside the mesh.
+        # ── Full-head detection via neck scan ────────────────────────────
+        # The old "equator method" only measured crown-to-widest-point,
+        # giving a tiny head_r for chibi meshes whose heads extend far
+        # below the widest point.  Instead, we detect the FULL head by
+        # scanning downward from the crown to find the neck — the
+        # narrowest horizontal extent between head and shoulders.
         #
-        # Fix: find the vertex with the largest abs(X) above a conservative
-        # floor, WITH an X cap so T-pose arm/shoulder vertices are excluded.
-        # The Cartoon_Male's shoulders reach ~80 % height with abs(x) ≈ 0.20 m,
-        # nearly identical to the head width — so an 80 % threshold alone is not
-        # enough.  Using 86 % (above shoulder caps) + HEAD_X_CAP = 0.22 m safely
-        # restricts the search to the head region only.
+        # Algorithm:
+        #   1. Collect all vertices above 65 % height (head + upper body)
+        #      with abs(x) < HEAD_X_CAP to exclude T-pose arms.
+        #   2. Bucket by Z into thin slices and find max abs(x) per slice.
+        #   3. Walk slices downward from the crown; the first local minimum
+        #      in max-abs-x is the neck centre.  The head bottom = chin is
+        #      the slice just above where the profile starts narrowing
+        #      toward the neck.
+        #   4. head_z = midpoint between chin and crown (true centre of head)
+        #      head_r = (crown - chin) / 2  (vertical half-height)
         #
-        #   head_z = equator_z   (base of the hair cap, ≈ ear / temple level)
-        #   head_r = crown_z - equator_z   (vertical span from equator to top)
-        #
-        # The hair & eye code already treats head_z as the cap base and uses
-        # head_r as a proportional unit, so this is the intended convention.
-        HEAD_X_CAP = 0.22          # max abs(x) for head verts (excludes T-pose arms)
-        head_threshold_z = actual_height * 0.86   # safely above shoulders (~78-82 %)
-        max_ax = 0.0
-        equator_z = actual_height * 0.90  # fallback
-        head_ys_all = []          # all head-region Y values (for face_y below)
+        HEAD_X_CAP = 0.25          # max abs(x) for head verts
+        scan_floor_z = actual_height * 0.60   # scan from here up
+        crown_z = actual_height
 
+        # Collect all candidate vertices
+        head_candidate_verts = []
         for v in mesh_obj.data.vertices:
             wco = mesh_obj.matrix_world @ v.co
-            if wco.z > head_threshold_z and abs(wco.x) < HEAD_X_CAP:
+            if wco.z > scan_floor_z and abs(wco.x) < HEAD_X_CAP:
+                head_candidate_verts.append(wco)
+
+        # Bucket into Z slices (1 cm each)
+        slice_height = 0.01
+        n_slices = int((crown_z - scan_floor_z) / slice_height) + 1
+        slice_max_ax = [0.0] * n_slices
+        slice_min_y  = [0.0] * n_slices
+        slice_count  = [0] * n_slices
+
+        for wco in head_candidate_verts:
+            idx = int((wco.z - scan_floor_z) / slice_height)
+            if 0 <= idx < n_slices:
                 ax = abs(wco.x)
-                head_ys_all.append(wco.y)
-                if ax > max_ax:
-                    max_ax = ax
-                    equator_z = wco.z
+                if ax > slice_max_ax[idx]:
+                    slice_max_ax[idx] = ax
+                if slice_count[idx] == 0 or wco.y < slice_min_y[idx]:
+                    slice_min_y[idx] = wco.y
+                slice_count[idx] += 1
 
-        head_z       = equator_z
-        head_r       = actual_height - equator_z   # vertical: crown → equator
-        head_r_horiz = max_ax                       # horizontal half-width at equator
+        # Find neck: walk downward from top, look for the first sharp
+        # narrowing that is at least 40 % narrower than the widest head slice
+        top_idx = n_slices - 1
+        # Find the widest slice in the top 30 % (head region)
+        head_region_start = int(n_slices * 0.70)
+        max_head_width = 0.0
+        widest_idx = top_idx
+        for i in range(top_idx, head_region_start, -1):
+            if slice_max_ax[i] > max_head_width:
+                max_head_width = slice_max_ax[i]
+                widest_idx = i
 
-        # ── face_y: face-surface Y at eye level for eye-disc placement ─────
-        # Sample vertices in a narrow band around the equator (= eye/temple
-        # level), restricted to the central X half, so we find the actual
-        # face surface where the eye sockets are — not jaw or crown vertices.
-        face_lo = equator_z - head_r * 0.20
-        face_hi = equator_z + head_r * 0.20
+        # Walk down from the widest point to find the neck minimum
+        neck_idx = widest_idx
+        neck_width = max_head_width
+        for i in range(widest_idx, 0, -1):
+            if slice_count[i] == 0:
+                continue
+            if slice_max_ax[i] < neck_width:
+                neck_width = slice_max_ax[i]
+                neck_idx = i
+            # If width starts increasing again significantly, we've passed
+            # the neck and are into the shoulders — stop
+            if slice_max_ax[i] > neck_width * 1.3 and neck_width < max_head_width * 0.70:
+                break
+
+        # Chin Z = bottom of the narrowing region (where head meets neck)
+        # Walk upward from neck to find where the head widens significantly
+        chin_idx = neck_idx
+        for i in range(neck_idx, widest_idx):
+            if slice_count[i] > 0 and slice_max_ax[i] > neck_width * 1.2:
+                chin_idx = i
+                break
+
+        chin_z = scan_floor_z + chin_idx * slice_height
+        # Ensure chin_z is reasonable (head should be at least 15% of height)
+        min_chin_z = actual_height * 0.70
+        if chin_z < min_chin_z:
+            chin_z = min_chin_z
+
+        # Full head measurements
+        full_head_height = crown_z - chin_z
+        head_r       = full_head_height * 0.5      # vertical half-height
+        head_z       = chin_z + head_r              # centre of head
+        head_r_horiz = max_head_width               # horizontal half-width
+
+        # ── face_y: face-surface Y at eye level ──────────────────────────
+        # Sample vertices near the head centre (where eyes go), restricted
+        # to the central X third, to find the face surface depth.
+        eye_level_z = head_z - head_r * 0.05  # slightly below centre
+        face_lo = eye_level_z - head_r * 0.25
+        face_hi = eye_level_z + head_r * 0.25
         face_ys = []
-        for v in mesh_obj.data.vertices:
-            wco = mesh_obj.matrix_world @ v.co
-            if face_lo < wco.z < face_hi and abs(wco.x) < max_ax * 0.5:
+        head_ys_all = []
+        for wco in head_candidate_verts:
+            if wco.z > chin_z:
+                head_ys_all.append(wco.y)
+            if face_lo < wco.z < face_hi and abs(wco.x) < head_r_horiz * 0.4:
                 face_ys.append(wco.y)
 
         if face_ys:
@@ -619,9 +674,17 @@ def create_body_from_template(cfg: dict):
         else:
             face_y = 0.0
 
-        print(f"[template_mesh] Equator method: equator_z={equator_z:.4f} m, "
-              f"head_r={head_r:.4f} m, head_r_horiz={head_r_horiz:.4f} m, "
-              f"head_z={head_z:.4f} m, face_y={face_y:.4f} m")
+        # Also compute the equator Z (widest point of head) for hair placement.
+        # Hair _build_cap expects head_z = equator and head_r = crown − equator.
+        # We keep those as hair_head_z / hair_head_r.
+        equator_z = scan_floor_z + widest_idx * slice_height
+        hair_head_z = equator_z
+        hair_head_r = crown_z - equator_z
+
+        print(f"[template_mesh] Head detection: chin_z={chin_z:.4f}, crown={crown_z:.4f}, "
+              f"head_z={head_z:.4f} (centre), head_r={head_r:.4f} (vert half), "
+              f"head_r_horiz={head_r_horiz:.4f}, face_y={face_y:.4f}, "
+              f"equator_z={equator_z:.4f} (hair)")
 
         # ── Detect body proportions for clothing fit ────────────────────────
         # Sample mesh vertices to find actual hip and chest geometry so
@@ -683,6 +746,8 @@ def create_body_from_template(cfg: dict):
         head_r       = actual_height * 0.065
         head_z       = actual_height - head_r
         head_r_horiz = None   # NBM path: no horizontal measurement, fall back to head_r
+        hair_head_z  = head_z
+        hair_head_r  = head_r
         world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
                        for v in mesh_obj.bound_box]
         face_y = min(v.y for v in world_verts)
@@ -698,11 +763,15 @@ def create_body_from_template(cfg: dict):
     )
 
     # ── Hair ──────────────────────────────────────────────────────────────────
+    # Hair cap uses equator-based coordinates (head_z = widest point of head,
+    # head_r = crown − equator), NOT the full-head centre used for facial features.
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
+    h_hz = hair_head_z if use_cartoon_glb else head_z
+    h_hr = hair_head_r if use_cartoon_glb else head_r
     if hair_style and hair_style != "none":
-        hair_obj = hair_module.create_hair(head_z, head_r, hair_style, hair_color,
+        hair_obj = hair_module.create_hair(h_hz, h_hr, hair_style, hair_color,
                                            head_r_horiz=head_r_horiz)
 
     # ── Eyes ──────────────────────────────────────────────────────────────────
@@ -756,28 +825,102 @@ def create_body_from_template(cfg: dict):
         extra_head_objs.append((mobj, "Head"))
 
     # ── Clothing ──────────────────────────────────────────────────────────────
-    # Create clothing as separate objects using the same bmesh builders as
-    # the procedural pipeline, but positioned to fit the template mesh.
-    # bone_name=None → auto-weight skinned to armature (arms/legs follow rig).
+    # Build clothing by duplicating body-mesh faces in the relevant Z-range
+    # and pushing them outward.  This gives clothing that exactly conforms to
+    # the template mesh shape — far better than ring-based cylinders.
     clothing_spec = cfg.get("clothing", ["tshirt", "pants"])
     if isinstance(clothing_spec, str):
         clothing_spec = [c.strip() for c in clothing_spec.split(",") if c.strip()]
-    # clothing_color may be:
-    #   • a single named color string   → used for every item
-    #   • a single RGBA tuple           → used for every item
-    #   • a dict {ctype: color}         → per-item colors (None means use default)
     clothing_color = cfg.get("clothing_color", None)
 
     from . import clothing as clothing_module
     import bmesh as _bmesh
+    from mathutils import Vector as _Vec
+
+    # Precompute body vertex world coords for Z-range checks
+    body_wcos = {}
+    for v in mesh_obj.data.vertices:
+        body_wcos[v.index] = mesh_obj.matrix_world @ v.co
+
+    # Z-ranges for each clothing type (relative to detected body proportions)
+    foot_top = 0.06
+    _hip_z   = cfg["leg_length"] + foot_top
+    _chest_z = _hip_z + cfg["torso_length"]
+    _arm_len = cfg.get("arm_length", 0.45)
+    _sw      = cfg["shoulder_width"]
+
+    # Define which body regions each clothing type covers.
+    # z_lo, z_hi = vertical extent.  include_arms = whether to include
+    # vertices beyond the torso X cap (i.e. arm/shoulder verts).
+    # Ranges are deliberately generous — better to slightly over-cover than
+    # leave skin showing through gaps.
+    _CLOTHING_ZONES = {
+        "tshirt":     (_hip_z - 0.02,                        _chest_z + 0.05, True),
+        "longsleeve": (_hip_z - 0.02,                        _chest_z + 0.05, True),
+        "jacket":     (_hip_z - 0.04,                        _chest_z + 0.06, True),
+        "pants":      (foot_top - 0.02,                      _hip_z + cfg["torso_length"] * 0.25, False),
+        "shorts":     (foot_top + cfg["leg_length"] * 0.38,  _hip_z + cfg["torso_length"] * 0.25, False),
+        "armor":      (_hip_z - 0.02,                        _chest_z + 0.05, True),
+        "robe":       (foot_top,                             _chest_z + 0.05, True),
+    }
+
+    BODY_X_CAP = 0.28  # torso width cap — verts beyond this are arms
 
     extra_clothing_objs = []
     for ctype in clothing_spec:
         if ctype == "none":
             continue
-        bm_c = clothing_module.build_clothing_bmesh_for_type(cfg, ctype)
-        if bm_c is None:
+
+        zone = _CLOTHING_ZONES.get(ctype)
+        if zone is None:
             continue
+        z_lo, z_hi, include_arms = zone
+
+        # Collect faces where ANY vertex falls in the clothing zone.
+        # Using any-vertex (not centre) avoids gaps at zone boundaries.
+        clothing_faces = []
+        for poly in mesh_obj.data.polygons:
+            verts_wco = [body_wcos[vi] for vi in poly.vertices]
+            any_in_zone = any(z_lo <= v.z <= z_hi for v in verts_wco)
+            if not any_in_zone:
+                continue
+            # For non-arm clothing (pants), skip faces centred in the arm area
+            if not include_arms:
+                centre_ax = max(abs(v.x) for v in verts_wco)
+                if centre_ax > BODY_X_CAP:
+                    continue
+            clothing_faces.append(poly)
+
+        if not clothing_faces:
+            continue
+
+        # Build clothing bmesh from selected faces, offset outward
+        bm_c = _bmesh.new()
+        vert_map = {}  # body vert index → clothing bmesh vert
+
+        for poly in clothing_faces:
+            bm_verts = []
+            for vi in poly.vertices:
+                if vi not in vert_map:
+                    wco = body_wcos[vi]
+                    # Push vertex outward from body centre along the
+                    # local surface normal approximation (radial from Y axis
+                    # for torso, from leg axis for legs).
+                    # Simple approach: scale outward from the Z-axis
+                    offset_dir = _Vec((wco.x, wco.y, 0.0))
+                    if offset_dir.length > 0.001:
+                        offset_dir.normalize()
+                    else:
+                        offset_dir = _Vec((0.0, -1.0, 0.0))
+                    offset = offset_dir * 0.015  # 15mm outward
+                    new_co = wco + offset
+                    vert_map[vi] = bm_c.verts.new(new_co)
+                bm_verts.append(vert_map[vi])
+            try:
+                bm_c.faces.new(bm_verts)
+            except ValueError:
+                pass
+
         _bmesh.ops.recalc_face_normals(bm_c, faces=bm_c.faces)
 
         mesh_c = bpy.data.meshes.new(f"Clothing_{ctype}_Mesh")
@@ -788,7 +931,7 @@ def create_body_from_template(cfg: dict):
         obj_c = bpy.data.objects.new(f"Clothing_{ctype}", mesh_c)
         bpy.context.collection.objects.link(obj_c)
 
-        # Resolve per-item color: dict lookup → single override → type default
+        # Resolve colour
         if isinstance(clothing_color, dict):
             color_for_item = clothing_color.get(ctype, None)
         else:
@@ -800,30 +943,20 @@ def create_body_from_template(cfg: dict):
         bsdf_c = mat_c.node_tree.nodes.get("Principled BSDF")
         if bsdf_c:
             bsdf_c.inputs["Base Color"].default_value = rgba_c
-            bsdf_c.inputs["Roughness"].default_value = 0.55  # smooth for stylized look
-            bsdf_c.inputs["Specular IOR Level"].default_value = 0.30
+            bsdf_c.inputs["Roughness"].default_value = 0.65
+            bsdf_c.inputs["Specular IOR Level"].default_value = 0.15
         obj_c.data.materials.append(mat_c)
-
-        # Shrinkwrap → body mesh so clothing sits flush instead of floating.
-        # Rings start oversized (s=1.25) so every vertex is outside the body;
-        # NEAREST_SURFACEPOINT + OUTSIDE wrap mode pulls them down to the
-        # surface while the offset keeps them proud of the skin.
-        sw_mod = obj_c.modifiers.new(name="Shrinkwrap", type='SHRINKWRAP')
-        sw_mod.target = mesh_obj
-        sw_mod.wrap_method = 'NEAREST_SURFACEPOINT'
-        sw_mod.wrap_mode = 'OUTSIDE'
-        sw_mod.offset = 0.012  # offset so clothing sits just above skin
 
         # Edge-split for consistent faceted look matching the body
         es_mod = obj_c.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
         es_mod.split_angle = math.radians(38)
 
-        # Smooth shade the clothing to match body
+        # Smooth shade
         bpy.context.view_layer.objects.active = obj_c
         obj_c.select_set(True)
         bpy.ops.object.shade_smooth()
         obj_c.select_set(False)
 
-        extra_clothing_objs.append((obj_c, None))   # None → ARMATURE_AUTO skinning
+        extra_clothing_objs.append((obj_c, None))
 
     return mesh_obj, hair_obj, extra_head_objs + extra_clothing_objs

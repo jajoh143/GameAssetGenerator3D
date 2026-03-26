@@ -23,14 +23,15 @@ import math
 # face_y is sampled from actual head vertices at eye level, so it is the
 # true face-surface depth at the eye socket.  A small forward nudge (negative
 # fraction of head_r_horiz) lets the cartoon disc "pop" just off the surface.
-_EYE_FORWARD = 0.02   # disc protrudes 2 % of horizontal head radius forward
+_EYE_FORWARD = 0.10   # disc protrudes 10 % of horizontal head radius forward
 
 
 def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
     """Return (eye_r, eye_x, eye_z, eye_y, disc_y) for the current head.
 
     Args:
-        head_r:       Vertical head radius — used for Z offsets only.
+        head_z:       Z of the head CENTRE (midpoint between chin and crown).
+        head_r:       Vertical head HALF-HEIGHT (crown − centre).
         head_r_horiz: Horizontal head half-width — used for eye_r and eye_x
                       sizing so eyes scale with the actual head width.
                       Falls back to head_r when None.
@@ -39,9 +40,9 @@ def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
                       Y, with a small forward nudge so they sit on the surface.
     """
     hr_h   = head_r_horiz if head_r_horiz is not None else head_r
-    eye_r  = hr_h * 0.12           # larger for expressive cartoon look
-    eye_z  = head_z - head_r * 0.07  # slightly below equator
-    eye_x  = hr_h * 0.25           # lateral separation scales with head width
+    eye_r  = hr_h * 0.22           # big expressive cartoon eyes
+    eye_z  = head_z - head_r * 0.30  # well below head centre, in the face zone
+    eye_x  = hr_h * 0.32           # lateral separation scales with head width
 
     if face_y is not None:
         # Place disc slightly forward of (in front of) the face surface
@@ -51,6 +52,7 @@ def _eye_geometry(head_z, head_r, face_y, head_r_horiz=None):
         disc_y = -(hr_h * 0.62)
 
     eye_y = disc_y - eye_r
+    print(f"[eyes] eye_z={eye_z:.4f}, eye_x={eye_x:.4f}, eye_r={eye_r:.4f}, disc_y={disc_y:.4f}")
     return eye_r, eye_x, eye_z, eye_y, disc_y
 
 
@@ -76,9 +78,9 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None, head_r_horiz=None):
 
     eye_r, eye_x, eye_z, _eye_y, disc_y = _eye_geometry(head_z, head_r, face_y, head_r_horiz)
 
-    # Oval proportions — wider than tall, more stylized
-    rx = eye_r * 1.50
-    ry = eye_r * 1.10
+    # Oval proportions — slightly wider than tall for cartoon look
+    rx = eye_r * 1.25
+    ry = eye_r * 1.05
     n  = 10  # smoother disc with more segments
 
     bm = bmesh_mod.new()
@@ -121,20 +123,24 @@ def create_eyes(head_z, head_r, eye_color=None, face_y=None, head_r_horiz=None):
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (0.02, 0.02, 0.05, 1.0)
-        bsdf.inputs["Roughness"].default_value = 0.05
-        # Glossy eyes catch light better
-        bsdf.inputs["Specular IOR Level"].default_value = 0.8
+        bsdf.inputs["Base Color"].default_value = (0.01, 0.01, 0.02, 1.0)
+        bsdf.inputs["Roughness"].default_value = 1.0
+        # Completely matte — no specular at all
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+        # Subtle self-emission so the black is consistent and never shows
+        # edge lighting that creates a "ring" or "goggle" artifact
+        bsdf.inputs["Emission Color"].default_value = (0.02, 0.02, 0.03, 1.0)
+        bsdf.inputs["Emission Strength"].default_value = 0.5
     eye_obj.data.materials.append(mat)
 
     # ── White highlight dots ────────────────────────────────────────
     bm2 = bmesh_mod.new()
-    highlight_r = eye_r * 0.28  # bigger highlights for more life
+    highlight_r = eye_r * 0.18  # small glint, not so big it makes eyes look hollow
     hl_n = 6
     for x_sign in (1, -1):
-        cx = x_sign * eye_x + rx * 0.30  # offset upper-right of each eye
-        hz = eye_z + ry * 0.35
-        hy = disc_y - highlight_r * 0.5   # slightly in front of eye disc
+        cx = x_sign * eye_x + rx * 0.35  # clearly in upper-right corner
+        hz = eye_z + ry * 0.45           # high in the eye for anime-style glint
+        hy = disc_y - highlight_r * 0.8   # well in front of eye disc
         center_h = bm2.verts.new((cx, hy, hz))
         ring_h = [
             bm2.verts.new((
@@ -270,10 +276,14 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
 
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
-    nz       = head_z - head_r * 0.35        # below equator = nose bridge level
-    base_y   = (face_y - hr_h * 0.01) if face_y is not None else -(hr_h * 0.62)
-    nose_r   = hr_h * 0.10                   # nose radius — prominent cartoon nose
-    protrude = hr_h * 0.18                   # how far the nose tip sticks out
+    # head_z is now the centre of the head; nose sits between eyes and mouth
+    nz       = head_z - head_r * 0.42        # slightly higher for better visibility
+    # Face surface curves inward below the eyes, so we push the nose
+    # out extra far to clear the mesh at this lower Z level.
+    base_y   = (face_y - hr_h * 0.08) if face_y is not None else -(hr_h * 0.62)
+    nose_r   = hr_h * 0.20                   # big cartoon nose — must read from front view
+    protrude = hr_h * 0.50                   # very prominent forward protrusion
+    print(f"[nose] nz={nz:.4f}, base_y={base_y:.4f}, tip_y={base_y - protrude:.4f}, nose_r={nose_r:.4f}")
 
     # Build a half-sphere dome (8 segments, 3 latitude rings + tip)
     n_seg = 8
@@ -352,12 +362,12 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        # Slightly warmer/pinker than base skin so nose reads as distinct
+        # Noticeably pinker than base skin so nose reads as distinct
         if skin_tone:
             r, g, b, a = skin_tone
-            color = (min(r * 1.05, 1.0), g * 0.92, b * 0.88, 1.0)
+            color = (min(r * 1.15, 1.0), g * 0.80, b * 0.72, 1.0)
         else:
-            color = (0.70, 0.52, 0.42, 1.0)
+            color = (0.75, 0.48, 0.38, 1.0)
         bsdf.inputs["Base Color"].default_value = color
         bsdf.inputs["Roughness"].default_value = 0.45
         bsdf.inputs["Specular IOR Level"].default_value = 0.35
@@ -390,16 +400,19 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
 
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
-    # Position: well below nose, about 68% down from equator toward chin
-    mz_centre = head_z - head_r * 0.68
-    base_y    = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)
-    protrude  = hr_h * 0.08            # how far lips push forward from face
+    # Position: below nose, in the lower third of the head
+    # head_z is the centre of the head; mouth sits well below centre
+    mz_centre = head_z - head_r * 0.62
+    # Face curves sharply inward at chin level — push mouth way forward
+    base_y    = (face_y - hr_h * 0.10) if face_y is not None else -(hr_h * 0.62)
+    protrude  = hr_h * 0.40            # very prominent — must clear face mesh
+    print(f"[mouth] mz={mz_centre:.4f}, base_y={base_y:.4f}, protrude={protrude:.4f}")
 
-    # Sizing — wider and taller than before so the mouth is clearly visible
-    half_w    = hr_h * 0.22            # smile half-width (was 0.14)
-    upper_h   = head_r * 0.045         # upper lip height (was 0.03)
-    lower_h   = head_r * 0.055         # lower lip height (was 0.04)
-    gap       = head_r * 0.008         # dark line between lips
+    # Sizing — big and visible, proportional to full head width
+    half_w    = hr_h * 0.28            # wide smile
+    upper_h   = head_r * 0.14          # tall upper lip (was 0.06 — invisible)
+    lower_h   = head_r * 0.16          # tall lower lip (was 0.07 — invisible)
+    gap       = head_r * 0.012         # visible dark line between lips
     n_seg     = 8                      # segments along the smile curve
 
     bm = bmesh_mod.new()
@@ -463,10 +476,10 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     if bsdf:
         if skin_tone:
             r, g, b, a = skin_tone
-            # Boost red, reduce green/blue for visible rosy lips
-            lip_color = (min(r * 1.10, 1.0), g * 0.55, b * 0.50, 1.0)
+            # Strong rosy red — clearly distinct from skin at any distance
+            lip_color = (min(r * 1.20, 1.0), g * 0.40, b * 0.35, 1.0)
         else:
-            lip_color = (0.78, 0.38, 0.35, 1.0)
+            lip_color = (0.82, 0.30, 0.28, 1.0)
         bsdf.inputs["Base Color"].default_value = lip_color
         bsdf.inputs["Roughness"].default_value  = 0.42
         bsdf.inputs["Specular IOR Level"].default_value = 0.35
@@ -500,9 +513,9 @@ def create_mustache(head_z, head_r, face_y=None, head_r_horiz=None,
 
     color = tuple(mustache_color) if mustache_color else (0.12, 0.07, 0.04, 1.0)
 
-    # Z band: just below nose (~47%), above upper lip (~56%)
-    mz_top = head_z - head_r * 0.46
-    mz_bot = head_z - head_r * 0.58
+    # Z band: between nose and mouth (head_z is now head centre)
+    mz_top = head_z - head_r * 0.55
+    mz_bot = head_z - head_r * 0.65
     mh = mz_top - mz_bot
 
     base_y = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)
