@@ -674,6 +674,25 @@ def create_body_from_template(cfg: dict):
         else:
             face_y = 0.0
 
+        # Sample face_y at nose level (below head centre) so the nose is
+        # placed on the actual face surface at its own height rather than
+        # using the eye-level depth (the face curves inward below the eyes).
+        nz_level = head_z - head_r * 0.40
+        nose_face_ys = [wco.y for wco in head_candidate_verts
+                        if nz_level - head_r * 0.18 < wco.z < nz_level + head_r * 0.18
+                        and abs(wco.x) < head_r_horiz * 0.40]
+        nose_face_y = min(nose_face_ys) if nose_face_ys else face_y
+
+        # Sample face_y at mouth level.
+        mz_level = head_z - head_r * 0.65
+        mouth_face_ys = [wco.y for wco in head_candidate_verts
+                         if mz_level - head_r * 0.16 < wco.z < mz_level + head_r * 0.16
+                         and abs(wco.x) < head_r_horiz * 0.35]
+        mouth_face_y = min(mouth_face_ys) if mouth_face_ys else face_y
+
+        print(f"[template_mesh] face_y (eye)={face_y:.4f}, "
+              f"nose_face_y={nose_face_y:.4f}, mouth_face_y={mouth_face_y:.4f}")
+
         # Also compute the equator Z (widest point of head) for hair placement.
         # Hair _build_cap expects head_z = equator and head_r = crown − equator.
         # We keep those as hair_head_z / hair_head_r.
@@ -751,6 +770,8 @@ def create_body_from_template(cfg: dict):
         world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
                        for v in mesh_obj.bound_box]
         face_y = min(v.y for v in world_verts)
+        nose_face_y  = face_y
+        mouth_face_y = face_y
 
     # ── Ensure new objects land in the main scene collection ─────────────────
     # After importing a GLB the active layer-collection can be left pointing
@@ -792,14 +813,14 @@ def create_body_from_template(cfg: dict):
     extra_head_objs.append((brow_obj, "Head"))
 
     # ── Nose ──────────────────────────────────────────────────────────────────
-    nose_obj = eyes_module.create_nose(head_z, head_r, face_y=face_y,
+    nose_obj = eyes_module.create_nose(head_z, head_r, face_y=nose_face_y,
                                        head_r_horiz=head_r_horiz,
                                        skin_tone=skin_tone if isinstance(skin_tone, tuple)
                                                  else None)
     extra_head_objs.append((nose_obj, "Head"))
 
     # ── Mouth ─────────────────────────────────────────────────────────────────
-    mouth_obj = eyes_module.create_mouth(head_z, head_r, face_y=face_y,
+    mouth_obj = eyes_module.create_mouth(head_z, head_r, face_y=mouth_face_y,
                                          head_r_horiz=head_r_horiz,
                                          skin_tone=skin_tone if isinstance(skin_tone, tuple)
                                                    else None)

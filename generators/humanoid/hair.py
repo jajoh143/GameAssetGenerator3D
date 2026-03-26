@@ -291,7 +291,7 @@ _CAP_LEVELS = [
     (0.00, 0.97, 0.90),   # hairline / brow  — equatorial
     (0.50, 0.84, 0.77),   # upper forehead
     (0.86, 0.52, 0.48),   # upper cranium
-    (0.97, 0.14, 0.13),   # crown apex
+    (0.97, 0.22, 0.20),   # crown apex — widened to clear non-spherical heads
 ]
 
 _CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
@@ -347,7 +347,7 @@ _SHORT_CAP_LEVELS = [
     (0.00, 0.97, 0.90),   # hairline — equatorial (ear/temple, full circumference)
     (0.45, 0.86, 0.79),   # upper sides
     (0.78, 0.55, 0.50),   # upper cranium
-    (0.92, 0.18, 0.16),   # crown apex
+    (0.92, 0.36, 0.33),   # crown apex — widened to clear non-spherical heads
 ]
 
 
@@ -392,7 +392,7 @@ _SPIKY_CAP_LEVELS = [
     (0.20, 0.98, 0.98),   # hairline — low on forehead, wide coverage
     (0.48, 0.86, 0.79),   # upper sides
     (0.72, 0.60, 0.55),   # upper cranium
-    (0.88, 0.30, 0.28),   # crown — small ring; spike bases sit at this level
+    (0.88, 0.44, 0.40),   # crown — widened to clear non-spherical heads
 ]
 
 
