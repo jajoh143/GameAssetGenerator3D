@@ -277,10 +277,9 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
     # head_z is the centre of the full head; nose sits below centre.
-    # 0.40 puts the nose at ~30 % from the bottom of the full head —
-    # halfway between the eyes (57.5 %) and the chin (0 %), matching
-    # the cartoon "halfway rule" (nose = midpoint of eyes→chin).
-    nz       = head_z - head_r * 0.40
+    # 0.50 puts the nose at ~25 % from the bottom of the full head —
+    # the classic cartoon midpoint between eyes (~57.5 %) and chin (0 %).
+    nz       = head_z - head_r * 0.50
     # face_y here is sampled at nose level, so base_y is the actual face
     # surface at this Z; add a small forward nudge so the nose clears it.
     base_y   = (face_y - hr_h * 0.06) if face_y is not None else -(hr_h * 0.62)
@@ -404,11 +403,11 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
 
     # Position: below nose, in the lower third of the head.
-    # 0.65 puts the mouth at ~17.5 % from bottom of the full head —
-    # in the lower third of the face, below the nose (at 30 %).
-    mz_centre = head_z - head_r * 0.65
-    # face_y here is sampled at mouth level; add extra forward nudge
-    # since the face curves inward sharply near the chin.
+    # 0.70 puts the mouth at ~15 % from bottom of the full head —
+    # in the lower third of the face, below the nose (at 25 %).
+    mz_centre = head_z - head_r * 0.70
+    # face_y is sampled at mouth level (front-facing verts only);
+    # extra forward nudge clears the inward-curving chin surface.
     base_y    = (face_y - hr_h * 0.10) if face_y is not None else -(hr_h * 0.62)
     protrude  = hr_h * 0.35            # prominent — must clear face mesh
     print(f"[mouth] mz={mz_centre:.4f}, base_y={base_y:.4f}, protrude={protrude:.4f}")
@@ -518,9 +517,9 @@ def create_mustache(head_z, head_r, face_y=None, head_r_horiz=None,
 
     color = tuple(mustache_color) if mustache_color else (0.12, 0.07, 0.04, 1.0)
 
-    # Z band: between nose (0.40) and mouth (0.65), adjusted for new positions
-    mz_top = head_z - head_r * 0.48
-    mz_bot = head_z - head_r * 0.58
+    # Z band: between nose (0.50) and mouth (0.70)
+    mz_top = head_z - head_r * 0.58
+    mz_bot = head_z - head_r * 0.65
     mh = mz_top - mz_bot
 
     base_y = (face_y - hr_h * 0.005) if face_y is not None else -(hr_h * 0.62)

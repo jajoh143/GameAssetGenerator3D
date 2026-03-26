@@ -674,20 +674,24 @@ def create_body_from_template(cfg: dict):
         else:
             face_y = 0.0
 
-        # Sample face_y at nose level (below head centre) so the nose is
-        # placed on the actual face surface at its own height rather than
-        # using the eye-level depth (the face curves inward below the eyes).
-        nz_level = head_z - head_r * 0.40
+        # Sample face_y at nose level.  Restrict to front-facing (y < 0)
+        # vertices only — at lower Z levels the narrow-X filter otherwise
+        # captures back-of-neck vertices (positive Y, small abs(x)) rather
+        # than the actual face surface.
+        nz_level = head_z - head_r * 0.50
         nose_face_ys = [wco.y for wco in head_candidate_verts
                         if nz_level - head_r * 0.18 < wco.z < nz_level + head_r * 0.18
-                        and abs(wco.x) < head_r_horiz * 0.40]
+                        and abs(wco.x) < head_r_horiz * 0.45
+                        and wco.y < 0]   # front-facing only
         nose_face_y = min(nose_face_ys) if nose_face_ys else face_y
 
-        # Sample face_y at mouth level.
-        mz_level = head_z - head_r * 0.65
+        # Sample face_y at mouth level.  Same front-facing guard; no X
+        # restriction here because the chin is wide and the central strip is
+        # occupied by the neck (positive Y) at this low Z.
+        mz_level = head_z - head_r * 0.70
         mouth_face_ys = [wco.y for wco in head_candidate_verts
                          if mz_level - head_r * 0.16 < wco.z < mz_level + head_r * 0.16
-                         and abs(wco.x) < head_r_horiz * 0.35]
+                         and wco.y < 0]  # front-facing only, no X restriction
         mouth_face_y = min(mouth_face_ys) if mouth_face_ys else face_y
 
         print(f"[template_mesh] face_y (eye)={face_y:.4f}, "
