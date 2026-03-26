@@ -37,7 +37,7 @@ import math
 
 # ── Data constants (no bpy dependency) ────────────────────────────────────────
 
-HAIR_STYLES = ("none", "buzzed", "short", "spiky", "long", "mohawk", "ponytail")
+HAIR_STYLES = ("none", "buzzed", "short", "spiky", "slicked", "long", "mohawk", "ponytail")
 
 HAIR_COLORS = {
     "black":      (0.05, 0.04, 0.04, 1.0),
@@ -201,32 +201,35 @@ def _hair_clump(bm, spine, widths):
         pass
 
 
-def _fringe_clumps(bm, head_r, hl_z, fr_y, clump_defs):
+def _fringe_clumps(bm, head_r, hl_z, fr_y, clump_defs, head_r_horiz=None):
     """Lay out overlapping hair clumps forming a fringe / bangs.
 
     Args:
-        head_r:     Head radius in metres.
-        hl_z:       Z of the hairline ring (= head_z for the equatorial ring).
-        fr_y:       Y of the cap front surface (negative = forward).
+        head_r:       Head radius (vertical) in metres — used for Z offsets.
+        head_r_horiz: Horizontal head half-width in metres — used for X/Y
+                      positioning.  Falls back to head_r when None.
+        hl_z:         Z of the hairline ring (= head_z for the equatorial ring).
+        fr_y:         Y of the cap front surface (negative = forward).
         clump_defs: list of tuples:
           (cx, x_drift, y_fwd, z_mid, z_tip, w_root)
-          cx        — X centre as multiple of head_r
-          x_drift   — extra X at tip (×head_r), for sideways sweep
-          y_fwd     — how far the tip comes forward (×head_r, added to fr_y)
+          cx        — X centre as multiple of head_r_horiz
+          x_drift   — extra X at tip (×head_r_horiz), for sideways sweep
+          y_fwd     — how far the tip comes forward (×head_r_horiz, added to fr_y)
           z_mid     — Z drop at mid-point below root (×head_r)
           z_tip     — Z drop at tip below root (×head_r)
-          w_root    — half-width at root (×head_r)
+          w_root    — half-width at root (×head_r_horiz)
     """
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
     for cx, x_drift, y_fwd, z_mid, z_tip, w_root in clump_defs:
-        rx      = cx     * head_r
-        drift   = x_drift * head_r
-        wd_root = w_root  * head_r
+        rx      = cx      * hr_h
+        drift   = x_drift * hr_h
+        wd_root = w_root  * hr_h
         wd_mid  = wd_root * 0.58   # tapers to ~58 % at mid-point
 
         spine = [
-            (rx,                  fr_y,                       hl_z + head_r * 0.02),
-            (rx + drift * 0.5,    fr_y - head_r * y_fwd * 0.5, hl_z - head_r * z_mid),
-            (rx + drift,          fr_y - head_r * y_fwd,       hl_z - head_r * z_tip),
+            (rx,                  fr_y,                        hl_z + head_r * 0.02),
+            (rx + drift * 0.5,    fr_y - hr_h * y_fwd * 0.5,  hl_z - head_r * z_mid),
+            (rx + drift,          fr_y - hr_h * y_fwd,         hl_z - head_r * z_tip),
         ]
         _hair_clump(bm, spine, [wd_root, wd_mid, 0])
 
@@ -294,23 +297,27 @@ _CAP_LEVELS = [
 _CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
 
 
-def _build_cap(bm, head_z, head_r, h_scale=1.07, levels=None):
+def _build_cap(bm, head_z, head_r, h_scale=1.20, levels=None, head_r_horiz=None):
     """Build the shared domed cap from hairline to crown.
 
     Args:
+        head_r:       Vertical head radius (equator→crown) — used for Z offsets.
+        head_r_horiz: Horizontal head half-width — used for ring rx/ry so the
+                      cap clears the actual head surface.  Falls back to head_r.
         levels: list of (z_off, rx_mult, ry_mult) tuples overriding _CAP_LEVELS.
                 Useful for styles that need a non-equatorial hairline start.
 
     Returns ring lists; crown is closed, hairline is left open.
     """
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
     if levels is None:
         levels = _CAP_LEVELS
     rings = []
     for z_off, rx_m, ry_m in levels:
-        z = head_z + head_r * z_off
+        z = head_z + head_r * z_off        # Z position: vertical radius
         rings.append(_ring(bm, 0, 0, z,
-                           head_r * rx_m * h_scale,
-                           head_r * ry_m * h_scale,
+                           hr_h * rx_m * h_scale,   # ring width: horizontal radius
+                           hr_h * ry_m * h_scale,   # ring depth: horizontal radius
                            n=_CAP_RING_N))
     for i in range(len(rings) - 1):
         _bridge(bm, rings[i], rings[i + 1])
@@ -320,9 +327,9 @@ def _build_cap(bm, head_z, head_r, h_scale=1.07, levels=None):
 
 # ── Style builders ─────────────────────────────────────────────────────────────
 
-def _build_buzzed(bm, head_z, head_r):
+def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
     """Skullcap hugging the head tightly — very short all over."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.03)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.15, head_r_horiz=head_r_horiz)
     hl = rings[0]
     # Single unified row around the back 270° for seamless ear/nape coverage
     _panel_rows(bm, _back_half_verts(hl), [
@@ -331,39 +338,50 @@ def _build_buzzed(bm, head_z, head_r):
 
 
 
-# Custom cap levels for the short style.
-# Flat close-cropped cap: hairline at z_off=0.33 (forehead), crown
-# compressed to z_off=0.82 so the dome sits low and flat on the head.
-# h_scale=1.10 clears the template-mesh head (wider than sphere approx).
-# At z_off=0.33: sphere_xy ≈ 0.944 hr; cap_rx = 0.97 × 1.10 hr = 1.067 hr ✓
+# Cap levels for the short style.
+# Hairline starts at z_off=0.00 (equatorial = ear/temple level) so the cap
+# wraps fully around the head circumference.  Crown compressed to z_off=0.92
+# for a flat low-profile look.  h_scale=1.20 gives ~3 % clearance from the
+# head surface using the actual horizontal radius (head_r_horiz).
 _SHORT_CAP_LEVELS = [
-    (0.33, 0.97, 0.97),   # hairline — upper-forehead elevation
-    (0.58, 0.80, 0.74),   # mid-cap
-    (0.82, 0.46, 0.42),   # upper — crown compressed for flat look
-    (0.92, 0.18, 0.16),   # crown apex (lower than standard 0.97)
+    (0.00, 0.97, 0.90),   # hairline — equatorial (ear/temple, full circumference)
+    (0.45, 0.86, 0.79),   # upper sides
+    (0.78, 0.55, 0.50),   # upper cranium
+    (0.92, 0.18, 0.16),   # crown apex
 ]
 
 
-def _build_short(bm, head_z, head_r):
-    """Short flat hair: tight cap with no bangs + back panel to nape.
+def _build_short(bm, head_z, head_r, head_r_horiz=None):
+    """Short flat hair: full-circumference cap from ear level to crown,
+    nape panel, and short fringe clumps over the forehead.
 
-    Style intent: close-cropped, sits flat on the head, exposed forehead,
-    no fringe.  The dome is deliberately compressed (crown at z_off=0.92
-    rather than 0.97) to read as flat/short rather than rounded/voluminous.
-
-    Back-panel x/y_scale < 1.0 gives a natural inward taper toward the nape.
-    (hr = head_r; hairline_rx = 0.97 × 1.10 hr = 1.067 hr)
+    Hairline sits at the equatorial ring (ear/temple level) so hair wraps all
+    the way around the head.  A back-half panel drops from the hairline to the
+    nape.  Short fringe clumps fill the front/forehead zone.
     """
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.10, levels=_SHORT_CAP_LEVELS)
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SHORT_CAP_LEVELS,
+                       head_r_horiz=head_r_horiz)
     hl = rings[0]
 
-    # Back-half panel — four equal steps totalling 0.63 × head_r to nape.
+    # Back-half panel — 3 rows from ear level down to nape.
     _panel_rows(bm, _back_half_verts(hl), [
-        (-head_r * 0.16, 0.95, 0.95),   # z_off≈+0.17
-        (-head_r * 0.16, 0.97, 0.97),   # z_off≈+0.01 — equatorial
-        (-head_r * 0.16, 0.95, 0.95),   # z_off≈-0.15
-        (-head_r * 0.15, 0.92, 0.92),   # z_off≈-0.30 — nape
+        (-head_r * 0.16, 0.97, 0.95),   # just below ear level
+        (-head_r * 0.15, 0.93, 0.90),   # nape
+        (-head_r * 0.13, 0.88, 0.85),   # lower nape
     ])
+
+    # Short fringe — 5 shallow clumps just above the brow line.
+    # fr_y: front surface of the cap at hairline level.
+    hl_z = hl[0].co.z
+    fr_y = -(hr_h * 0.90 * 1.06) - 0.003
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.46, -0.05, 0.04, 0.04, 0.12, 0.13),   # left temple
+        (-0.22,  0.00, 0.05, 0.04, 0.13, 0.13),
+        ( 0.00,  0.00, 0.05, 0.04, 0.14, 0.15),   # centre
+        ( 0.22,  0.00, 0.05, 0.04, 0.13, 0.13),
+        ( 0.46,  0.05, 0.04, 0.04, 0.12, 0.13),   # right temple
+    ], head_r_horiz=hr_h)
 
 
 # Cap levels for the spiky style.  The hairline is lower (z_off=0.20) than
@@ -378,7 +396,7 @@ _SPIKY_CAP_LEVELS = [
 ]
 
 
-def _build_spiky(bm, head_z, head_r):
+def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
     """Anime-style spiky hair: tight side/back cap + angular wedge spike crest.
 
     Redesigned from the old round-cone radial layout to match the anime
@@ -401,7 +419,8 @@ def _build_spiky(bm, head_z, head_r):
 
     Face budget: cap ≈ 48 + back panel ≈ 24 + spikes 6 × 4 = 24 → ~96 total.
     """
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.10, levels=_SPIKY_CAP_LEVELS)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SPIKY_CAP_LEVELS,
+                       head_r_horiz=head_r_horiz)
     hl = rings[0]
 
     # Side/back panel — 3 rows, same sphere-tracking taper as short style
@@ -449,9 +468,47 @@ def _build_spiky(bm, head_z, head_r):
                 pass
 
 
-def _build_long(bm, head_z, head_r):
+def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
+    """Slicked-back / pompadour hair: full cap + clean back panel + front quiff.
+
+    The fringe clumps rise *upward* from the front hairline rather than
+    drooping forward — creating the swept-back, voluminous-front look of
+    classic 1950s-style slicked hair (à la Freddie Mercury / Kenney char4).
+
+    Cap levels reuse _SHORT_CAP_LEVELS (equatorial hairline → crown).
+    Back panel drops slightly further than "short" for a clean nape.
+    Quiff: 5 clumps with negative z_tip so tips rise above the hairline.
+    """
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, levels=_SHORT_CAP_LEVELS,
+                       head_r_horiz=head_r_horiz)
+    hl = rings[0]
+    hl_z = hl[0].co.z
+
+    # Back panel — 4 rows, tucks under the nape cleanly
+    _panel_rows(bm, _back_half_verts(hl), [
+        (-head_r * 0.18, 0.97, 0.95),
+        (-head_r * 0.17, 0.94, 0.92),
+        (-head_r * 0.15, 0.90, 0.87),
+        (-head_r * 0.13, 0.85, 0.82),
+    ])
+
+    # Front quiff — clumps start at the hairline, tips sweep UP (negative z_tip)
+    # z_tip = -0.22 → tip Z = hl_z + head_r*0.22 (22 % radius above hairline)
+    fr_y = -(hr_h * 0.90 * 1.06) - 0.003
+    _fringe_clumps(bm, head_r, hl_z, fr_y, [
+        (-0.45,  0.10, 0.00, -0.07, -0.18, 0.05),   # far left
+        (-0.22,  0.05, 0.00, -0.08, -0.22, 0.06),
+        ( 0.00,  0.00, 0.00, -0.09, -0.26, 0.07),   # centre — tallest
+        ( 0.22, -0.05, 0.00, -0.08, -0.22, 0.06),
+        ( 0.45, -0.10, 0.00, -0.07, -0.18, 0.05),   # far right
+    ], head_r_horiz=hr_h)
+
+
+def _build_long(bm, head_z, head_r, head_r_horiz=None):
     """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.09)
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.22, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -468,21 +525,22 @@ def _build_long(bm, head_z, head_r):
     ])
 
     # Fringe — 5 tapered clumps, longer drop than short style.
-    fr_y = -(head_r * 0.90 * 1.09) - 0.005
+    fr_y = -(hr_h * 0.90 * 1.09) - 0.005
     _fringe_clumps(bm, head_r, hl_z, fr_y, [
         (-0.52, -0.08, 0.07, 0.06, 0.22, 0.15),
         (-0.26,  0.00, 0.08, 0.06, 0.20, 0.15),
         ( 0.00,  0.00, 0.09, 0.06, 0.22, 0.17),
         ( 0.26,  0.00, 0.08, 0.06, 0.20, 0.15),
         ( 0.52,  0.08, 0.07, 0.06, 0.22, 0.15),
-    ])
+    ], head_r_horiz=hr_h)
 
 
-def _build_mohawk(bm, head_z, head_r):
+def _build_mohawk(bm, head_z, head_r, head_r_horiz=None):
     """Tall central fin front-to-back with closely-cropped side caps."""
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
     # Two partial side domes, offset left/right
     for x_sign in [1, -1]:
-        cx = x_sign * head_r * 0.50
+        cx = x_sign * hr_h * 0.50
         side_rings = []
         for z_off, rx_m, ry_m in [
             (0.00, 0.36, 0.80),
@@ -491,7 +549,7 @@ def _build_mohawk(bm, head_z, head_r):
         ]:
             side_rings.append(
                 _ring(bm, cx, 0, head_z + head_r * z_off,
-                      head_r * rx_m, head_r * ry_m)
+                      hr_h * rx_m, hr_h * ry_m)
             )
         for i in range(len(side_rings) - 1):
             _bridge(bm, side_rings[i], side_rings[i + 1])
@@ -499,7 +557,7 @@ def _build_mohawk(bm, head_z, head_r):
 
     # Central fin: 7 tapered segments, tallest at centre
     crown_z = head_z + head_r * 0.90
-    ridge_w = head_r * 0.20    # half-width of each fin panel
+    ridge_w = hr_h * 0.20      # half-width of each fin panel (horizontal scale)
     ridge_d = head_r * 0.14    # front-to-back depth per segment
     peak_h  = head_r * 1.10
     y_start = -head_r * 0.28
@@ -527,9 +585,10 @@ def _build_mohawk(bm, head_z, head_r):
                 pass
 
 
-def _build_ponytail(bm, head_z, head_r):
+def _build_ponytail(bm, head_z, head_r, head_r_horiz=None):
     """Short front/sides with a gathered bundle hanging at the back."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.07)
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.20, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -540,12 +599,12 @@ def _build_ponytail(bm, head_z, head_r):
     ])
 
     # Fringe — 3 shorter clumps (less drop; most hair is in the ponytail).
-    fr_y = -(head_r * 0.90 * 1.07) - 0.005
+    fr_y = -(hr_h * 0.90 * 1.07) - 0.005
     _fringe_clumps(bm, head_r, hl_z, fr_y, [
         (-0.38, -0.05, 0.05, 0.04, 0.14, 0.13),
         ( 0.00,  0.00, 0.06, 0.04, 0.14, 0.14),
         ( 0.38,  0.05, 0.05, 0.04, 0.14, 0.13),
-    ])
+    ], head_r_horiz=hr_h)
 
     # Ponytail bundle — stacked rings hanging from the nape
     pt_cy  = head_r * 0.85        # sits behind the head
@@ -598,6 +657,7 @@ _STYLE_BUILDERS = {
     "buzzed":   _build_buzzed,
     "short":    _build_short,
     "spiky":    _build_spiky,
+    "slicked":  _build_slicked,
     "long":     _build_long,
     "mohawk":   _build_mohawk,
     "ponytail": _build_ponytail,
@@ -609,14 +669,17 @@ HAIR_BUILDERS = _STYLE_BUILDERS
 
 # ── Public entry point ─────────────────────────────────────────────────────────
 
-def create_hair(head_z, head_r, style="short", color=None):
+def create_hair(head_z, head_r, style="short", color=None, head_r_horiz=None):
     """Build hair geometry and return a linked Blender mesh object.
 
     Args:
-        head_z: Z coordinate of the head *centre* (= neck_z + head_r).
-        head_r: Head radius in metres.
-        style:  Name from HAIR_STYLES.  "none" returns None.
-        color:  RGBA tuple, a key from HAIR_COLORS, or None (→ dark_brown).
+        head_z:       Z coordinate of the head equator (ear/temple level).
+        head_r:       Vertical head radius (equator→crown) in metres.
+        head_r_horiz: Horizontal head half-width in metres.  Used for ring
+                      sizing so the cap clears non-spherical heads.  Falls
+                      back to head_r when None (NBM meshes / legacy callers).
+        style:        Name from HAIR_STYLES.  "none" returns None.
+        color:        RGBA tuple, a key from HAIR_COLORS, or None (→ dark_brown).
 
     Returns:
         A linked bpy.types.Object, or None when style is "none".
@@ -642,7 +705,7 @@ def create_hair(head_z, head_r, style="short", color=None):
 
     # Build geometry
     bm = bmesh_mod.new()
-    _STYLE_BUILDERS[style](bm, head_z, head_r)
+    _STYLE_BUILDERS[style](bm, head_z, head_r, head_r_horiz=head_r_horiz)
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
     # Convert to Blender mesh object
@@ -657,54 +720,59 @@ def create_hair(head_z, head_r, style="short", color=None):
     obj.select_set(True)
     bpy.ops.object.shade_smooth()
 
-    # Principled BSDF tuned for stylized low-poly hair:
-    #   - Mid roughness (0.55) avoids the chalky look of high roughness
-    #   - Low anisotropy (0.15) + rotation (0.1) adds directionality
-    #     without creating confusing highlights on flat poly geometry
-    #   - Sheen (0.2) gives a soft rim edge that reads as hair fibre
-    #   - Slight specular tint warms the highlight toward the hair colour
-    # Sources: Blender 4.x Principled BSDF manual, Blender Artists community
+    # Flat cartoon hair material
+    # ──────────────────────────────────────────────────────────────────────
+    # Research findings (CGCookie, Blender Artists, polycount):
+    #
+    #   Cartoon hair reads as "flat" when specular highlights are eliminated
+    #   and colour variation is minimal across the surface.  The standard
+    #   technique for game-ready cartoon assets is:
+    #
+    #     1. Mix a small Emission contribution (~30 %) with a near-fully-matte
+    #        Diffuse BSDF (roughness ≥ 0.92).
+    #     2. Emission flattens shadowed areas so the colour stays uniform;
+    #        Diffuse retains just enough depth cueing to read the 3-D shape.
+    #     3. Zero specular — no glossy highlights that would break the toon look.
+    #
+    #   This approach works identically in both Cycles and Eevee, which
+    #   Principled Hair BSDF does not (it is Cycles-only).
+    #
+    # Node graph:
+    #   Emission(rgba, 0.35) ─┐
+    #                          Mix(fac=0.30) → Material Output
+    #   Diffuse(rgba, 0.92)  ─┘
     mat = bpy.data.materials.new(name="Hair_Material")
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    if bsdf:
-        bsdf.inputs["Base Color"].default_value = rgba
-        bsdf.inputs["Roughness"].default_value = 0.55
 
-        # Specular (input name changed in Blender 4.0)
-        if "Specular IOR Level" in bsdf.inputs:
-            bsdf.inputs["Specular IOR Level"].default_value = 0.15
-        elif "Specular" in bsdf.inputs:
-            bsdf.inputs["Specular"].default_value = 0.15
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
 
-        # Directional sheen — keep low so it reads on simple geometry
-        if "Anisotropic" in bsdf.inputs:
-            bsdf.inputs["Anisotropic"].default_value = 0.15
-        if "Anisotropic Rotation" in bsdf.inputs:
-            bsdf.inputs["Anisotropic Rotation"].default_value = 0.1
+    # Material Output
+    out_node = nodes.new('ShaderNodeOutputMaterial')
+    out_node.location = (600, 0)
 
-        # Soft edge rim — simulates fine surface fibres
-        if "Sheen Weight" in bsdf.inputs:       # Blender 4.x
-            bsdf.inputs["Sheen Weight"].default_value = 0.20
-        elif "Sheen" in bsdf.inputs:             # Blender 3.x
-            bsdf.inputs["Sheen"].default_value = 0.20
-        if "Sheen Roughness" in bsdf.inputs:
-            bsdf.inputs["Sheen Roughness"].default_value = 0.50
+    # Mix Shader — 30 % emission, 70 % diffuse
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.inputs[0].default_value = 0.30
+    mix_node.location = (400, 0)
 
-        # Warm the specular highlight toward the hair colour
-        if "Specular Tint" in bsdf.inputs:
-            si = bsdf.inputs["Specular Tint"]
-            try:
-                # Blender 4.x — colour input
-                r, g, b, a = rgba
-                si.default_value = (
-                    min(r * 1.15, 1.0),
-                    min(g * 1.10, 1.0),
-                    min(b * 1.05, 1.0),
-                    1.0,
-                )
-            except TypeError:
-                si.default_value = 0.4   # Blender 3.x — float input
+    # Emission — provides the flat, self-lit cartoon colour
+    emit_node = nodes.new('ShaderNodeEmission')
+    emit_node.inputs['Color'].default_value = rgba
+    emit_node.inputs['Strength'].default_value = 0.50
+    emit_node.location = (150, 120)
+
+    # Diffuse BSDF — near-fully matte; supplies subtle depth cueing
+    diff_node = nodes.new('ShaderNodeBsdfDiffuse')
+    diff_node.inputs['Color'].default_value = rgba
+    diff_node.inputs['Roughness'].default_value = 0.92
+    diff_node.location = (150, -80)
+
+    links.new(emit_node.outputs['Emission'],  mix_node.inputs[1])
+    links.new(diff_node.outputs['BSDF'],      mix_node.inputs[2])
+    links.new(mix_node.outputs['Shader'],     out_node.inputs['Surface'])
+
     obj.data.materials.append(mat)
 
     return obj

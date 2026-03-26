@@ -130,6 +130,26 @@ PRESETS = {
         "limb_thickness": 0.75,
         "torso_depth": 0.13,
     },
+    # ── Kenney-style chibi character (reference: Kenney Characters pack) ──
+    # Large round head (~38% of height), very short torso and legs, thick
+    # limbs — the "chibi" / toy-figure proportions used in the Kenney asset
+    # pack.  Use with use_template=True + Cartoon_Male.glb whose mesh already
+    # has the right head-to-body ratio; these values drive clothing placement.
+    "kenney": {
+        "height": 1.50,          # same as average (Cartoon_Male natural height)
+        "shoulder_width": 0.21,  # slightly narrower than average
+        "hip_width": 0.115,
+        "head_size": 0.24,       # larger head for chibi emphasis
+        "arm_length": 0.50,      # shorter arms
+        "leg_length": 0.42,      # shorter legs
+        "torso_length": 0.38,    # shorter torso
+        "neck_length": 0.05,
+        "hand_size": 0.062,
+        "foot_length": 0.18,
+        "foot_width": 0.08,
+        "limb_thickness": 1.10,  # thicker limbs for cartoon look
+        "torso_depth": 0.15,
+    },
 }
 
 
@@ -197,13 +217,13 @@ GENDERS = {
 # ─── Skin tones ─────────────────────────────────────────────────────────────
 
 SKIN_TONES = {
-    "light":    (0.85, 0.72, 0.60, 1.0),
-    "fair":     (0.76, 0.61, 0.48, 1.0),
-    "medium":   (0.65, 0.50, 0.38, 1.0),
-    "olive":    (0.58, 0.45, 0.30, 1.0),
-    "tan":      (0.50, 0.38, 0.25, 1.0),
-    "brown":    (0.40, 0.28, 0.18, 1.0),
-    "dark":     (0.28, 0.18, 0.12, 1.0),
+    "light":    (0.90, 0.75, 0.65, 1.0),
+    "fair":     (0.82, 0.66, 0.54, 1.0),
+    "medium":   (0.78, 0.60, 0.46, 1.0),
+    "olive":    (0.62, 0.50, 0.35, 1.0),
+    "tan":      (0.55, 0.42, 0.30, 1.0),
+    "brown":    (0.45, 0.32, 0.22, 1.0),
+    "dark":     (0.32, 0.22, 0.16, 1.0),
     # Game-specific tones
     "zombie":   (0.45, 0.55, 0.35, 1.0),
     "orc":      (0.30, 0.50, 0.25, 1.0),

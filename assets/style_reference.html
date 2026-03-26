@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Low-Poly Stylized Character — Target Style Reference</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
+  h1 { text-align: center; margin-bottom: 10px; color: #e94560; font-size: 28px; }
+  .subtitle { text-align: center; color: #999; margin-bottom: 40px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 30px; max-width: 1200px; margin: 0 auto; }
+  .card { background: #16213e; border-radius: 12px; padding: 24px; border: 1px solid #0f3460; }
+  .card h2 { color: #e94560; margin-bottom: 12px; font-size: 18px; }
+  .card p { line-height: 1.6; color: #ccc; font-size: 14px; }
+  .card ul { margin: 10px 0 0 20px; color: #ccc; font-size: 14px; line-height: 1.8; }
+  .references { max-width: 1200px; margin: 40px auto 0; }
+  .references h2 { color: #e94560; margin-bottom: 15px; }
+  .references a { color: #53a8b6; text-decoration: none; display: block; margin: 8px 0; font-size: 14px; }
+  .references a:hover { text-decoration: underline; }
+
+  /* Inline SVG character examples */
+  .char-row { display: flex; justify-content: center; gap: 40px; margin: 30px auto; flex-wrap: wrap; }
+  .char-example { text-align: center; }
+  .char-example svg { filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
+  .char-label { color: #999; font-size: 12px; margin-top: 8px; }
+
+  .highlight { color: #e94560; font-weight: 600; }
+  .good { color: #4ecca3; }
+  .bad { color: #e94560; }
+</style>
+</head>
+<body>
+
+<h1>Target Style: Low-Poly Stylized Game Character</h1>
+<p class="subtitle">Reference guide for the GameAssetGenerator3D humanoid pipeline</p>
+
+<!-- Inline SVG illustrations of the target style -->
+<div class="char-row">
+  <!-- Good example -->
+  <div class="char-example">
+    <svg width="140" height="240" viewBox="0 0 140 240">
+      <!-- Ground shadow -->
+      <ellipse cx="70" cy="232" rx="35" ry="6" fill="rgba(0,0,0,0.3)"/>
+      <!-- Shoes -->
+      <rect x="38" y="210" width="22" height="18" rx="4" fill="#3a5ba0"/>
+      <rect x="80" y="210" width="22" height="18" rx="4" fill="#3a5ba0"/>
+      <!-- Pants (brown) -->
+      <rect x="40" y="165" width="20" height="50" rx="3" fill="#5a3a1e"/>
+      <rect x="80" y="165" width="20" height="50" rx="3" fill="#5a3a1e"/>
+      <!-- Torso / Red shirt -->
+      <polygon points="35,100 105,100 100,170 40,170" fill="#cc2233"/>
+      <!-- Arms -->
+      <rect x="10" y="105" width="28" height="14" rx="5" fill="#cc2233"/>
+      <rect x="102" y="105" width="28" height="14" rx="5" fill="#cc2233"/>
+      <!-- Hands (skin) -->
+      <circle cx="8" cy="112" r="7" fill="#d4976a"/>
+      <circle cx="132" cy="112" r="7" fill="#d4976a"/>
+      <!-- Neck -->
+      <rect x="60" y="85" width="20" height="18" fill="#d4976a"/>
+      <!-- Head (large, cartoon) -->
+      <ellipse cx="70" cy="55" rx="38" ry="40" fill="#d4976a"/>
+      <!-- Hair (dark, covers top of head) -->
+      <ellipse cx="70" cy="30" rx="40" ry="28" fill="#2a1a0a"/>
+      <!-- Eyes (big, expressive) -->
+      <ellipse cx="56" cy="58" rx="8" ry="9" fill="#111"/>
+      <ellipse cx="84" cy="58" rx="8" ry="9" fill="#111"/>
+      <!-- Eye highlights -->
+      <circle cx="59" cy="54" r="3" fill="white"/>
+      <circle cx="87" cy="54" r="3" fill="white"/>
+      <!-- Simple mouth -->
+      <path d="M60,72 Q70,78 80,72" stroke="#8a5a3a" stroke-width="2" fill="none"/>
+      <!-- Eyebrows -->
+      <line x1="48" y1="46" x2="62" y2="44" stroke="#2a1a0a" stroke-width="3" stroke-linecap="round"/>
+      <line x1="78" y1="44" x2="92" y2="46" stroke="#2a1a0a" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <div class="char-label"><span class="good">TARGET</span> — Clean colors, big expressive<br>eyes, clear silhouette, distinct elements</div>
+  </div>
+
+  <!-- Bad example -->
+  <div class="char-example">
+    <svg width="140" height="240" viewBox="0 0 140 240">
+      <ellipse cx="70" cy="232" rx="30" ry="5" fill="rgba(0,0,0,0.15)"/>
+      <!-- Everything is grey/muted -->
+      <rect x="40" y="210" width="20" height="16" rx="3" fill="#555"/>
+      <rect x="80" y="210" width="20" height="16" rx="3" fill="#555"/>
+      <rect x="42" y="165" width="18" height="50" rx="2" fill="#666"/>
+      <rect x="82" y="165" width="18" height="50" rx="2" fill="#666"/>
+      <polygon points="38,100 102,100 98,170 42,170" fill="#777"/>
+      <rect x="12" y="105" width="26" height="12" rx="4" fill="#777"/>
+      <rect x="102" y="105" width="26" height="12" rx="4" fill="#777"/>
+      <circle cx="10" cy="111" r="6" fill="#b09080"/>
+      <circle cx="130" cy="111" r="6" fill="#b09080"/>
+      <rect x="61" y="86" width="18" height="16" fill="#b09080"/>
+      <ellipse cx="70" cy="56" rx="36" ry="38" fill="#b09080"/>
+      <!-- Barely visible hair -->
+      <ellipse cx="70" cy="32" rx="35" ry="22" fill="#7a6a5a"/>
+      <!-- Tiny eyes -->
+      <circle cx="58" cy="58" r="3" fill="#333"/>
+      <circle cx="82" cy="58" r="3" fill="#333"/>
+    </svg>
+    <div class="char-label"><span class="bad">AVOID</span> — Muted colors, tiny eyes,<br>no highlights, elements blend together</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>1. Proportions</h2>
+    <p>The gold standard (Synty POLYGON, KayKit, Quaternius) uses <span class="highlight">slightly chibi proportions</span>:</p>
+    <ul>
+      <li>Head is ~25-30% of total height (our template mesh does this well)</li>
+      <li>Shorter legs relative to torso</li>
+      <li>Slightly oversized hands</li>
+      <li>Clean T-pose or A-pose for rigging</li>
+      <li>Simple blocky shapes — no realistic muscle definition</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>2. Face & Eyes</h2>
+    <p>The face is the <span class="highlight">most important feature</span> for character appeal:</p>
+    <ul>
+      <li>Large, expressive eyes (oval, not circular) with white catchlight highlights</li>
+      <li>Eyes should be ~20-25% of face width</li>
+      <li>Some styles are completely faceless (Synty POLYGON) — just smooth head geometry</li>
+      <li>If eyes exist, they need to be BIG and read clearly at game camera distance</li>
+      <li>Simple eyebrows for expression</li>
+      <li>Tiny or no nose; simple curve or no mouth</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>3. Color Palette</h2>
+    <p>Colors should be <span class="highlight">vibrant, saturated, and clearly distinct</span> per body part:</p>
+    <ul>
+      <li>Each element (hair, skin, shirt, pants, shoes) must be a DIFFERENT hue</li>
+      <li>Warm skin tones with subtle sheen (not flat matte)</li>
+      <li>Clothing colors should pop — reds, blues, greens at 70-85% saturation</li>
+      <li>Dark hair for light skin (contrast frames the face)</li>
+      <li>Single flat color per material — no textures needed</li>
+      <li>2-4 materials total per character</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>4. Materials & Shading</h2>
+    <p>The "toy-like" or "vinyl figure" look comes from <span class="highlight">smooth-but-faceted shading</span>:</p>
+    <ul>
+      <li>Roughness: 0.35-0.55 (smooth enough for subtle specularity)</li>
+      <li>Light specular highlights (Specular IOR 0.3-0.5)</li>
+      <li>Edge split modifier at 30-40° for crisp polygon facets</li>
+      <li>No bump maps, normal maps, or complex textures</li>
+      <li>Flat colors from a shared texture atlas OR vertex colors</li>
+      <li>Slight subsurface scattering on skin (optional)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>5. Clothing Fit</h2>
+    <p><span class="highlight">Clothing must sit flush against the body</span> — this is our biggest current issue:</p>
+    <ul>
+      <li>Clothing should be slightly larger than body mesh, NOT floating</li>
+      <li>Best approach: clothing as vertex-painted regions on the SAME mesh</li>
+      <li>Alternative: clothing shells that tightly conform to body shape</li>
+      <li>Ring-based procedural clothing needs careful radius calibration to template</li>
+      <li>Gaps between clothing and body destroy the silhouette</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>6. Lighting & Presentation</h2>
+    <p>Good presentation makes or breaks the asset showcase:</p>
+    <ul>
+      <li>3-point lighting: warm key + cool fill + rim light</li>
+      <li>Neutral or gradient background (not flat white/black)</li>
+      <li>Ground plane with soft shadow for grounding</li>
+      <li>65-85mm lens equivalent for flattering proportions</li>
+      <li>Front + 3/4 view for turnaround reference</li>
+    </ul>
+  </div>
+</div>
+
+<div class="references">
+  <h2>Reference Links (visit these for visual examples)</h2>
+  <a href="https://syntystore.com/collections/polygon" target="_blank">Synty POLYGON Collection — the gold standard for low-poly stylized game characters</a>
+  <a href="https://kaylousberg.itch.io/kaykit-adventurers" target="_blank">KayKit Adventurers — free stylized low-poly characters with great proportions</a>
+  <a href="https://poly.pizza/explore/People-and-Characters" target="_blank">Poly Pizza — free low-poly character models browsable in 3D</a>
+  <a href="https://sketchfab.com/tags/lowpoly-character" target="_blank">Sketchfab Low-Poly Characters — browsable 3D models you can rotate</a>
+  <a href="https://quaternius.com/packs/ultimatedungeon.html" target="_blank">Quaternius Ultimate Packs — free CC0 low-poly game assets</a>
+  <a href="https://www.kenney.nl/assets/category:3D" target="_blank">Kenney 3D Assets — clean, minimal low-poly style (CC0)</a>
+</div>
+
+</body>
+</html>
