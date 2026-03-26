@@ -288,8 +288,8 @@ def _panel_rows(bm, top_verts, rows_spec):
 #   1.40 → very voluminous
 
 _CAP_LEVELS = [
-    (0.00, 0.97, 0.90),   # hairline / brow  — equatorial
-    (0.50, 0.84, 0.77),   # upper forehead
+    (0.30, 0.92, 0.85),   # hairline — raised to upper temple level
+    (0.58, 0.80, 0.73),   # upper forehead
     (0.86, 0.52, 0.48),   # upper cranium
     (0.97, 0.22, 0.20),   # crown apex — widened to clear non-spherical heads
 ]
@@ -344,8 +344,8 @@ def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
 # for a flat low-profile look.  h_scale=1.20 gives ~3 % clearance from the
 # head surface using the actual horizontal radius (head_r_horiz).
 _SHORT_CAP_LEVELS = [
-    (0.00, 0.97, 0.90),   # hairline — equatorial (ear/temple, full circumference)
-    (0.45, 0.86, 0.79),   # upper sides
+    (0.30, 0.92, 0.85),   # hairline — raised to upper temple level
+    (0.55, 0.82, 0.75),   # upper sides
     (0.78, 0.55, 0.50),   # upper cranium
     (0.92, 0.36, 0.33),   # crown apex — widened to clear non-spherical heads
 ]
@@ -389,10 +389,10 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None):
 # solid base to grow from.  The crown ring is kept small so it blends into
 # the spike bases cleanly.
 _SPIKY_CAP_LEVELS = [
-    (0.20, 0.98, 0.98),   # hairline — low on forehead, wide coverage
-    (0.48, 0.86, 0.79),   # upper sides
-    (0.72, 0.60, 0.55),   # upper cranium
-    (0.88, 0.44, 0.40),   # crown — widened to clear non-spherical heads
+    (0.40, 0.92, 0.88),   # hairline — raised to upper temple level
+    (0.60, 0.82, 0.75),   # upper sides
+    (0.78, 0.60, 0.55),   # upper cranium
+    (0.90, 0.44, 0.40),   # crown — widened to clear non-spherical heads
 ]
 
 
