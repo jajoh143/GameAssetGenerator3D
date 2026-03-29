@@ -283,15 +283,14 @@ def _panel_rows(bm, top_verts, rows_spec):
 # 12-sided rings (n=12) ensure the silhouette reads as circular.
 #
 # h_scale pushes the cap shell outward from the head surface:
-#   1.15 → near skin-tight (buzz cut)
-#   1.35 → normal short/medium/long hair
-#   1.40 → very voluminous
+#   1.05 → near skin-tight (buzz cut)
+#   1.08 → normal short/medium/long hair clearance
 
 _CAP_LEVELS = [
     (0.30, 0.92, 0.85),   # hairline — raised to upper temple level
     (0.58, 0.80, 0.73),   # upper forehead
     (0.86, 0.52, 0.48),   # upper cranium
-    (0.97, 0.22, 0.20),   # crown apex — widened to clear non-spherical heads
+    (0.97, 0.32, 0.30),   # crown apex — wider to clear cartoon head
 ]
 
 _CAP_RING_N = 12   # sides per ring — 12 gives a smooth round silhouette
@@ -325,11 +324,61 @@ def _build_cap(bm, head_z, head_r, h_scale=1.20, levels=None, head_r_horiz=None)
     return rings  # rings[0] = hairline ring
 
 
+def _build_shell_cap(bm, head_verts, hairline_z, crown_z, head_r_horiz, n_rings=8, n=12):
+    """Build a cap dome shaped to the actual head mesh vertex profile.
+
+    At each Z level between hairline and crown, samples the real head-vertex
+    extents and adds a fixed clearance offset so the shell sits just outside
+    the head surface.  Falls back to a spherical approximation for Z levels
+    that have no sampled vertices.
+
+    Args:
+        head_verts:    Iterable of world-space Vector positions for the head
+                       mesh vertices (from template_mesh head_candidate_verts).
+        hairline_z:    World-space Z of the bottom hair ring.
+        crown_z:       World-space Z of the top of the head.
+        head_r_horiz:  Horizontal head half-width (used for clearance offset
+                       and spherical fallback).
+        n_rings:       Number of latitude rings from hairline to crown.
+        n:             Vertices per ring.
+
+    Returns rings list (same contract as _build_cap — rings[0] is hairline).
+    """
+    offset = head_r_horiz * 0.06          # 6 % clearance from head surface
+    span   = crown_z - hairline_z
+    slice_h = max(span / n_rings * 1.5, 0.005)   # overlap so no Z level is empty
+
+    rings = []
+    for i in range(n_rings):
+        t = i / (n_rings - 1)
+        z = hairline_z + span * t
+
+        nearby = [wco for wco in head_verts if z - slice_h < wco.z < z + slice_h]
+        if nearby:
+            rx = max(abs(wco.x) for wco in nearby) + offset
+            ys = [wco.y for wco in nearby]
+            ry = (max(ys) - min(ys)) / 2.0 + offset
+            cy = (max(ys) + min(ys)) / 2.0
+        else:
+            # Spherical fallback: narrow toward crown
+            frac = math.sqrt(max(0.0, 1.0 - t ** 2))
+            rx = head_r_horiz * frac + offset
+            ry = rx * 0.90
+            cy = 0.0
+
+        rings.append(_ring(bm, 0, cy, z, rx, ry, n=n))
+
+    for i in range(len(rings) - 1):
+        _bridge(bm, rings[i], rings[i + 1])
+    _close_ring(bm, rings[-1], top=True)
+    return rings
+
+
 # ── Style builders ─────────────────────────────────────────────────────────────
 
-def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
+def _build_buzzed(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Skullcap hugging the head tightly — very short all over."""
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.15, head_r_horiz=head_r_horiz)
+    rings = _build_cap(bm, head_z, head_r, h_scale=1.05, head_r_horiz=head_r_horiz)
     hl = rings[0]
     # Single unified row around the back 270° for seamless ear/nape coverage
     _panel_rows(bm, _back_half_verts(hl), [
@@ -346,12 +395,12 @@ def _build_buzzed(bm, head_z, head_r, head_r_horiz=None):
 _SHORT_CAP_LEVELS = [
     (0.30, 0.92, 0.85),   # hairline — raised to upper temple level
     (0.55, 0.82, 0.75),   # upper sides
-    (0.78, 0.55, 0.50),   # upper cranium
-    (0.92, 0.36, 0.33),   # crown apex — widened to clear non-spherical heads
+    (0.78, 0.58, 0.52),   # upper cranium
+    (0.92, 0.45, 0.42),   # crown apex — wider to clear cartoon head
 ]
 
 
-def _build_short(bm, head_z, head_r, head_r_horiz=None):
+def _build_short(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Short flat hair: full-circumference cap from ear level to crown,
     nape panel, and short fringe clumps over the forehead.
 
@@ -360,8 +409,12 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None):
     nape.  Short fringe clumps fill the front/forehead zone.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, levels=_SHORT_CAP_LEVELS,
-                       head_r_horiz=head_r_horiz)
+    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _SHORT_CAP_LEVELS
+    if head_verts is not None and crown_z is not None:
+        rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
+    else:
+        rings = _build_cap(bm, head_z, head_r, h_scale=1.08, levels=_SHORT_CAP_LEVELS,
+                           head_r_horiz=head_r_horiz)
     hl = rings[0]
 
     # Back-half panel — 3 rows from ear level down to nape.
@@ -391,12 +444,12 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None):
 _SPIKY_CAP_LEVELS = [
     (0.40, 0.92, 0.88),   # hairline — raised to upper temple level
     (0.60, 0.82, 0.75),   # upper sides
-    (0.78, 0.60, 0.55),   # upper cranium
-    (0.90, 0.44, 0.40),   # crown — widened to clear non-spherical heads
+    (0.78, 0.62, 0.57),   # upper cranium
+    (0.90, 0.52, 0.48),   # crown — wider to clear cartoon head
 ]
 
 
-def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
+def _build_spiky(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Anime-style spiky hair: tight side/back cap + angular wedge spike crest.
 
     Redesigned from the old round-cone radial layout to match the anime
@@ -419,8 +472,13 @@ def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
 
     Face budget: cap ≈ 48 + back panel ≈ 24 + spikes 6 × 4 = 24 → ~96 total.
     """
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, levels=_SPIKY_CAP_LEVELS,
-                       head_r_horiz=head_r_horiz)
+    hr_h = head_r_horiz if head_r_horiz is not None else head_r
+    hairline_z = head_z + head_r * 0.40   # matches z_off=0.40 in _SPIKY_CAP_LEVELS
+    if head_verts is not None and crown_z is not None:
+        rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
+    else:
+        rings = _build_cap(bm, head_z, head_r, h_scale=1.08, levels=_SPIKY_CAP_LEVELS,
+                           head_r_horiz=head_r_horiz)
     hl = rings[0]
 
     # Side/back panel — 3 rows, same sphere-tracking taper as short style
@@ -468,7 +526,7 @@ def _build_spiky(bm, head_z, head_r, head_r_horiz=None):
                 pass
 
 
-def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
+def _build_slicked(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Slicked-back / pompadour hair: full cap + clean back panel + front quiff.
 
     The fringe clumps rise *upward* from the front hairline rather than
@@ -480,8 +538,12 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
     Quiff: 5 clumps with negative z_tip so tips rise above the hairline.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, levels=_SHORT_CAP_LEVELS,
-                       head_r_horiz=head_r_horiz)
+    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _SHORT_CAP_LEVELS
+    if head_verts is not None and crown_z is not None:
+        rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
+    else:
+        rings = _build_cap(bm, head_z, head_r, h_scale=1.08, levels=_SHORT_CAP_LEVELS,
+                           head_r_horiz=head_r_horiz)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -505,10 +567,14 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None):
     ], head_r_horiz=hr_h)
 
 
-def _build_long(bm, head_z, head_r, head_r_horiz=None):
+def _build_long(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, head_r_horiz=hr_h)
+    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _CAP_LEVELS
+    if head_verts is not None and crown_z is not None:
+        rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
+    else:
+        rings = _build_cap(bm, head_z, head_r, h_scale=1.08, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -535,7 +601,7 @@ def _build_long(bm, head_z, head_r, head_r_horiz=None):
     ], head_r_horiz=hr_h)
 
 
-def _build_mohawk(bm, head_z, head_r, head_r_horiz=None):
+def _build_mohawk(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Tall central fin front-to-back with closely-cropped side caps."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
     # Two partial side domes, offset left/right
@@ -585,10 +651,14 @@ def _build_mohawk(bm, head_z, head_r, head_r_horiz=None):
                 pass
 
 
-def _build_ponytail(bm, head_z, head_r, head_r_horiz=None):
+def _build_ponytail(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Short front/sides with a gathered bundle hanging at the back."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    rings = _build_cap(bm, head_z, head_r, h_scale=1.35, head_r_horiz=hr_h)
+    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _CAP_LEVELS
+    if head_verts is not None and crown_z is not None:
+        rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
+    else:
+        rings = _build_cap(bm, head_z, head_r, h_scale=1.08, head_r_horiz=hr_h)
     hl = rings[0]
     hl_z = hl[0].co.z
 
@@ -669,7 +739,8 @@ HAIR_BUILDERS = _STYLE_BUILDERS
 
 # ── Public entry point ─────────────────────────────────────────────────────────
 
-def create_hair(head_z, head_r, style="short", color=None, head_r_horiz=None):
+def create_hair(head_z, head_r, style="short", color=None, head_r_horiz=None,
+                head_verts=None, crown_z=None):
     """Build hair geometry and return a linked Blender mesh object.
 
     Args:
@@ -705,7 +776,8 @@ def create_hair(head_z, head_r, style="short", color=None, head_r_horiz=None):
 
     # Build geometry
     bm = bmesh_mod.new()
-    _STYLE_BUILDERS[style](bm, head_z, head_r, head_r_horiz=head_r_horiz)
+    _STYLE_BUILDERS[style](bm, head_z, head_r, head_r_horiz=head_r_horiz,
+                          head_verts=head_verts, crown_z=crown_z)
     bmesh_mod.ops.recalc_face_normals(bm, faces=bm.faces)
 
     # Convert to Blender mesh object

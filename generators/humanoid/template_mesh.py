@@ -796,8 +796,13 @@ def create_body_from_template(cfg: dict):
     h_hz = hair_head_z if use_cartoon_glb else head_z
     h_hr = hair_head_r if use_cartoon_glb else head_r
     if hair_style and hair_style != "none":
+        # Pass actual head vertices so hair can use the shell-cap approach
+        _hverts = head_candidate_verts if use_cartoon_glb else None
+        _crownz = crown_z if use_cartoon_glb else None
         hair_obj = hair_module.create_hair(h_hz, h_hr, hair_style, hair_color,
-                                           head_r_horiz=head_r_horiz)
+                                           head_r_horiz=head_r_horiz,
+                                           head_verts=_hverts,
+                                           crown_z=_crownz)
 
     # ── Eyes ──────────────────────────────────────────────────────────────────
     from . import eyes as eyes_module
