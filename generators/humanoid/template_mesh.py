@@ -1050,8 +1050,8 @@ def create_body_from_template(cfg: dict):
             upper_verts  = [v for v in head_scan_verts if v.z > mid_z]
             measure_set  = upper_verts if upper_verts else head_scan_verts
             head_r_horiz = max(abs(v.x) for v in measure_set)
-            # equator sits roughly 45 % down from crown → head_r ≈ 55 % of head_height
-            head_r       = max(head_height * 0.55, actual_height * 0.055)
+            # equator (ear/temple level) sits ~40 % down from crown
+            head_r       = max(head_height * 0.42, actual_height * 0.055)
             hair_head_z  = crown_z - head_r
             hair_head_r  = head_r
             head_z       = top_threshold + head_height * 0.50   # centre for face features
