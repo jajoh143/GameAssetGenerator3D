@@ -688,6 +688,25 @@ def create_body_from_template(cfg: dict):
     except Exception:
         pass
 
+    # ── Fix Sketchfab/FBX coordinate-system for the lowpoly freerigged GLB ──
+    # The GLB embeds a Sketchfab export root node (Sketchfab_model) that
+    # carries a −90 ° X rotation to convert the original Z-up FBX to Y-up
+    # glTF.  Blender's own Y-up→Z-up correction at import time partially
+    # compensates, but the rig and mesh nodes each add another −90 ° X
+    # rotation, leaving an accumulated −90 ° X on the mesh object after
+    # CLEAR_KEEP_TRANSFORM.  _normalise_mesh then measures the shallow
+    # depth axis instead of the real height and scales the mesh enormously.
+    #
+    # Fix: bake the current (wrong) object transform into vertex positions,
+    # then set a corrective +90 ° X rotation so _normalise_mesh's own
+    # transform_apply produces an upright, correctly-oriented character.
+    if use_lowpoly_freerigged:
+        bpy.ops.object.select_all(action='DESELECT')
+        mesh_obj.select_set(True)
+        bpy.context.view_layer.objects.active = mesh_obj
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        mesh_obj.rotation_euler = (math.radians(90), 0, 0)
+
     # ── Scale to preset proportions ────────────────────────────────────────
     actual_height = _normalise_mesh(mesh_obj, target_height, x_scale, y_scale)
 
