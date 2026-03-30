@@ -360,6 +360,32 @@ def _normalise_mesh(obj, target_height: float, x_scale: float = 1.0,
 
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
+    # ── Auto-orient: ensure height (longest axis) aligns with Z ──────────────
+    # Different import paths (FBX, GLB, .blend) may leave the character lying
+    # on a different axis depending on the file's coordinate system and how
+    # Blender's importer handles the conversion.  Measure the three vertex
+    # extents and rotate so the longest axis becomes Z before doing anything else.
+    verts = obj.data.vertices
+    if verts:
+        xs = [v.co.x for v in verts]
+        ys = [v.co.y for v in verts]
+        zs = [v.co.z for v in verts]
+        x_ext = max(xs) - min(xs)
+        y_ext = max(ys) - min(ys)
+        z_ext = max(zs) - min(zs)
+        print(f"[normalise_mesh] extents before orient: X={x_ext:.3f} Y={y_ext:.3f} Z={z_ext:.3f}")
+
+        if y_ext > z_ext * 1.5 and y_ext >= x_ext:
+            # Character is lying with height along +Y → rotate +90° X: Y→Z
+            obj.rotation_euler[0] = math.pi / 2
+            bpy.ops.object.transform_apply(rotation=True)
+            print("[normalise_mesh] Auto-rotated +90° X (Y-up → Z-up)")
+        elif x_ext > z_ext * 1.5 and x_ext >= y_ext:
+            # Character is lying with height along X → rotate -90° Y: X→Z
+            obj.rotation_euler[1] = -math.pi / 2
+            bpy.ops.object.transform_apply(rotation=True)
+            print("[normalise_mesh] Auto-rotated -90° Y (X-up → Z-up)")
+
     local_coords = [obj.matrix_world @ __import__('mathutils').Vector(v) for v in obj.bound_box]
     min_z = min(v.z for v in local_coords)
     max_z = max(v.z for v in local_coords)
