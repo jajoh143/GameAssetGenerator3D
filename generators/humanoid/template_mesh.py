@@ -823,7 +823,12 @@ def create_body_from_template(cfg: dict):
     # For NBM .blend files the legacy behaviour (clear → ARMATURE_AUTO) is
     # preserved because those files' weights were built for a different rig.
     if use_fbx or use_freerigged:
-        _remap_freerigged_vertex_groups(mesh_obj)
+        # The Rigify weights from the original rig are tied to that rig's exact
+        # bone positions.  Reusing them with our differently-positioned simple rig
+        # causes severe mesh distortion.  Clear all groups so rig.py falls back
+        # to ARMATURE_AUTO, which computes heat-map weights against our actual
+        # bone positions and preserves the mesh shape correctly.
+        mesh_obj.vertex_groups.clear()
     elif use_cartoon_glb:
         _remap_glb_vertex_groups(mesh_obj)
     else:
