@@ -755,37 +755,36 @@ def create_body_from_template(cfg: dict):
 
     # ── Import template mesh ───────────────────────────────────────────────
     # Priority:
-    #   1. LowPolyMesh.fbx                   — primary (FBX, auto coord conversion)
-    #   2. lowpoly_character-freerigged-.glb  — GLB fallback (same rig)
-    #   3. Cartoon_Male.glb                  — male/neutral fallback
-    #   4. NBM .blend files                  — legacy fallback
-    use_fbx = os.path.exists(LOWPOLY_FBX)
-    use_freerigged = not use_fbx and os.path.exists(FREERIGGED_GLB)
+    #   1. NBM .blend file (gender/lod)  — primary, most reliable import path
+    #   2. Cartoon_Male.glb              — GLB fallback for male/neutral
+    # (LowPolyMesh.fbx and lowpoly_character-freerigged-.glb are retained as
+    #  path constants for future use but removed from the active priority chain
+    #  due to unresolved coordinate/rig compatibility issues.)
+    try:
+        blend_path = _resolve_blend_path(gender, lod)
+        blend_exists = os.path.exists(blend_path)
+    except (ValueError, FileNotFoundError):
+        blend_exists = False
+        blend_path = None
+
     use_cartoon_glb = (
-        not use_fbx and not use_freerigged
+        not blend_exists
         and gender in ("male", "neutral")
         and os.path.exists(CARTOON_MALE_GLB)
     )
-    # Unified flag: True for any import path that benefits from vertex-scan
-    # head/body geometry detection (all non-NBM templates).
-    use_glb = use_fbx or use_freerigged or use_cartoon_glb
+    use_glb = use_cartoon_glb  # vertex-scan head detection applies to GLB paths
 
-    if use_fbx:
-        print(f"[template_mesh] Importing FBX template from: {LOWPOLY_FBX}")
-        mesh_obj = _import_fbx_mesh(LOWPOLY_FBX)
-    elif use_freerigged:
-        print(f"[template_mesh] Importing freerigged GLB from: {FREERIGGED_GLB}")
-        mesh_obj = _import_glb_mesh(FREERIGGED_GLB)
-        # The freerigged GLB uses Blender Z-up but Blender's glTF importer
-        # applies a spurious -90° X correction.  Counter it here.
-        mesh_obj.rotation_euler[0] = math.pi / 2
+    if blend_exists:
+        print(f"[template_mesh] Importing NBM blend from: {blend_path}")
+        mesh_obj = _import_mesh_from_blend(blend_path)
     elif use_cartoon_glb:
         print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
         mesh_obj = _import_glb_mesh(CARTOON_MALE_GLB)
     else:
-        blend_path = _resolve_blend_path(gender, lod)
-        print(f"[template_mesh] Importing NBM template from: {blend_path}")
-        mesh_obj = _import_mesh_from_blend(blend_path)
+        raise RuntimeError(
+            f"No usable template mesh found for gender='{gender}', lod='{lod}'.\n"
+            f"Expected a .blend file at: {blend_path}"
+        )
 
     mesh_obj.name = "Humanoid_Body"
 
@@ -822,16 +821,11 @@ def create_body_from_template(cfg: dict):
     #
     # For NBM .blend files the legacy behaviour (clear → ARMATURE_AUTO) is
     # preserved because those files' weights were built for a different rig.
-    if use_fbx or use_freerigged:
-        # The Rigify weights from the original rig are tied to that rig's exact
-        # bone positions.  Reusing them with our differently-positioned simple rig
-        # causes severe mesh distortion.  Clear all groups so rig.py falls back
-        # to ARMATURE_AUTO, which computes heat-map weights against our actual
-        # bone positions and preserves the mesh shape correctly.
-        mesh_obj.vertex_groups.clear()
-    elif use_cartoon_glb:
+    if use_cartoon_glb:
         _remap_glb_vertex_groups(mesh_obj)
     else:
+        # NBM .blend files: clear weights so rig.py uses ARMATURE_AUTO heat-map
+        # weighting against our actual bone positions.
         mesh_obj.vertex_groups.clear()
 
     # ── Apply edge-split for a clean low-poly look ────────────────────────
