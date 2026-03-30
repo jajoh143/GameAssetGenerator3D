@@ -666,6 +666,12 @@ def create_body_from_template(cfg: dict):
     if use_freerigged:
         print(f"[template_mesh] Importing freerigged template from: {FREERIGGED_GLB}")
         mesh_obj = _import_glb_mesh(FREERIGGED_GLB)
+        # The freerigged GLB was originally created in Blender (Z-up) but
+        # Blender's glTF importer assumes the standard Y-up convention and
+        # applies a spurious -90° X correction, leaving the character lying
+        # flat on the floor.  Apply +90° X to stand the character upright
+        # so _normalise_mesh bakes the correct orientation.
+        mesh_obj.rotation_euler[0] = math.pi / 2
     elif use_cartoon_glb:
         print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
         mesh_obj = _import_glb_mesh(CARTOON_MALE_GLB)
