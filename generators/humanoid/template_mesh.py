@@ -1033,22 +1033,32 @@ def create_body_from_template(cfg: dict):
               f"hip_w={max_hip_ax:.3f}, chest_w={max_chest_ax:.3f}, "
               f"torso_depth={detected_torso_depth:.3f}")
     else:
-        # Scan the top 22 % of the mesh to detect actual head dimensions.
-        # This replaces the fixed 6.5 % estimate and gives correct hair sizing
-        # for NBM meshes whose heads are often proportionally larger.
-        top_threshold = actual_height * 0.78
+        # Scan only the top 13 % of the mesh (above shoulder level) to detect
+        # actual head dimensions.  78 % was too low — it captured shoulder
+        # vertices and made head_r_horiz measure shoulder width instead of head
+        # width.  Standard humanoid shoulders sit at ~83-87 % of height, so
+        # 87 % reliably isolates only neck-and-above geometry.
+        top_threshold = actual_height * 0.87
         head_scan_verts = [v.co for v in mesh_obj.data.vertices
                            if v.co.z > top_threshold]
         if head_scan_verts:
-            crown_z      = max(v.z for v in head_scan_verts)
-            head_r_horiz = max(abs(v.x) for v in head_scan_verts)
-            head_r_vert  = (crown_z - top_threshold) * 0.60   # equator→crown estimate
-            head_r       = max(head_r_vert, actual_height * 0.055)
-            # hair equator ≈ crown minus one head_r
+            crown_z    = max(v.z for v in head_scan_verts)
+            head_height = crown_z - top_threshold
+            # Measure width only in the upper 60 % of the head band to avoid
+            # jaw/neck vertices inflating the horizontal radius.
+            mid_z = top_threshold + head_height * 0.40
+            upper_verts  = [v for v in head_scan_verts if v.z > mid_z]
+            measure_set  = upper_verts if upper_verts else head_scan_verts
+            head_r_horiz = max(abs(v.x) for v in measure_set)
+            # equator sits roughly 45 % down from crown → head_r ≈ 55 % of head_height
+            head_r       = max(head_height * 0.55, actual_height * 0.055)
             hair_head_z  = crown_z - head_r
             hair_head_r  = head_r
-            head_z       = (top_threshold + crown_z) / 2   # centre for face features
+            head_z       = top_threshold + head_height * 0.50   # centre for face features
             face_y       = min(v.y for v in head_scan_verts)
+            print(f"[template_mesh] NBM head scan: crown={crown_z:.3f}, "
+                  f"head_height={head_height:.3f}, head_r={head_r:.3f}, "
+                  f"head_r_horiz={head_r_horiz:.3f}, hair_head_z={hair_head_z:.3f}")
         else:
             # Fallback if scan finds nothing (shouldn't happen)
             head_r       = actual_height * 0.065
