@@ -32,8 +32,14 @@ _TEMPLATE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "TemplateMeshes")
 )
 
-# Cartoon_Male GLB — primary template for male/neutral characters
+# Cartoon_Male GLB — secondary template for male/neutral characters
 CARTOON_MALE_GLB = os.path.join(_TEMPLATE_DIR, "Cartoon_Male.glb")
+
+# Freerigged low-poly GLB — primary template for all characters
+# This mesh uses a Rigify-based armature with DEF- deformation bones.
+# We remap those bone names to our standard Humanoid_Armature naming so
+# rig.py can apply the artist-painted weights directly without ARMATURE_AUTO.
+FREERIGGED_GLB = os.path.join(_TEMPLATE_DIR, "lowpoly_character-freerigged-.glb")
 
 # Map (lod_key, sex_key) → filename stem (NBM fallback)
 _LOD_SEX_MAP = {
@@ -346,6 +352,111 @@ _GLB_TO_OUR_BONES = {
 }
 
 
+# ── Bone name mapping: freerigged GLB DEF-bones → our rig bone names ─────────
+# lowpoly_character-freerigged-.glb uses a Rigify armature.  The skin joints
+# (vertex groups) carry numeric glTF node-index suffixes (e.g. "DEF-spine_076").
+# We merge all relevant DEF-, MCH- and FK control groups into our 15-bone game
+# rig, then delete every remaining group that has no corresponding rig bone.
+_FREERIGGED_TO_OUR_BONES = {
+    # ── Hips (root) ──────────────────────────────────────────────────────────
+    "DEF-pelvis.L_098":         "Hips",
+    "DEF-pelvis.R_0100":        "Hips",
+    "DEF-spine_076":            "Hips",
+    "hips_089":                 "Hips",
+    "torso_088":                "Hips",
+    "MCH-WGT-hips_0170":        "Hips",
+    # ── Spine ─────────────────────────────────────────────────────────────────
+    "DEF-spine.001_077":        "Spine",
+    "DEF-spine.002_078":        "Spine",
+    "spine_fk_094":             "Spine",
+    "spine_fk.001_092":         "Spine",
+    # ── Chest ─────────────────────────────────────────────────────────────────
+    "DEF-spine.003_079":        "Chest",
+    "DEF-spine.004_080":        "Chest",
+    "DEF-spine.005_081":        "Chest",
+    "DEF-spine.006_082":        "Chest",
+    "chest_090":                "Chest",
+    "MCH-WGT-chest_0440":       "Chest",
+    "DEF-breast.L_0433":        "Chest",
+    "DEF-breast.R_0435":        "Chest",
+    # ── Neck ──────────────────────────────────────────────────────────────────
+    "neck_0182":                "Neck",
+    "MCH-ROT-neck_0181":        "Neck",
+    "MCH-STR-neck_0186":        "Neck",
+    # ── Head ──────────────────────────────────────────────────────────────────
+    "head_0184":                "Head",
+    "MCH-ROT-head_0183":        "Head",
+    # ── Left shoulder ─────────────────────────────────────────────────────────
+    "DEF-shoulder.L_0203":      "Shoulder.L",
+    # ── Right shoulder ────────────────────────────────────────────────────────
+    "DEF-shoulder.R_0320":      "Shoulder.R",
+    # ── Left arm ──────────────────────────────────────────────────────────────
+    "DEF-upper_arm.L_0196":     "UpperArm.L",
+    "DEF-upper_arm.L.001_0217": "UpperArm.L",
+    "DEF-forearm.L_0218":       "LowerArm.L",
+    "DEF-forearm.L.001_0219":   "LowerArm.L",
+    "DEF-hand.L_0220":          "Hand.L",
+    "DEF-palm.01.L_0216":       "Hand.L",
+    "DEF-palm.02.L_0258":       "Hand.L",
+    "DEF-palm.03.L_0278":       "Hand.L",
+    "DEF-palm.04.L_0297":       "Hand.L",
+    "DEF-f_index.01.L_0227":    "Hand.L",
+    "DEF-f_index.02.L_0228":    "Hand.L",
+    "DEF-f_index.03.L_0229":    "Hand.L",
+    "DEF-f_middle.01.L_0254":   "Hand.L",
+    "DEF-f_middle.02.L_0255":   "Hand.L",
+    "DEF-f_middle.03.L_0256":   "Hand.L",
+    "DEF-f_pinky.01.L_0293":    "Hand.L",
+    "DEF-f_pinky.02.L_0294":    "Hand.L",
+    "DEF-f_pinky.03.L_0295":    "Hand.L",
+    "DEF-f_ring.01.L_0274":     "Hand.L",
+    "DEF-f_ring.02.L_0275":     "Hand.L",
+    "DEF-f_ring.03.L_0276":     "Hand.L",
+    "DEF-thumb.01.L_0231":      "Hand.L",
+    "DEF-thumb.02.L_0232":      "Hand.L",
+    "DEF-thumb.03.L_0233":      "Hand.L",
+    # ── Right arm ─────────────────────────────────────────────────────────────
+    "DEF-upper_arm.R_0333":     "UpperArm.R",
+    "DEF-upper_arm.R.001_0334": "UpperArm.R",
+    "DEF-forearm.R_0335":       "LowerArm.R",
+    "DEF-forearm.R.001_0336":   "LowerArm.R",
+    "DEF-hand.R_0337":          "Hand.R",
+    "DEF-palm.01.R_0353":       "Hand.R",
+    "DEF-palm.02.R_0381":       "Hand.R",
+    "DEF-palm.03.R_0401":       "Hand.R",
+    "DEF-palm.04.R_0420":       "Hand.R",
+    "DEF-f_index.01.R_0345":    "Hand.R",
+    "DEF-f_index.02.R_0346":    "Hand.R",
+    "DEF-f_index.03.R_0347":    "Hand.R",
+    "DEF-f_middle.01.R_0377":   "Hand.R",
+    "DEF-f_middle.02.R_0378":   "Hand.R",
+    "DEF-f_middle.03.R_0379":   "Hand.R",
+    "DEF-f_pinky.01.R_0416":    "Hand.R",
+    "DEF-f_pinky.02.R_0417":    "Hand.R",
+    "DEF-f_pinky.03.R_0418":    "Hand.R",
+    "DEF-f_ring.01.R_0397":     "Hand.R",
+    "DEF-f_ring.02.R_0398":     "Hand.R",
+    "DEF-f_ring.03.R_0399":     "Hand.R",
+    "DEF-thumb.01.R_0329":      "Hand.R",
+    "DEF-thumb.02.R_0350":      "Hand.R",
+    "DEF-thumb.03.R_0351":      "Hand.R",
+    # ── Left leg ──────────────────────────────────────────────────────────────
+    "DEF-thigh.L_0144":         "UpperLeg.L",
+    "DEF-thigh.L.001_0145":     "UpperLeg.L",
+    "DEF-shin.L_0146":          "LowerLeg.L",
+    "DEF-shin.L.001_0147":      "LowerLeg.L",
+    "DEF-foot.L_0148":          "Foot.L",
+    "DEF-toe.L_0149":           "Foot.L",
+    # ── Right leg ─────────────────────────────────────────────────────────────
+    "DEF-thigh.R_0162":         "UpperLeg.R",
+    "DEF-thigh.R.001_0163":     "UpperLeg.R",
+    "DEF-shin.R_0164":          "LowerLeg.R",
+    "DEF-shin.R.001_0165":      "LowerLeg.R",
+    "DEF-foot.R_0166":          "Foot.R",
+    "DEF-toe.R_0167":           "Foot.R",
+}
+
+
 def _remap_glb_vertex_groups(obj):
     """Remap Cartoon_Male.glb vertex groups to our Humanoid_Armature bone names.
 
@@ -403,6 +514,62 @@ def _remap_glb_vertex_groups(obj):
             vg_map.remove(vg)
 
     print(f"[template_mesh] Vertex groups after remap: "
+          f"{[vg.name for vg in obj.vertex_groups]}")
+
+
+def _remap_freerigged_vertex_groups(obj):
+    """Remap freerigged GLB vertex groups to our Humanoid_Armature bone names.
+
+    The freerigged template uses a Rigify armature whose DEF-, MCH-, and FK
+    control bone names include glTF node-index suffixes (e.g. "DEF-spine_076").
+    Multiple source groups (e.g. thigh.L + thigh.L.001) are merged into a
+    single target group (UpperLeg.L) by summing weights clamped to 1.0.
+
+    After remapping, any leftover groups without a corresponding rig bone are
+    deleted so rig.py's Armature modifier path stays clean.
+    """
+    vg_map = obj.vertex_groups
+
+    # Build work-list: (source_name, target_name) for every group present
+    renames = []
+    for vg in list(vg_map):
+        target = _FREERIGGED_TO_OUR_BONES.get(vg.name)
+        if target:
+            renames.append((vg.name, target))
+
+    for src_name, dst_name in renames:
+        src_vg = vg_map.get(src_name)
+        if src_vg is None:
+            continue  # already removed in a previous iteration
+
+        dst_vg = vg_map.get(dst_name)
+
+        if dst_vg is None:
+            # Simple rename — no existing target group yet
+            src_vg.name = dst_name
+        else:
+            # Merge src weights INTO dst (both bones influence the same region)
+            for v in obj.data.vertices:
+                try:
+                    w = src_vg.weight(v.index)
+                    if w > 0.0:
+                        existing = 0.0
+                        try:
+                            existing = dst_vg.weight(v.index)
+                        except RuntimeError:
+                            pass
+                        dst_vg.add([v.index], min(existing + w, 1.0), 'REPLACE')
+                except RuntimeError:
+                    pass  # vertex not in src group
+            vg_map.remove(src_vg)
+
+    # Delete any remaining groups that have no corresponding rig bone
+    our_bones = set(_FREERIGGED_TO_OUR_BONES.values())
+    for vg in list(vg_map):
+        if vg.name not in our_bones:
+            vg_map.remove(vg)
+
+    print(f"[template_mesh] Freerigged vertex groups after remap: "
           f"{[vg.name for vg in obj.vertex_groups]}")
 
 
@@ -483,14 +650,23 @@ def create_body_from_template(cfg: dict):
     scene_before = {o.name for o in bpy.data.objects}
 
     # ── Import template mesh ───────────────────────────────────────────────
-    # Prefer Cartoon_Male.glb for male/neutral characters.
-    # Fall back to NBM .blend files if the GLB is absent or gender=female.
+    # Priority:
+    #   1. lowpoly_character-freerigged-.glb — new primary template (all genders)
+    #   2. Cartoon_Male.glb                  — male/neutral fallback
+    #   3. NBM .blend files                  — legacy fallback
+    use_freerigged = os.path.exists(FREERIGGED_GLB)
     use_cartoon_glb = (
-        gender in ("male", "neutral")
+        not use_freerigged
+        and gender in ("male", "neutral")
         and os.path.exists(CARTOON_MALE_GLB)
     )
+    # Unified flag: True for any GLB-based import (enables vertex-scan head detection)
+    use_glb = use_freerigged or use_cartoon_glb
 
-    if use_cartoon_glb:
+    if use_freerigged:
+        print(f"[template_mesh] Importing freerigged template from: {FREERIGGED_GLB}")
+        mesh_obj = _import_glb_mesh(FREERIGGED_GLB)
+    elif use_cartoon_glb:
         print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
         mesh_obj = _import_glb_mesh(CARTOON_MALE_GLB)
     else:
@@ -533,7 +709,9 @@ def create_body_from_template(cfg: dict):
     #
     # For NBM .blend files the legacy behaviour (clear → ARMATURE_AUTO) is
     # preserved because those files' weights were built for a different rig.
-    if use_cartoon_glb:
+    if use_freerigged:
+        _remap_freerigged_vertex_groups(mesh_obj)
+    elif use_cartoon_glb:
         _remap_glb_vertex_groups(mesh_obj)
     else:
         mesh_obj.vertex_groups.clear()
@@ -560,7 +738,7 @@ def create_body_from_template(cfg: dict):
     # estimate because they were tuned against it.
     import mathutils as _mu
 
-    if use_cartoon_glb:
+    if use_glb:
         # ── Full-head detection via neck scan ────────────────────────────
         # The old "equator method" only measured crown-to-widest-point,
         # giving a tiny head_r for chibi meshes whose heads extend far
@@ -768,8 +946,8 @@ def create_body_from_template(cfg: dict):
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
-    h_hz = hair_head_z if use_cartoon_glb else head_z
-    h_hr = hair_head_r if use_cartoon_glb else head_r
+    h_hz = hair_head_z if use_glb else head_z
+    h_hr = hair_head_r if use_glb else head_r
     if hair_style and hair_style != "none":
         hair_obj = hair_module.create_hair(h_hz, h_hr, hair_style, hair_color,
                                            head_r_horiz=head_r_horiz)
