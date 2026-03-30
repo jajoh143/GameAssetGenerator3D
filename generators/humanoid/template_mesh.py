@@ -1033,14 +1033,32 @@ def create_body_from_template(cfg: dict):
               f"hip_w={max_hip_ax:.3f}, chest_w={max_chest_ax:.3f}, "
               f"torso_depth={detected_torso_depth:.3f}")
     else:
-        head_r       = actual_height * 0.065
-        head_z       = actual_height - head_r
-        head_r_horiz = None   # NBM path: no horizontal measurement, fall back to head_r
-        hair_head_z  = head_z
-        hair_head_r  = head_r
-        world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
-                       for v in mesh_obj.bound_box]
-        face_y = min(v.y for v in world_verts)
+        # Scan the top 22 % of the mesh to detect actual head dimensions.
+        # This replaces the fixed 6.5 % estimate and gives correct hair sizing
+        # for NBM meshes whose heads are often proportionally larger.
+        top_threshold = actual_height * 0.78
+        head_scan_verts = [v.co for v in mesh_obj.data.vertices
+                           if v.co.z > top_threshold]
+        if head_scan_verts:
+            crown_z      = max(v.z for v in head_scan_verts)
+            head_r_horiz = max(abs(v.x) for v in head_scan_verts)
+            head_r_vert  = (crown_z - top_threshold) * 0.60   # equator→crown estimate
+            head_r       = max(head_r_vert, actual_height * 0.055)
+            # hair equator ≈ crown minus one head_r
+            hair_head_z  = crown_z - head_r
+            hair_head_r  = head_r
+            head_z       = (top_threshold + crown_z) / 2   # centre for face features
+            face_y       = min(v.y for v in head_scan_verts)
+        else:
+            # Fallback if scan finds nothing (shouldn't happen)
+            head_r       = actual_height * 0.065
+            head_z       = actual_height - head_r
+            head_r_horiz = None
+            hair_head_z  = head_z
+            hair_head_r  = head_r
+            world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
+                           for v in mesh_obj.bound_box]
+            face_y = min(v.y for v in world_verts)
 
     # ── Ensure new objects land in the main scene collection ─────────────────
     # After importing a GLB the active layer-collection can be left pointing
@@ -1058,61 +1076,16 @@ def create_body_from_template(cfg: dict):
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
-    h_hz = hair_head_z if use_glb else head_z
-    h_hr = hair_head_r if use_glb else head_r
+    # Both GLB and NBM paths now populate hair_head_z/hair_head_r via vertex scan.
+    h_hz = hair_head_z
+    h_hr = hair_head_r
     if hair_style and hair_style != "none":
         hair_obj = hair_module.create_hair(h_hz, h_hr, hair_style, hair_color,
                                            head_r_horiz=head_r_horiz)
 
-    # ── Eyes ──────────────────────────────────────────────────────────────────
-    from . import eyes as eyes_module
-    eye_color = cfg.get("eye_color", None)
-    eye_objs = eyes_module.create_eyes(head_z, head_r, eye_color, face_y=face_y,
-                                       head_r_horiz=head_r_horiz)
-
-    # Return eye objects as (obj, "Head") tuples so the rig can parent them
-    # rigidly to the Head bone, matching how hair is handled.
-    extra_head_objs = [(e, "Head") for e in eye_objs]
-
-    # ── Eyebrows ──────────────────────────────────────────────────────────────
-    brow_color = cfg.get("brow_color", None)
-    brow_obj = eyes_module.create_eyebrows(head_z, head_r, face_y=face_y,
-                                           brow_color=brow_color,
-                                           head_r_horiz=head_r_horiz)
-    extra_head_objs.append((brow_obj, "Head"))
-
-    # ── Nose ──────────────────────────────────────────────────────────────────
-    nose_obj = eyes_module.create_nose(head_z, head_r, face_y=face_y,
-                                       head_r_horiz=head_r_horiz,
-                                       skin_tone=skin_tone if isinstance(skin_tone, tuple)
-                                                 else None)
-    extra_head_objs.append((nose_obj, "Head"))
-
-    # ── Mouth ─────────────────────────────────────────────────────────────────
-    mouth_obj = eyes_module.create_mouth(head_z, head_r, face_y=face_y,
-                                         head_r_horiz=head_r_horiz,
-                                         skin_tone=skin_tone if isinstance(skin_tone, tuple)
-                                                   else None)
-    extra_head_objs.append((mouth_obj, "Head"))
-
-    # ── Mustache (optional) ───────────────────────────────────────────────────
-    # Enabled when cfg["mustache"] is truthy.  cfg["mustache_color"] can be an
-    # RGBA tuple to override the default dark-brown.  Pass the hair color when
-    # mustache_color is not set so it naturally matches the character's hair.
-    if cfg.get("mustache"):
-        mustache_color = cfg.get("mustache_color", None)
-        if mustache_color is None:
-            # Default: derive from hair color for a natural match
-            hc = cfg.get("hair_color", None)
-            if isinstance(hc, str):
-                from .hair import HAIR_COLORS
-                mustache_color = HAIR_COLORS.get(hc, None)
-            elif hc:
-                mustache_color = tuple(hc)
-        mobj = eyes_module.create_mustache(head_z, head_r, face_y=face_y,
-                                           head_r_horiz=head_r_horiz,
-                                           mustache_color=mustache_color)
-        extra_head_objs.append((mobj, "Head"))
+    # Eyes, eyebrows, nose, mouth and mustache are disabled — the template mesh
+    # already has these features baked into the model geometry.
+    extra_head_objs = []
 
     # ── Clothing ──────────────────────────────────────────────────────────────
     # Build clothing by duplicating body-mesh faces in the relevant Z-range
