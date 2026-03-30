@@ -287,8 +287,8 @@ def _panel_rows(bm, top_verts, rows_spec):
 #   1.08 → normal short/medium/long hair clearance
 
 _CAP_LEVELS = [
-    (0.30, 0.92, 0.85),   # hairline — raised to upper temple level
-    (0.58, 0.80, 0.73),   # upper forehead
+    (0.50, 0.85, 0.78),   # hairline — upper head, above ear level
+    (0.68, 0.76, 0.69),   # upper forehead
     (0.86, 0.52, 0.48),   # upper cranium
     (0.97, 0.32, 0.30),   # crown apex — wider to clear cartoon head
 ]
@@ -393,9 +393,9 @@ def _build_buzzed(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_
 # for a flat low-profile look.  h_scale=1.20 gives ~3 % clearance from the
 # head surface using the actual horizontal radius (head_r_horiz).
 _SHORT_CAP_LEVELS = [
-    (0.30, 0.92, 0.85),   # hairline — raised to upper temple level
-    (0.55, 0.82, 0.75),   # upper sides
-    (0.78, 0.58, 0.52),   # upper cranium
+    (0.50, 0.85, 0.78),   # hairline — upper head, above ear level
+    (0.65, 0.78, 0.71),   # upper sides
+    (0.80, 0.55, 0.50),   # upper cranium
     (0.92, 0.45, 0.42),   # crown apex — wider to clear cartoon head
 ]
 
@@ -409,7 +409,7 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z
     nape.  Short fringe clumps fill the front/forehead zone.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _SHORT_CAP_LEVELS
+    hairline_z = head_z + head_r * 0.50   # matches z_off=0.50 in _SHORT_CAP_LEVELS
     if head_verts is not None and crown_z is not None:
         rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
     else:
@@ -442,10 +442,10 @@ def _build_short(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z
 # solid base to grow from.  The crown ring is kept small so it blends into
 # the spike bases cleanly.
 _SPIKY_CAP_LEVELS = [
-    (0.40, 0.92, 0.88),   # hairline — raised to upper temple level
-    (0.60, 0.82, 0.75),   # upper sides
-    (0.78, 0.62, 0.57),   # upper cranium
-    (0.90, 0.52, 0.48),   # crown — wider to clear cartoon head
+    (0.55, 0.85, 0.80),   # hairline — upper head, above ear level
+    (0.70, 0.76, 0.70),   # upper sides
+    (0.82, 0.60, 0.55),   # upper cranium
+    (0.92, 0.50, 0.46),   # crown — wider to clear cartoon head
 ]
 
 
@@ -473,7 +473,7 @@ def _build_spiky(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z
     Face budget: cap ≈ 48 + back panel ≈ 24 + spikes 6 × 4 = 24 → ~96 total.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    hairline_z = head_z + head_r * 0.40   # matches z_off=0.40 in _SPIKY_CAP_LEVELS
+    hairline_z = head_z + head_r * 0.55   # matches z_off=0.55 in _SPIKY_CAP_LEVELS
     if head_verts is not None and crown_z is not None:
         rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
     else:
@@ -538,7 +538,7 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown
     Quiff: 5 clumps with negative z_tip so tips rise above the hairline.
     """
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _SHORT_CAP_LEVELS
+    hairline_z = head_z + head_r * 0.50   # matches z_off=0.50 in _SHORT_CAP_LEVELS
     if head_verts is not None and crown_z is not None:
         rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
     else:
@@ -570,7 +570,7 @@ def _build_slicked(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown
 def _build_long(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Long hair flowing past the shoulders: cap + wide back curtain + fringe."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _CAP_LEVELS
+    hairline_z = head_z + head_r * 0.50   # matches z_off=0.50 in _CAP_LEVELS
     if head_verts is not None and crown_z is not None:
         rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
     else:
@@ -654,7 +654,7 @@ def _build_mohawk(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_
 def _build_ponytail(bm, head_z, head_r, head_r_horiz=None, head_verts=None, crown_z=None):
     """Short front/sides with a gathered bundle hanging at the back."""
     hr_h = head_r_horiz if head_r_horiz is not None else head_r
-    hairline_z = head_z + head_r * 0.30   # matches z_off=0.30 in _CAP_LEVELS
+    hairline_z = head_z + head_r * 0.50   # matches z_off=0.50 in _CAP_LEVELS
     if head_verts is not None and crown_z is not None:
         rings = _build_shell_cap(bm, head_verts, hairline_z, crown_z, hr_h)
     else:

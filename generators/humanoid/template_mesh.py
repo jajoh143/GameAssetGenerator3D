@@ -424,7 +424,7 @@ def _apply_skin_material(obj, skin_tone=None):
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
-        color = skin_tone if skin_tone else (0.72, 0.55, 0.42, 1.0)
+        color = skin_tone if skin_tone else (0.80, 0.60, 0.38, 1.0)  # default tan
         bsdf.inputs["Base Color"].default_value = color
         bsdf.inputs["Roughness"].default_value = 0.42  # smooth toy-like sheen
         bsdf.inputs["Specular IOR Level"].default_value = 0.45

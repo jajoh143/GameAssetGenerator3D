@@ -279,13 +279,13 @@ def create_nose(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None):
     # head_z is the centre of the full head; nose sits below centre.
     # 0.50 puts the nose at ~25 % from the bottom of the full head —
     # the classic cartoon midpoint between eyes (~57.5 %) and chin (0 %).
-    nz       = head_z - head_r * 1.50
+    nz       = head_z - head_r * 0.50
     # face_y here is sampled at nose level, so base_y is the actual face
     # surface at this Z; add a small forward nudge so the nose clears it.
     base_y   = (face_y - hr_h * 0.06) if face_y is not None else -(hr_h * 0.62)
-    nose_r   = hr_h * 0.15          # radius of the nose disc
-    protrude = hr_h * 0.16          # flat button nose — only a small bump forward
-    z_scale  = 0.45                 # squish the Z cross-section (wider than tall)
+    nose_r   = hr_h * 0.14          # radius of the nose base
+    protrude = hr_h * 0.22          # rounded ball nose — more prominent
+    z_scale  = 0.85                 # nearly spherical cross-section (cartoony ball)
     print(f"[nose] nz={nz:.4f}, base_y={base_y:.4f}, tip_y={base_y - protrude:.4f}, nose_r={nose_r:.4f}")
 
     # Build a half-sphere dome (8 segments, 3 latitude rings + tip)
@@ -406,7 +406,7 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     # Position: below nose, in the lower third of the head.
     # 0.70 puts the mouth at ~15 % from bottom of the full head —
     # in the lower third of the face, below the nose (at 25 %).
-    mz_centre = head_z - head_r * 2.25
+    mz_centre = head_z - head_r * 0.70
     # face_y is sampled at mouth level (front-facing verts only);
     # extra forward nudge clears the inward-curving chin surface.
     base_y    = (face_y - hr_h * 0.10) if face_y is not None else -(hr_h * 0.62)
@@ -414,7 +414,7 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
     print(f"[mouth] mz={mz_centre:.4f}, base_y={base_y:.4f}, protrude={protrude:.4f}")
 
     # Sizing
-    half_w    = hr_h * 0.30            # smile width
+    half_w    = hr_h * 0.38            # wide cartoony smile
     upper_h   = head_r * 0.13          # upper lip height
     lower_h   = head_r * 0.15          # lower lip height (slightly taller)
     seam_y    = base_y - protrude * 0.40   # Y of the inner lip seam (recessed)
@@ -423,7 +423,7 @@ def create_mouth(head_z, head_r, face_y=None, head_r_horiz=None, skin_tone=None)
 
     bm = bmesh_mod.new()
 
-    smile_lift = head_r * 0.025   # corners curl up slightly
+    smile_lift = head_r * 0.06   # big cartoon smile curve — corners curl up more
 
     def _arc_row(z_base, y_val, smile_lift_frac, n):
         """One row of n+1 verts along a smile arc at a fixed Y depth."""
