@@ -35,11 +35,16 @@ _TEMPLATE_DIR = os.path.normpath(
 # Cartoon_Male GLB — secondary template for male/neutral characters
 CARTOON_MALE_GLB = os.path.join(_TEMPLATE_DIR, "Cartoon_Male.glb")
 
-# Freerigged low-poly GLB — primary template for all characters
-# This mesh uses a Rigify-based armature with DEF- deformation bones.
-# We remap those bone names to our standard Humanoid_Armature naming so
-# rig.py can apply the artist-painted weights directly without ARMATURE_AUTO.
+# Freerigged low-poly GLB — secondary template (same rig, GLB fallback)
 FREERIGGED_GLB = os.path.join(_TEMPLATE_DIR, "lowpoly_character-freerigged-.glb")
+
+# Low-poly FBX — primary template for all characters.
+# Exported from Blender (Y-up FBX convention); Blender's FBX importer handles
+# the coordinate conversion automatically (no manual rotation fix needed).
+# The mesh shares the same Rigify DEF- bone names as the freerigged GLB so
+# _remap_freerigged_vertex_groups() applies without modification.
+# The mesh may be at a non-standard scale; _normalise_mesh() corrects this.
+LOWPOLY_FBX = os.path.join(_TEMPLATE_DIR, "LowPolyMesh.fbx")
 
 # Map (lod_key, sex_key) → filename stem (NBM fallback)
 _LOD_SEX_MAP = {
@@ -207,6 +212,79 @@ def _import_glb_mesh(glb_path: str):
                 obj.modifiers.remove(mod)
 
     # Single part — return as-is
+    if len(mesh_objs) == 1:
+        return mesh_objs[0]
+
+    # Multiple parts — join into one mesh object
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in mesh_objs:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = mesh_objs[0]
+    bpy.ops.object.join()
+
+    joined = bpy.context.view_layer.objects.active
+    print(f"[template_mesh] Joined into single mesh: {joined.name}")
+    return joined
+
+
+def _import_fbx_mesh(fbx_path: str):
+    """Import all mesh objects from an FBX file and join them into one.
+
+    Blender's FBX importer handles the Y-up → Z-up coordinate conversion
+    automatically, so no extra rotation fix is required.  Skin weights and
+    vertex groups (bone names) are preserved exactly as stored in the FBX.
+
+    Args:
+        fbx_path: Absolute path to the .fbx file.
+
+    Returns:
+        A single Blender MESH object containing all imported geometry.
+
+    Raises:
+        RuntimeError: if no MESH object was found after import.
+    """
+    import bpy
+
+    before = {o.name for o in bpy.data.objects}
+
+    bpy.ops.import_scene.fbx(
+        filepath=fbx_path,
+        use_custom_normals=True,
+        use_image_search=False,
+        automatic_bone_orientation=False,
+    )
+
+    after     = {o.name for o in bpy.data.objects}
+    new_names = after - before
+
+    mesh_objs = [
+        bpy.data.objects[n]
+        for n in new_names
+        if bpy.data.objects[n].type == 'MESH'
+    ]
+
+    if not mesh_objs:
+        raise RuntimeError(
+            f"No MESH object found after importing {fbx_path}. "
+            f"New objects: {list(new_names)}"
+        )
+
+    print(f"[template_mesh] FBX imported {len(mesh_objs)} mesh part(s): "
+          f"{[o.name for o in mesh_objs]}")
+
+    # Unparent from the bundled armature (keep world transform) and strip
+    # armature modifiers so rig.py can attach its own skinning cleanly.
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in mesh_objs:
+        if obj.parent is not None:
+            bpy.context.view_layer.objects.active = obj
+            obj.select_set(True)
+            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+            obj.select_set(False)
+        for mod in list(obj.modifiers):
+            if mod.type == 'ARMATURE':
+                obj.modifiers.remove(mod)
+
     if len(mesh_objs) == 1:
         return mesh_objs[0]
 
@@ -651,26 +729,29 @@ def create_body_from_template(cfg: dict):
 
     # ── Import template mesh ───────────────────────────────────────────────
     # Priority:
-    #   1. lowpoly_character-freerigged-.glb — new primary template (all genders)
-    #   2. Cartoon_Male.glb                  — male/neutral fallback
-    #   3. NBM .blend files                  — legacy fallback
-    use_freerigged = os.path.exists(FREERIGGED_GLB)
+    #   1. LowPolyMesh.fbx                   — primary (FBX, auto coord conversion)
+    #   2. lowpoly_character-freerigged-.glb  — GLB fallback (same rig)
+    #   3. Cartoon_Male.glb                  — male/neutral fallback
+    #   4. NBM .blend files                  — legacy fallback
+    use_fbx = os.path.exists(LOWPOLY_FBX)
+    use_freerigged = not use_fbx and os.path.exists(FREERIGGED_GLB)
     use_cartoon_glb = (
-        not use_freerigged
+        not use_fbx and not use_freerigged
         and gender in ("male", "neutral")
         and os.path.exists(CARTOON_MALE_GLB)
     )
-    # Unified flag: True for any GLB-based import (enables vertex-scan head detection)
-    use_glb = use_freerigged or use_cartoon_glb
+    # Unified flag: True for any import path that benefits from vertex-scan
+    # head/body geometry detection (all non-NBM templates).
+    use_glb = use_fbx or use_freerigged or use_cartoon_glb
 
-    if use_freerigged:
-        print(f"[template_mesh] Importing freerigged template from: {FREERIGGED_GLB}")
+    if use_fbx:
+        print(f"[template_mesh] Importing FBX template from: {LOWPOLY_FBX}")
+        mesh_obj = _import_fbx_mesh(LOWPOLY_FBX)
+    elif use_freerigged:
+        print(f"[template_mesh] Importing freerigged GLB from: {FREERIGGED_GLB}")
         mesh_obj = _import_glb_mesh(FREERIGGED_GLB)
-        # The freerigged GLB was originally created in Blender (Z-up) but
-        # Blender's glTF importer assumes the standard Y-up convention and
-        # applies a spurious -90° X correction, leaving the character lying
-        # flat on the floor.  Apply +90° X to stand the character upright
-        # so _normalise_mesh bakes the correct orientation.
+        # The freerigged GLB uses Blender Z-up but Blender's glTF importer
+        # applies a spurious -90° X correction.  Counter it here.
         mesh_obj.rotation_euler[0] = math.pi / 2
     elif use_cartoon_glb:
         print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
@@ -715,7 +796,7 @@ def create_body_from_template(cfg: dict):
     #
     # For NBM .blend files the legacy behaviour (clear → ARMATURE_AUTO) is
     # preserved because those files' weights were built for a different rig.
-    if use_freerigged:
+    if use_fbx or use_freerigged:
         _remap_freerigged_vertex_groups(mesh_obj)
     elif use_cartoon_glb:
         _remap_glb_vertex_groups(mesh_obj)
