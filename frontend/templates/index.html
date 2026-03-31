@@ -407,13 +407,15 @@ function fitCameraToModel(model) {
   const size   = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
 
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fov    = camera.fov * (Math.PI / 180);
-  let dist     = maxDim / (2 * Math.tan(fov / 2));
-  dist *= 1.6;
+  // Use character height (size.y) to drive distance — multiply by 0.75
+  // so the full figure fills most of the viewport.
+  const dist = size.y * 0.75;
 
-  camera.position.set(center.x, center.y + size.y * 0.1, center.z + dist);
-  controls.target.copy(center);
+  // Aim at mid-torso (~45 % up from feet) rather than geometric centre,
+  // so the head isn't cropped and feet aren't wasted space.
+  const targetY = box.min.y + size.y * 0.45;
+  camera.position.set(center.x, targetY, center.z + dist);
+  controls.target.set(center.x, targetY, center.z);
   controls.update();
 
   defaultCamPos.copy(camera.position);
