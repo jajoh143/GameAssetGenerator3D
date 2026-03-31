@@ -6,6 +6,10 @@ import uuid
 import subprocess
 import threading
 from flask import Flask, render_template, request, jsonify, send_file
+from dotenv import load_dotenv
+
+# Load frontend/.env if present (defines BLENDER_PATH, PORT, etc.)
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREVIEW_DIR = os.path.join(PROJECT_ROOT, "assets", "previews")
