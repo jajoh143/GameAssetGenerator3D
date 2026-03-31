@@ -12,6 +12,35 @@ PREVIEW_DIR = os.path.join(PROJECT_ROOT, "assets", "previews")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "assets")
 os.makedirs(PREVIEW_DIR, exist_ok=True)
 
+# ── Blender executable detection ──────────────────────────────────────────────
+# Priority: BLENDER_PATH env var → common install locations → PATH fallback
+_BLENDER_SEARCH = [
+    # Linux
+    "/usr/bin/blender",
+    "/usr/local/bin/blender",
+    "/snap/bin/blender",
+    # macOS
+    "/Applications/Blender.app/Contents/MacOS/Blender",
+    # Windows (common)
+    r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe",
+    r"C:\Program Files\Blender Foundation\Blender 3.6\blender.exe",
+]
+
+def _find_blender():
+    # Honour explicit override first
+    env_path = os.environ.get("BLENDER_PATH")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+    # Check well-known install locations
+    for path in _BLENDER_SEARCH:
+        if os.path.isfile(path):
+            return path
+    # Fall back to PATH (raises FileNotFoundError at subprocess time if missing)
+    return "blender"
+
+BLENDER_BIN = _find_blender()
+print(f"[app] Using Blender: {BLENDER_BIN}")
+
 app = Flask(__name__)
 
 # Track running jobs: job_id -> {"status": str, "log": [str], "output": str|None}
@@ -22,7 +51,7 @@ _jobs_lock = threading.Lock()
 def _blender_cmd(script_args, output_path):
     """Build the blender subprocess command."""
     return [
-        "blender", "--background", "--python",
+        BLENDER_BIN, "--background", "--python",
         os.path.join(PROJECT_ROOT, "scripts", "generate_humanoid.py"),
         "--", "--output", output_path,
     ] + script_args
@@ -45,6 +74,11 @@ def _run_job(job_id, cmd):
                 _jobs[job_id]["log"] = log[:]
         proc.wait()
         success = proc.returncode == 0
+    except FileNotFoundError:
+        log.append(f"ERROR: Blender not found at '{BLENDER_BIN}'.")
+        log.append("Set the BLENDER_PATH environment variable to your Blender executable,")
+        log.append("e.g.  BLENDER_PATH=/path/to/blender python app.py")
+        success = False
     except Exception as e:
         log.append(f"ERROR: {e}")
         success = False
