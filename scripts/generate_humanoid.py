@@ -11,7 +11,7 @@ Options:
     --skin-tone NAME      Skin tone name or R,G,B,A values
     --hair-style NAME     Hair style: none, buzzed, short, spiky, slicked, long, mohawk, ponytail
     --hair-color NAME     Hair color name or R,G,B,A values
-    --clothing TYPES      Comma-separated clothing list (e.g. "tshirt,pants,belt")
+    --clothing TYPES      Comma-separated clothing list (e.g. "short_sleeve,jeans")
     --clothing-color CLR  Single named/RGBA color OR item:color pairs (tshirt:red,pants:navy)
     --mustache            Add a mustache (color matches hair by default)
     --mustache-color CLR  Override mustache color (name or R,G,B,A)
@@ -51,7 +51,7 @@ def parse_args():
                         help="Body build (lean, average, stocky, heavy)")
     parser.add_argument("--gender", default="neutral",
                         help="Body gender (neutral, male, female)")
-    parser.add_argument("--skin-tone", default="medium",
+    parser.add_argument("--skin-tone", default="tan",
                         help="Skin tone name or R,G,B,A (e.g., 'tan' or '0.5,0.4,0.3,1.0')")
 
     # Hair
@@ -61,8 +61,8 @@ def parse_args():
                         help="Hair color name or R,G,B,A values")
 
     # Clothing
-    parser.add_argument("--clothing", default="tshirt,pants",
-                        help="Comma-separated clothing types, e.g. 'longsleeve,pants,belt'")
+    parser.add_argument("--clothing", default="short_sleeve,jeans",
+                        help="Comma-separated clothing types: short_sleeve, long_sleeve, v_neck, shorts, jeans")
     parser.add_argument("--clothing-color", default=None,
                         help="Single color (red) or per-item pairs (tshirt:red,pants:navy)")
 
@@ -75,7 +75,7 @@ def parse_args():
     # Template mesh (always on by default; --procedural opts back to the old generator)
     parser.add_argument("--procedural", action="store_true",
                         help="Build body mesh procedurally instead of using the NBM template")
-    parser.add_argument("--lod", default="low",
+    parser.add_argument("--lod", default="mid",
                         choices=["very_low", "low", "mid"],
                         help="Template mesh LOD tier (only used with --use-template): "
                              "very_low (<300 faces), low (300-500), mid (500+)")
