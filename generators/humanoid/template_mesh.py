@@ -1049,11 +1049,11 @@ def create_body_from_template(cfg: dict):
             mid_z = top_threshold + head_height * 0.40
             upper_verts  = [v for v in head_scan_verts if v.z > mid_z]
             measure_set  = upper_verts if upper_verts else head_scan_verts
-            head_r_horiz = max(abs(v.x) for v in measure_set)
+            head_r_horiz = max(abs(v.x) for v in measure_set) * 1.15
             # equator (ear/temple level) — 0.46 × head_height for cap size;
             # shift the equator ring up by 10 % of head_r so the cap sits higher.
             head_r       = max(head_height * 0.46, actual_height * 0.055)
-            hair_head_z  = crown_z - head_r * 0.90   # 10 % upward shift
+            hair_head_z  = crown_z - head_r * 0.65   # 10 % upward shift
             hair_head_r  = head_r
             head_z       = top_threshold + head_height * 0.50   # centre for face features
             face_y       = min(v.y for v in head_scan_verts)
@@ -1093,6 +1093,9 @@ def create_body_from_template(cfg: dict):
     if hair_style and hair_style != "none":
         hair_obj = hair_module.create_hair(h_hz, h_hr, hair_style, hair_color,
                                            head_r_horiz=head_r_horiz)
+
+    if hair_obj:
+        hair_obj.location.y += 0.02 # nudge hair backward a bit
 
     # Eyes, eyebrows, nose, mouth and mustache are disabled — the template mesh
     # already has these features baked into the model geometry.
