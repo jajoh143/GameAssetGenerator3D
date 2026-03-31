@@ -1105,7 +1105,7 @@ def create_body_from_template(cfg: dict):
     # Build clothing by duplicating body-mesh faces in the relevant Z-range
     # and pushing them outward.  This gives clothing that exactly conforms to
     # the template mesh shape — far better than ring-based cylinders.
-    clothing_spec = cfg.get("clothing", ["short_sleeve", "jeans"])
+    clothing_spec = cfg.get("clothing", ["tshirt", "pants"])
     if isinstance(clothing_spec, str):
         clothing_spec = [c.strip() for c in clothing_spec.split(",") if c.strip()]
     clothing_color = cfg.get("clothing_color", None)
@@ -1132,15 +1132,17 @@ def create_body_from_template(cfg: dict):
     # Ranges are deliberately generous — better to slightly over-cover than
     # leave skin showing through gaps.
     # Clothing zones: z_lo, z_hi, include_arms
-    # IMPORTANT: shirt bottom and jeans top must NOT overlap at the hip
+    # IMPORTANT: tshirt bottom and pants top must NOT overlap at the hip
     # or they blend into one solid block.  Leave a ~2cm skin gap at the waist.
     _waist_gap = 0.02
     _CLOTHING_ZONES = {
-        "short_sleeve": (_hip_z + _waist_gap,                 _chest_z + 0.05, True),
-        "long_sleeve":  (_hip_z + _waist_gap,                 _chest_z + 0.05, True),
-        "v_neck":       (_hip_z + _waist_gap,                 _chest_z + 0.05, True),
-        "shorts":       (foot_top + cfg["leg_length"] * 0.38, _hip_z + cfg["torso_length"] * 0.10, False),
-        "jeans":        (foot_top - 0.02,                     _hip_z + cfg["torso_length"] * 0.10, False),
+        "tshirt":     (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
+        "longsleeve": (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
+        "jacket":     (_hip_z - 0.02,                        _chest_z + 0.06, True),
+        "pants":      (foot_top - 0.02,                      _hip_z + cfg["torso_length"] * 0.10, False),
+        "shorts":     (foot_top + cfg["leg_length"] * 0.38,  _hip_z + cfg["torso_length"] * 0.10, False),
+        "armor":      (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
+        "robe":       (foot_top,                             _chest_z + 0.05, True),
     }
 
     BODY_X_CAP = 0.28  # torso width cap — verts beyond this are arms
