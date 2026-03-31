@@ -132,6 +132,19 @@ def _import_mesh_from_blend(blend_path: str):
         for name in new_names:
             obj = bpy.data.objects[name]
             if obj.type == 'MESH':
+                # Unparent from the NBM armature NOW, keeping world transform,
+                # before _clear_non_mesh_objects deletes the parent.  If we wait,
+                # Blender snaps the mesh to its local-space position when the
+                # parent is deleted, causing severe displacement.
+                if obj.parent is not None:
+                    bpy.context.view_layer.objects.active = obj
+                    obj.select_set(True)
+                    bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+                    obj.select_set(False)
+                # Strip any armature modifier — rig.py will re-apply skinning
+                for mod in list(obj.modifiers):
+                    if mod.type == 'ARMATURE':
+                        obj.modifiers.remove(mod)
                 return obj
             # Not a mesh (e.g. armature that came along) — will be cleaned up later
         before = after  # update baseline for next iteration
@@ -325,12 +338,20 @@ def _clear_non_mesh_objects(keep_names: set):
     """Remove any objects added during import that are not the target mesh.
 
     This cleans up armatures, empties, or lights that may have been appended
-    alongside the mesh object.
+    alongside the mesh object.  Bone custom_shape references (icospheres used
+    as viewport bone display shapes) must be cleared first or Blender will keep
+    those objects alive even with do_unlink=True.
 
     Args:
         keep_names: Set of object names to preserve (mesh + pre-existing).
     """
     import bpy
+    # Clear bone custom_shape pointers on any imported armatures so the
+    # viewport-display icospheres can be fully unlinked below.
+    for obj in bpy.data.objects:
+        if obj.type == 'ARMATURE' and obj.name not in keep_names and obj.pose:
+            for pbone in obj.pose.bones:
+                pbone.custom_shape = None
     to_remove = [o for o in bpy.data.objects if o.name not in keep_names]
     for obj in to_remove:
         bpy.data.objects.remove(obj, do_unlink=True)
