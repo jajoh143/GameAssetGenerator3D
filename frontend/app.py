@@ -5,6 +5,7 @@ import sys
 import uuid
 import subprocess
 import threading
+import shutil
 from flask import Flask, render_template, request, jsonify, send_file
 from dotenv import load_dotenv
 
@@ -31,19 +32,25 @@ _BLENDER_SEARCH = [
 ]
 
 def _find_blender():
-    # Honour explicit override first
+    # 1. Explicit env var
     env_path = os.environ.get("BLENDER_PATH")
     if env_path and os.path.isfile(env_path):
         return env_path
-    # Check well-known install locations
+    # 2. shutil.which resolves from PATH (most reliable)
+    which = shutil.which("blender")
+    if which:
+        return which
+    # 3. Common install locations
     for path in _BLENDER_SEARCH:
         if os.path.isfile(path):
             return path
-    # Fall back to PATH (raises FileNotFoundError at subprocess time if missing)
-    return "blender"
+    return None
 
 BLENDER_BIN = _find_blender()
-print(f"[app] Using Blender: {BLENDER_BIN}")
+if BLENDER_BIN:
+    print(f"[app] Blender found: {BLENDER_BIN}")
+else:
+    print("[app] WARNING: Blender not found. Set BLENDER_PATH in frontend/.env")
 
 app = Flask(__name__)
 
@@ -54,8 +61,9 @@ _jobs_lock = threading.Lock()
 
 def _blender_cmd(script_args, output_path):
     """Build the blender subprocess command."""
+    exe = BLENDER_BIN or "blender"
     return [
-        BLENDER_BIN, "--background", "--python",
+        exe, "--background", "--python",
         os.path.join(PROJECT_ROOT, "scripts", "generate_humanoid.py"),
         "--", "--output", output_path,
     ] + script_args
@@ -79,9 +87,9 @@ def _run_job(job_id, cmd):
         proc.wait()
         success = proc.returncode == 0
     except FileNotFoundError:
-        log.append(f"ERROR: Blender not found at '{BLENDER_BIN}'.")
-        log.append("Set the BLENDER_PATH environment variable to your Blender executable,")
-        log.append("e.g.  BLENDER_PATH=/path/to/blender python app.py")
+        log.append("ERROR: Blender executable not found.")
+        log.append("Add 'blender' to your PATH or set BLENDER_PATH in frontend/.env")
+        log.append(f"  e.g.  BLENDER_PATH=/path/to/blender")
         success = False
     except Exception as e:
         log.append(f"ERROR: {e}")
