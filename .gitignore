@@ -33,3 +33,6 @@ Thumbs.db
 # Claude Code agent worktrees (temporary, created by parallel agents)
 .claude/
 frontend/.env
+
+# Node.js
+js/node_modules/
