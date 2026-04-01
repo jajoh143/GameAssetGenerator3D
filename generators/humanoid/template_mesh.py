@@ -4,24 +4,10 @@ Instead of procedurally building geometry, this module imports a pre-made
 base mesh from the assets/TemplateMeshes/ directory and normalises it to the
 target height and position.
 
-Primary template
-----------------
-Cartoon_Male.glb — imported via bpy.ops.import_scene.gltf().  Used as the
-default for all male/neutral characters across every LOD tier.
-
-NBM fallback (legacy .blend files)
------------------------------------
-"very_low"  →  NBM_VeryLowpoly_{sex}.blend   (~<300 faces, mobile/web)
-"low"        →  NBM_Lowpoly_{sex}.blend        (300-500 faces, default)
-"mid"        →  NBM_Midpoly_{sex}.blend        (500+ faces, high quality)
-
-Female characters still use the NBM_*.blend pipeline until a Cartoon_Female
-template is provided.
-
-Gender / sex mapping
---------------------
-"male" or "neutral"  →  Cartoon_Male.glb  (or NBM Male if GLB absent)
-"female"             →  NBM Female variant
+Template
+--------
+Cartoon_Male.glb — imported via bpy.ops.import_scene.gltf().  Used for all
+characters regardless of gender/LOD setting.
 """
 
 import os
@@ -32,100 +18,8 @@ _TEMPLATE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "TemplateMeshes")
 )
 
-# Cartoon_Male GLB — secondary template for male/neutral characters
+# Cartoon_Male GLB — the sole template mesh
 CARTOON_MALE_GLB = os.path.join(_TEMPLATE_DIR, "Cartoon_Male.glb")
-
-# Freerigged low-poly GLB — secondary template (same rig, GLB fallback)
-FREERIGGED_GLB = os.path.join(_TEMPLATE_DIR, "lowpoly_character-freerigged-.glb")
-
-# Low-poly FBX — primary template for all characters.
-# Exported from Blender (Y-up FBX convention); Blender's FBX importer handles
-# the coordinate conversion automatically (no manual rotation fix needed).
-# The mesh shares the same Rigify DEF- bone names as the freerigged GLB so
-# _remap_freerigged_vertex_groups() applies without modification.
-# The mesh may be at a non-standard scale; _normalise_mesh() corrects this.
-LOWPOLY_FBX = os.path.join(_TEMPLATE_DIR, "LowPolyMesh.fbx")
-
-# Map (lod_key, sex_key) → filename stem (NBM fallback)
-_LOD_SEX_MAP = {
-    ("very_low", "Male"):   "NBM_VeryLowpoly_Male",
-    ("very_low", "Female"): "NBM_VeryLowpoly_Female",
-    ("low",      "Male"):   "NBM_Lowpoly_Male",
-    ("low",      "Female"): "NBM_Lowpoly_Female",
-    ("mid",      "Male"):   "NBM_Midpoly_Male",
-    ("mid",      "Female"): "NBM_Midpoly_Female",
-}
-
-VALID_LODS = ("very_low", "low", "mid")
-
-
-def _resolve_blend_path(gender: str, lod: str) -> str:
-    """Return the absolute path to the .blend file for the given gender/lod.
-
-    Args:
-        gender: "male", "female", or "neutral"
-        lod:    "very_low", "low", or "mid"
-
-    Returns:
-        Absolute path string.
-
-    Raises:
-        ValueError: if lod is not one of the valid tiers.
-        FileNotFoundError: if the resolved .blend file does not exist.
-    """
-    if lod not in VALID_LODS:
-        raise ValueError(f"Unknown LOD '{lod}'. Valid options: {VALID_LODS}")
-
-    sex = "Female" if gender == "female" else "Male"
-    stem = _LOD_SEX_MAP[(lod, sex)]
-    path = os.path.join(_TEMPLATE_DIR, f"{stem}.blend")
-
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Template mesh not found: {path}\n"
-            f"Expected NBM .blend files in: {_TEMPLATE_DIR}"
-        )
-    return path
-
-
-def _import_mesh_from_blend(blend_path: str):
-    """Load the body mesh from a .blend file by reading mesh data directly.
-
-    Instead of importing objects (which drags in armatures, collections, and
-    parent relationships), we load only the MESH DATA BLOCKS from the library.
-    We then create a brand-new bpy.types.Object with identity transform and
-    link it to the scene.  This completely avoids every parent/collection/
-    orphan issue that plagued the wm.append and library-load-objects approaches.
-
-    The largest mesh by vertex count is chosen as the body mesh, which reliably
-    selects the character body over any small helper meshes (icospheres, etc.).
-    """
-    import bpy
-
-    with bpy.data.libraries.load(blend_path, link=False) as (src, dst):
-        dst.meshes = list(src.meshes)
-
-    if not dst.meshes:
-        raise RuntimeError(f"No mesh data blocks found in {blend_path}")
-
-    # Pick the mesh with the most vertices — that's the body, not a helper
-    best = max(
-        (m for m in dst.meshes if m is not None),
-        key=lambda m: len(m.vertices),
-        default=None,
-    )
-    if best is None:
-        raise RuntimeError(f"All mesh data blocks were None in {blend_path}")
-
-    print(f"[import_blend] Using mesh '{best.name}' "
-          f"({len(best.vertices)} verts, {len(best.polygons)} faces)")
-
-    # Create a clean object with identity transform — no parent, no modifiers
-    obj = bpy.data.objects.new("Humanoid_Body", best)
-    bpy.context.scene.collection.objects.link(obj)
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-    return obj
 
 
 def _import_glb_mesh(glb_path: str):
@@ -212,78 +106,6 @@ def _import_glb_mesh(glb_path: str):
     print(f"[template_mesh] Joined into single mesh: {joined.name}")
     return joined
 
-
-def _import_fbx_mesh(fbx_path: str):
-    """Import all mesh objects from an FBX file and join them into one.
-
-    Blender's FBX importer handles the Y-up → Z-up coordinate conversion
-    automatically, so no extra rotation fix is required.  Skin weights and
-    vertex groups (bone names) are preserved exactly as stored in the FBX.
-
-    Args:
-        fbx_path: Absolute path to the .fbx file.
-
-    Returns:
-        A single Blender MESH object containing all imported geometry.
-
-    Raises:
-        RuntimeError: if no MESH object was found after import.
-    """
-    import bpy
-
-    before = {o.name for o in bpy.data.objects}
-
-    bpy.ops.import_scene.fbx(
-        filepath=fbx_path,
-        use_custom_normals=True,
-        use_image_search=False,
-        automatic_bone_orientation=False,
-    )
-
-    after     = {o.name for o in bpy.data.objects}
-    new_names = after - before
-
-    mesh_objs = [
-        bpy.data.objects[n]
-        for n in new_names
-        if bpy.data.objects[n].type == 'MESH'
-    ]
-
-    if not mesh_objs:
-        raise RuntimeError(
-            f"No MESH object found after importing {fbx_path}. "
-            f"New objects: {list(new_names)}"
-        )
-
-    print(f"[template_mesh] FBX imported {len(mesh_objs)} mesh part(s): "
-          f"{[o.name for o in mesh_objs]}")
-
-    # Unparent from the bundled armature (keep world transform) and strip
-    # armature modifiers so rig.py can attach its own skinning cleanly.
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in mesh_objs:
-        if obj.parent is not None:
-            bpy.context.view_layer.objects.active = obj
-            obj.select_set(True)
-            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-            obj.select_set(False)
-        for mod in list(obj.modifiers):
-            if mod.type == 'ARMATURE':
-                obj.modifiers.remove(mod)
-
-    if len(mesh_objs) == 1:
-        return mesh_objs[0]
-
-    # Multiple parts — join into one mesh object
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in mesh_objs:
-        obj.select_set(True)
-    bpy.context.view_layer.objects.active = mesh_objs[0]
-    bpy.ops.object.join()
-
-    joined = bpy.context.view_layer.objects.active
-    print(f"[template_mesh] Joined into single mesh: {joined.name}")
-    return joined
 
 
 def _purge_gltf_not_exported():
@@ -440,111 +262,6 @@ _GLB_TO_OUR_BONES = {
 }
 
 
-# ── Bone name mapping: freerigged GLB DEF-bones → our rig bone names ─────────
-# lowpoly_character-freerigged-.glb uses a Rigify armature.  The skin joints
-# (vertex groups) carry numeric glTF node-index suffixes (e.g. "DEF-spine_076").
-# We merge all relevant DEF-, MCH- and FK control groups into our 15-bone game
-# rig, then delete every remaining group that has no corresponding rig bone.
-_FREERIGGED_TO_OUR_BONES = {
-    # ── Hips (root) ──────────────────────────────────────────────────────────
-    "DEF-pelvis.L_098":         "Hips",
-    "DEF-pelvis.R_0100":        "Hips",
-    "DEF-spine_076":            "Hips",
-    "hips_089":                 "Hips",
-    "torso_088":                "Hips",
-    "MCH-WGT-hips_0170":        "Hips",
-    # ── Spine ─────────────────────────────────────────────────────────────────
-    "DEF-spine.001_077":        "Spine",
-    "DEF-spine.002_078":        "Spine",
-    "spine_fk_094":             "Spine",
-    "spine_fk.001_092":         "Spine",
-    # ── Chest ─────────────────────────────────────────────────────────────────
-    "DEF-spine.003_079":        "Chest",
-    "DEF-spine.004_080":        "Chest",
-    "DEF-spine.005_081":        "Chest",
-    "DEF-spine.006_082":        "Chest",
-    "chest_090":                "Chest",
-    "MCH-WGT-chest_0440":       "Chest",
-    "DEF-breast.L_0433":        "Chest",
-    "DEF-breast.R_0435":        "Chest",
-    # ── Neck ──────────────────────────────────────────────────────────────────
-    "neck_0182":                "Neck",
-    "MCH-ROT-neck_0181":        "Neck",
-    "MCH-STR-neck_0186":        "Neck",
-    # ── Head ──────────────────────────────────────────────────────────────────
-    "head_0184":                "Head",
-    "MCH-ROT-head_0183":        "Head",
-    # ── Left shoulder ─────────────────────────────────────────────────────────
-    "DEF-shoulder.L_0203":      "Shoulder.L",
-    # ── Right shoulder ────────────────────────────────────────────────────────
-    "DEF-shoulder.R_0320":      "Shoulder.R",
-    # ── Left arm ──────────────────────────────────────────────────────────────
-    "DEF-upper_arm.L_0196":     "UpperArm.L",
-    "DEF-upper_arm.L.001_0217": "UpperArm.L",
-    "DEF-forearm.L_0218":       "LowerArm.L",
-    "DEF-forearm.L.001_0219":   "LowerArm.L",
-    "DEF-hand.L_0220":          "Hand.L",
-    "DEF-palm.01.L_0216":       "Hand.L",
-    "DEF-palm.02.L_0258":       "Hand.L",
-    "DEF-palm.03.L_0278":       "Hand.L",
-    "DEF-palm.04.L_0297":       "Hand.L",
-    "DEF-f_index.01.L_0227":    "Hand.L",
-    "DEF-f_index.02.L_0228":    "Hand.L",
-    "DEF-f_index.03.L_0229":    "Hand.L",
-    "DEF-f_middle.01.L_0254":   "Hand.L",
-    "DEF-f_middle.02.L_0255":   "Hand.L",
-    "DEF-f_middle.03.L_0256":   "Hand.L",
-    "DEF-f_pinky.01.L_0293":    "Hand.L",
-    "DEF-f_pinky.02.L_0294":    "Hand.L",
-    "DEF-f_pinky.03.L_0295":    "Hand.L",
-    "DEF-f_ring.01.L_0274":     "Hand.L",
-    "DEF-f_ring.02.L_0275":     "Hand.L",
-    "DEF-f_ring.03.L_0276":     "Hand.L",
-    "DEF-thumb.01.L_0231":      "Hand.L",
-    "DEF-thumb.02.L_0232":      "Hand.L",
-    "DEF-thumb.03.L_0233":      "Hand.L",
-    # ── Right arm ─────────────────────────────────────────────────────────────
-    "DEF-upper_arm.R_0333":     "UpperArm.R",
-    "DEF-upper_arm.R.001_0334": "UpperArm.R",
-    "DEF-forearm.R_0335":       "LowerArm.R",
-    "DEF-forearm.R.001_0336":   "LowerArm.R",
-    "DEF-hand.R_0337":          "Hand.R",
-    "DEF-palm.01.R_0353":       "Hand.R",
-    "DEF-palm.02.R_0381":       "Hand.R",
-    "DEF-palm.03.R_0401":       "Hand.R",
-    "DEF-palm.04.R_0420":       "Hand.R",
-    "DEF-f_index.01.R_0345":    "Hand.R",
-    "DEF-f_index.02.R_0346":    "Hand.R",
-    "DEF-f_index.03.R_0347":    "Hand.R",
-    "DEF-f_middle.01.R_0377":   "Hand.R",
-    "DEF-f_middle.02.R_0378":   "Hand.R",
-    "DEF-f_middle.03.R_0379":   "Hand.R",
-    "DEF-f_pinky.01.R_0416":    "Hand.R",
-    "DEF-f_pinky.02.R_0417":    "Hand.R",
-    "DEF-f_pinky.03.R_0418":    "Hand.R",
-    "DEF-f_ring.01.R_0397":     "Hand.R",
-    "DEF-f_ring.02.R_0398":     "Hand.R",
-    "DEF-f_ring.03.R_0399":     "Hand.R",
-    "DEF-thumb.01.R_0329":      "Hand.R",
-    "DEF-thumb.02.R_0350":      "Hand.R",
-    "DEF-thumb.03.R_0351":      "Hand.R",
-    # ── Left leg ──────────────────────────────────────────────────────────────
-    "DEF-thigh.L_0144":         "UpperLeg.L",
-    "DEF-thigh.L.001_0145":     "UpperLeg.L",
-    "DEF-shin.L_0146":          "LowerLeg.L",
-    "DEF-shin.L.001_0147":      "LowerLeg.L",
-    "DEF-foot.L_0148":          "Foot.L",
-    "DEF-toe.L_0149":           "Foot.L",
-    # ── Right leg ─────────────────────────────────────────────────────────────
-    "DEF-thigh.R_0162":         "UpperLeg.R",
-    "DEF-thigh.R.001_0163":     "UpperLeg.R",
-    "DEF-shin.R_0164":          "LowerLeg.R",
-    "DEF-shin.R.001_0165":      "LowerLeg.R",
-    "DEF-foot.R_0166":          "Foot.R",
-    "DEF-toe.R_0167":           "Foot.R",
-}
-
-
 def _remap_glb_vertex_groups(obj):
     """Remap Cartoon_Male.glb vertex groups to our Humanoid_Armature bone names.
 
@@ -604,61 +321,6 @@ def _remap_glb_vertex_groups(obj):
     print(f"[template_mesh] Vertex groups after remap: "
           f"{[vg.name for vg in obj.vertex_groups]}")
 
-
-def _remap_freerigged_vertex_groups(obj):
-    """Remap freerigged GLB vertex groups to our Humanoid_Armature bone names.
-
-    The freerigged template uses a Rigify armature whose DEF-, MCH-, and FK
-    control bone names include glTF node-index suffixes (e.g. "DEF-spine_076").
-    Multiple source groups (e.g. thigh.L + thigh.L.001) are merged into a
-    single target group (UpperLeg.L) by summing weights clamped to 1.0.
-
-    After remapping, any leftover groups without a corresponding rig bone are
-    deleted so rig.py's Armature modifier path stays clean.
-    """
-    vg_map = obj.vertex_groups
-
-    # Build work-list: (source_name, target_name) for every group present
-    renames = []
-    for vg in list(vg_map):
-        target = _FREERIGGED_TO_OUR_BONES.get(vg.name)
-        if target:
-            renames.append((vg.name, target))
-
-    for src_name, dst_name in renames:
-        src_vg = vg_map.get(src_name)
-        if src_vg is None:
-            continue  # already removed in a previous iteration
-
-        dst_vg = vg_map.get(dst_name)
-
-        if dst_vg is None:
-            # Simple rename — no existing target group yet
-            src_vg.name = dst_name
-        else:
-            # Merge src weights INTO dst (both bones influence the same region)
-            for v in obj.data.vertices:
-                try:
-                    w = src_vg.weight(v.index)
-                    if w > 0.0:
-                        existing = 0.0
-                        try:
-                            existing = dst_vg.weight(v.index)
-                        except RuntimeError:
-                            pass
-                        dst_vg.add([v.index], min(existing + w, 1.0), 'REPLACE')
-                except RuntimeError:
-                    pass  # vertex not in src group
-            vg_map.remove(src_vg)
-
-    # Delete any remaining groups that have no corresponding rig bone
-    our_bones = set(_FREERIGGED_TO_OUR_BONES.values())
-    for vg in list(vg_map):
-        if vg.name not in our_bones:
-            vg_map.remove(vg)
-
-    print(f"[template_mesh] Freerigged vertex groups after remap: "
-          f"{[vg.name for vg in obj.vertex_groups]}")
 
 
 def _apply_skin_material(obj, skin_tone=None):
@@ -791,18 +453,14 @@ def create_body_from_template(cfg: dict):
     # ── Derive head geometry from actual mesh vertices ────────────────────────
     # Rather than using a fixed height multiplier (which is wrong for cartoon
     # meshes whose heads are proportionally much larger), we sample every
-    # vertex whose Z is above 78 % of the body height.  In a standard T-pose
-    # that zone contains only the head.
+    # vertex whose Z is above 60 % of the body height and within HEAD_X_CAP.
     #
-    #   head_r  =  maximum X extent of head verts  (half-width of the head)
-    #   head_z  =  crown_z - head_r                (sphere-centre approximation)
-    #   face_y  =  minimum Y of head verts          (nose-tip depth)
-    #
-    # For the legacy NBM .blend meshes we keep the old proportion-based
-    # estimate because they were tuned against it.
+    #   head_r  =  vertical half-height of the head
+    #   head_z  =  midpoint between chin and crown (true head centre)
+    #   face_y  =  minimum Y of head verts (nose-tip depth)
     import mathutils as _mu
 
-    if use_glb:
+    if True:
         # ── Full-head detection via neck scan ────────────────────────────
         # The old "equator method" only measured crown-to-widest-point,
         # giving a tiny head_r for chibi meshes whose heads extend far
@@ -1001,7 +659,7 @@ def create_body_from_template(cfg: dict):
     hair_obj = None
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
-    # Both GLB and NBM paths now populate hair_head_z/hair_head_r via vertex scan.
+    # hair_head_z / hair_head_r are populated by the vertex scan above.
     h_hz = hair_head_z
     h_hr = hair_head_r
     if hair_style and hair_style != "none":
@@ -1019,7 +677,7 @@ def create_body_from_template(cfg: dict):
     # Build clothing by duplicating body-mesh faces in the relevant Z-range
     # and pushing them outward.  This gives clothing that exactly conforms to
     # the template mesh shape — far better than ring-based cylinders.
-    clothing_spec = cfg.get("clothing", ["tshirt", "pants"])
+    clothing_spec = cfg.get("clothing", ["short_sleeve", "jeans"])
     if isinstance(clothing_spec, str):
         clothing_spec = [c.strip() for c in clothing_spec.split(",") if c.strip()]
     clothing_color = cfg.get("clothing_color", None)
@@ -1050,13 +708,11 @@ def create_body_from_template(cfg: dict):
     # or they blend into one solid block.  Leave a ~2cm skin gap at the waist.
     _waist_gap = 0.02
     _CLOTHING_ZONES = {
-        "tshirt":     (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
-        "longsleeve": (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
-        "jacket":     (_hip_z - 0.02,                        _chest_z + 0.06, True),
-        "pants":      (foot_top - 0.02,                      _hip_z + cfg["torso_length"] * 0.10, False),
-        "shorts":     (foot_top + cfg["leg_length"] * 0.38,  _hip_z + cfg["torso_length"] * 0.10, False),
-        "armor":      (_hip_z + _waist_gap,                  _chest_z + 0.05, True),
-        "robe":       (foot_top,                             _chest_z + 0.05, True),
+        "short_sleeve": (_hip_z + _waist_gap,                 _chest_z + 0.05, True),
+        "long_sleeve":  (_hip_z + _waist_gap,                 _chest_z + 0.05, True),
+        "v_neck":       (_hip_z + _waist_gap,                 _chest_z + 0.05, True),
+        "jeans":        (foot_top - 0.02,                     _hip_z + cfg["torso_length"] * 0.10, False),
+        "shorts":       (foot_top + cfg["leg_length"] * 0.38, _hip_z + cfg["torso_length"] * 0.10, False),
     }
 
     BODY_X_CAP = 0.28  # torso width cap — verts beyond this are arms
