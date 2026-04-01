@@ -69,31 +69,52 @@ def _blender_cmd(script_args, output_path):
     ] + script_args
 
 
-def _run_job(job_id, cmd):
+def _run_job(job_id, cmd_or_callable):
     with _jobs_lock:
         _jobs[job_id]["status"] = "running"
 
     log = []
-    try:
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, cwd=PROJECT_ROOT
-        )
-        for line in proc.stdout:
-            line = line.rstrip()
-            log.append(line)
-            with _jobs_lock:
-                _jobs[job_id]["log"] = log[:]
-        proc.wait()
-        success = proc.returncode == 0
-    except FileNotFoundError:
-        log.append("ERROR: Blender executable not found.")
-        log.append("Add 'blender' to your PATH or set BLENDER_PATH in frontend/.env")
-        log.append(f"  e.g.  BLENDER_PATH=/path/to/blender")
-        success = False
-    except Exception as e:
-        log.append(f"ERROR: {e}")
-        success = False
+
+    # Support both subprocess commands (list) and direct callables
+    if callable(cmd_or_callable):
+        try:
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                cmd_or_callable()
+            output = buf.getvalue()
+            for line in output.splitlines():
+                log.append(line)
+                with _jobs_lock:
+                    _jobs[job_id]["log"] = log[:]
+            success = True
+        except Exception as e:
+            log.append(f"ERROR: {e}")
+            import traceback
+            log.append(traceback.format_exc())
+            success = False
+    else:
+        cmd = cmd_or_callable
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, cwd=PROJECT_ROOT
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                log.append(line)
+                with _jobs_lock:
+                    _jobs[job_id]["log"] = log[:]
+            proc.wait()
+            success = proc.returncode == 0
+        except FileNotFoundError:
+            log.append("ERROR: Blender executable not found.")
+            log.append("Add 'blender' to your PATH or set BLENDER_PATH in frontend/.env")
+            log.append(f"  e.g.  BLENDER_PATH=/path/to/blender")
+            success = False
+        except Exception as e:
+            log.append(f"ERROR: {e}")
+            success = False
 
     with _jobs_lock:
         _jobs[job_id]["status"] = "done" if success else "error"
@@ -147,21 +168,73 @@ def index():
     return render_template("index.html")
 
 
+def _make_job_callable(data: dict, output_path: str, animations=None):
+    """Build a callable that runs the pure-Python gltf_pipeline for a job."""
+    import sys as _sys
+    _sys.path.insert(0, PROJECT_ROOT)
+
+    def _job():
+        from generators.humanoid.presets import resolve_config
+        from generators.humanoid.gltf_pipeline import build_humanoid_glb
+        from generators.humanoid.hair import HAIR_COLORS
+
+        def _parse_color(v):
+            if v is None:
+                return None
+            if isinstance(v, (list, tuple)):
+                return tuple(float(x) for x in v)
+            if isinstance(v, str) and "," in v:
+                parts = [float(x.strip()) for x in v.split(",")]
+                if len(parts) == 3:
+                    parts.append(1.0)
+                return tuple(parts)
+            return v  # named color string
+
+        top = data.get("clothing_top", "short_sleeve")
+        bottom = data.get("clothing_bottom", "jeans")
+        clothing_list = [c for c in [top, bottom] if c and c != "none"]
+
+        clothing_colors = {}
+        top_color = data.get("top_color")
+        bottom_color = data.get("bottom_color")
+        if top and top != "none" and top_color:
+            clothing_colors[top] = _parse_color(top_color) or top_color
+        if bottom and bottom != "none" and bottom_color:
+            clothing_colors[bottom] = _parse_color(bottom_color) or bottom_color
+
+        anim_cfg = animations if animations is not None else []
+
+        cfg = resolve_config(
+            preset=data.get("preset", "average") or "average",
+            build=data.get("build", "average") or "average",
+            gender=data.get("gender", "neutral") or "neutral",
+            skin_tone=_parse_color(data.get("skin_tone")) or "tan",
+            hair_style=data.get("hair_style", "none") or "none",
+            hair_color=_parse_color(data.get("hair_color")) or "brown",
+            use_template=True,
+            lod=data.get("lod", "mid") or "mid",
+            overrides={
+                "clothing": clothing_list,
+                "clothing_color": clothing_colors if clothing_colors else None,
+                "animations": anim_cfg,
+            },
+        )
+        build_humanoid_glb(cfg, output_path)
+
+    return _job
+
+
 @app.route("/preview", methods=["POST"])
 def preview():
     data = request.json or {}
     job_id = str(uuid.uuid4())
     preview_path = os.path.join(PREVIEW_DIR, f"{job_id}.glb")
 
-    args = _build_args(data)
-    args.extend(["--animations", "none"])  # skip animations for fast preview
-
-    cmd = _blender_cmd(args, preview_path)
-
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "log": [], "output": preview_path}
 
-    t = threading.Thread(target=_run_job, args=(job_id, cmd), daemon=True)
+    job_fn = _make_job_callable(data, preview_path, animations=[])
+    t = threading.Thread(target=_run_job, args=(job_id, job_fn), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id})
@@ -173,19 +246,19 @@ def generate():
     job_id = str(uuid.uuid4())
     output_path = os.path.join(OUTPUT_DIR, f"humanoid_{job_id[:8]}.glb")
 
-    args = _build_args(data)
     anims = data.get("animations", ["idle", "walk", "run", "jump", "attack"])
     if isinstance(anims, list) and len(anims) == 5:
-        args.extend(["--animations", "all"])
+        anim_cfg = "all"
     elif isinstance(anims, list) and anims:
-        args.extend(["--animations", ",".join(anims)])
-
-    cmd = _blender_cmd(args, output_path)
+        anim_cfg = anims
+    else:
+        anim_cfg = "all"
 
     with _jobs_lock:
         _jobs[job_id] = {"status": "queued", "log": [], "output": output_path}
 
-    t = threading.Thread(target=_run_job, args=(job_id, cmd), daemon=True)
+    job_fn = _make_job_callable(data, output_path, animations=anim_cfg)
+    t = threading.Thread(target=_run_job, args=(job_id, job_fn), daemon=True)
     t.start()
 
     return jsonify({"job_id": job_id})

@@ -105,6 +105,11 @@ def parse_args():
     parser.add_argument("--draco", action="store_true",
                         help="Enable Draco mesh compression for glTF/GLB")
 
+    # Pipeline selection
+    parser.add_argument("--blender", action="store_true",
+                        help="Use the Blender pipeline (requires Blender). "
+                             "Default is the pure-Python gltf_pipeline.")
+
     return parser.parse_args(argv)
 
 
@@ -120,6 +125,63 @@ def _parse_color_value(value):
 
 def main():
     args = parse_args()
+
+    # ── Pure-Python path (default when --blender is NOT set) ─────────────────
+    if not args.blender:
+        import sys as _sys
+        import os as _os
+        _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        from generators.humanoid.presets import resolve_config
+        from generators.humanoid.gltf_pipeline import build_humanoid_glb
+
+        def _parse_color_val(v):
+            if v and "," in v:
+                parts = [float(x.strip()) for x in v.split(",")]
+                if len(parts) == 3:
+                    parts.append(1.0)
+                return tuple(parts)
+            return v
+
+        clothing_raw = getattr(args, "clothing", "short_sleeve,jeans") or "short_sleeve,jeans"
+        clothing_list = [c.strip() for c in clothing_raw.split(",") if c.strip()]
+
+        skin_raw = getattr(args, "skin_tone", "tan") or "tan"
+        hair_color_raw = getattr(args, "hair_color", "brown") or "brown"
+        anim_raw = getattr(args, "animations", "all") or "all"
+
+        if anim_raw == "all":
+            anim_cfg = "all"
+        elif anim_raw in ("none", ""):
+            anim_cfg = []
+        else:
+            anim_cfg = [a.strip() for a in anim_raw.split(",") if a.strip()]
+
+        cfg = resolve_config(
+            preset=getattr(args, "preset", "average") or "average",
+            build=getattr(args, "build", "average") or "average",
+            gender=getattr(args, "gender", "neutral") or "neutral",
+            skin_tone=_parse_color_val(skin_raw),
+            hair_style=getattr(args, "hair_style", "none") or "none",
+            hair_color=_parse_color_val(hair_color_raw),
+            use_template=True,
+            lod=getattr(args, "lod", "mid") or "mid",
+            overrides={"clothing": clothing_list, "animations": anim_cfg},
+        )
+
+        # Apply direct proportion overrides
+        if getattr(args, "height", None) is not None:
+            cfg["height"] = args.height
+        if getattr(args, "shoulder_width", None) is not None:
+            cfg["shoulder_width"] = args.shoulder_width
+        if getattr(args, "hip_width", None) is not None:
+            cfg["hip_width"] = args.hip_width
+
+        output = _os.path.abspath(args.output)
+        build_humanoid_glb(cfg, output)
+        print(f"Done! Asset saved to: {output}")
+        _sys.exit(0)
+
+    # ── Blender path (only when --blender is explicitly set) ─────────────────
 
     # Parse clothing color: single color or "type:color,type:color" dict
     def _parse_clothing_color(raw):
