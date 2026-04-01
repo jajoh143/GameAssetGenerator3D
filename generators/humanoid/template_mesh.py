@@ -342,7 +342,9 @@ def _remap_glb_vertex_groups(obj):
 def _apply_skin_material(obj, skin_tone=None):
     """Assign a Principled BSDF skin material to the object.
 
-    Replaces any existing materials on the object with a single skin slot.
+    Replaces any existing materials on the object with a single skin slot
+    and resets every polygon's material index to 0 so no face references
+    a stale slot from the original GLB materials.
 
     Args:
         obj: Blender mesh object.
@@ -352,6 +354,12 @@ def _apply_skin_material(obj, skin_tone=None):
 
     # Remove existing materials
     obj.data.materials.clear()
+
+    # Reset all polygon material indices — after clear() the slots are gone
+    # but the per-face indices still hold their old values.  Blender would
+    # clamp them silently, but explicitly zeroing avoids any edge cases.
+    for poly in obj.data.polygons:
+        poly.material_index = 0
 
     mat = bpy.data.materials.new(name="Humanoid_Base")
     mat.use_nodes = True
@@ -687,7 +695,8 @@ def create_body_from_template(cfg: dict):
                                            head_r_horiz=h_horiz)
 
     if hair_obj:
-        hair_obj.location.y += 0.02 # nudge hair backward a bit
+        hair_obj.location.y += 0.02  # nudge hair backward a bit
+        hair_obj.location.x += 0.01  # nudge hair slightly right
 
     # Eyes, eyebrows, nose, mouth and mustache are disabled — the template mesh
     # already has these features baked into the model geometry.
