@@ -63,17 +63,33 @@ def _import_glb_mesh(glb_path: str):
     gltf_hidden = bpy.data.collections.get("glTF_not_exported")
     hidden_names = {o.name for o in gltf_hidden.objects} if gltf_hidden else set()
 
-    mesh_objs = [
+    all_mesh_objs = [
         bpy.data.objects[n]
         for n in new_names
         if bpy.data.objects[n].type == 'MESH' and n not in hidden_names
     ]
 
-    if not mesh_objs:
+    if not all_mesh_objs:
         raise RuntimeError(
             f"No MESH object found after importing {glb_path}. "
             f"New objects: {list(new_names)}"
         )
+
+    # Filter out tiny helper meshes (icospheres, control shapes, etc.).
+    # Real body parts have many more vertices than a 20-vert icosphere.
+    # Keep any mesh with at least 30 vertices; if that would leave nothing,
+    # fall back to the largest mesh by vertex count.
+    _MIN_BODY_VERTS = 30
+    mesh_objs = [o for o in all_mesh_objs if len(o.data.vertices) >= _MIN_BODY_VERTS]
+    if not mesh_objs:
+        mesh_objs = [max(all_mesh_objs, key=lambda o: len(o.data.vertices))]
+
+    # Delete excluded helper objects immediately so they don't survive later sweeps
+    excluded = [o for o in all_mesh_objs if o not in mesh_objs]
+    for o in excluded:
+        print(f"[template_mesh] Discarding helper mesh '{o.name}' "
+              f"({len(o.data.vertices)} verts)")
+        bpy.data.objects.remove(o, do_unlink=True)
 
     print(f"[template_mesh] GLB imported {len(mesh_objs)} mesh part(s): "
           f"{[o.name for o in mesh_objs]}")
@@ -660,10 +676,10 @@ def create_body_from_template(cfg: dict):
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
     # hair_head_z / hair_head_r are populated by the vertex scan above.
-    # Nudge the cap base lower (0.25 × head_r) so it covers more of the head,
+    # Nudge the cap base lower (0.10 × head_r) so it covers more of the head,
     # and scale both the vertical radius and horizontal radius up so the cap
     # sits proud of the cartoon head's larger proportions.
-    h_hz = hair_head_z - hair_head_r * 0.25
+    h_hz = hair_head_z - hair_head_r * 0.10
     h_hr = hair_head_r * 1.40
     h_horiz = head_r_horiz * 1.25
     if hair_style and hair_style != "none":
