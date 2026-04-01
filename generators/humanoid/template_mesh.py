@@ -738,37 +738,14 @@ def create_body_from_template(cfg: dict):
     scene_before = {o.name for o in bpy.data.objects}
 
     # ── Import template mesh ───────────────────────────────────────────────
-    # Priority:
-    #   1. NBM .blend file (gender/lod)  — primary, most reliable import path
-    #   2. Cartoon_Male.glb              — GLB fallback for male/neutral
-    # (LowPolyMesh.fbx and lowpoly_character-freerigged-.glb are retained as
-    #  path constants for future use but removed from the active priority chain
-    #  due to unresolved coordinate/rig compatibility issues.)
-    try:
-        blend_path = _resolve_blend_path(gender, lod)
-        blend_exists = os.path.exists(blend_path)
-    except (ValueError, FileNotFoundError):
-        blend_exists = False
-        blend_path = None
-
-    use_cartoon_glb = (
-        not blend_exists
-        and gender in ("male", "neutral")
-        and os.path.exists(CARTOON_MALE_GLB)
-    )
-    use_glb = use_cartoon_glb  # vertex-scan head detection applies to GLB paths
-
-    if blend_exists:
-        print(f"[template_mesh] Importing NBM blend from: {blend_path}")
-        mesh_obj = _import_mesh_from_blend(blend_path)
-    elif use_cartoon_glb:
-        print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
-        mesh_obj = _import_glb_mesh(CARTOON_MALE_GLB)
-    else:
+    if not os.path.exists(CARTOON_MALE_GLB):
         raise RuntimeError(
-            f"No usable template mesh found for gender='{gender}', lod='{lod}'.\n"
-            f"Expected a .blend file at: {blend_path}"
+            f"Template mesh not found: {CARTOON_MALE_GLB}\n"
+            f"Expected Cartoon_Male.glb in: {_TEMPLATE_DIR}"
         )
+    print(f"[template_mesh] Importing Cartoon_Male from: {CARTOON_MALE_GLB}")
+    mesh_obj = _import_glb_mesh(CARTOON_MALE_GLB)
+    use_glb = True
 
     mesh_obj.name = "Humanoid_Body"
 
@@ -797,20 +774,11 @@ def create_body_from_template(cfg: dict):
     # not a preset value that may not match the template mesh.
     cfg["height"] = actual_height
 
-    # ── Vertex groups: remap GLB names → our rig names (cartoon), or clear ──
-    # For the Cartoon_Male GLB the artist-made skin weights are perfect.
-    # We remap the GLB bone names to our Humanoid_Armature bone names so
-    # rig.py can use the 'body_obj.vertex_groups → direct Armature modifier'
-    # path instead of the unreliable ARMATURE_AUTO heat-map fallback.
-    #
-    # For NBM .blend files the legacy behaviour (clear → ARMATURE_AUTO) is
-    # preserved because those files' weights were built for a different rig.
-    if use_cartoon_glb:
-        _remap_glb_vertex_groups(mesh_obj)
-    else:
-        # NBM .blend files: clear weights so rig.py uses ARMATURE_AUTO heat-map
-        # weighting against our actual bone positions.
-        mesh_obj.vertex_groups.clear()
+    # ── Vertex groups: remap GLB bone names → our Humanoid_Armature names ───
+    # The Cartoon_Male GLB carries artist-painted skin weights bound to
+    # Mixamo-style bone names.  Remap them so rig.py can use the direct
+    # Armature modifier path rather than the ARMATURE_AUTO fallback.
+    _remap_glb_vertex_groups(mesh_obj)
 
     # ── Apply edge-split for a clean low-poly look ────────────────────────
     mod = mesh_obj.modifiers.new(name="EdgeSplit", type='EDGE_SPLIT')
@@ -1016,44 +984,6 @@ def create_body_from_template(cfg: dict):
               f"(torso={detected_torso_len:.3f}), "
               f"hip_w={max_hip_ax:.3f}, chest_w={max_chest_ax:.3f}, "
               f"torso_depth={detected_torso_depth:.3f}")
-    else:
-        # Scan only the top 13 % of the mesh (above shoulder level) to detect
-        # actual head dimensions.  78 % was too low — it captured shoulder
-        # vertices and made head_r_horiz measure shoulder width instead of head
-        # width.  Standard humanoid shoulders sit at ~83-87 % of height, so
-        # 87 % reliably isolates only neck-and-above geometry.
-        top_threshold = actual_height * 0.87
-        head_scan_verts = [v.co for v in mesh_obj.data.vertices
-                           if v.co.z > top_threshold]
-        if head_scan_verts:
-            crown_z    = max(v.z for v in head_scan_verts)
-            head_height = crown_z - top_threshold
-            # Measure width only in the upper 60 % of the head band to avoid
-            # jaw/neck vertices inflating the horizontal radius.
-            mid_z = top_threshold + head_height * 0.40
-            upper_verts  = [v for v in head_scan_verts if v.z > mid_z]
-            measure_set  = upper_verts if upper_verts else head_scan_verts
-            head_r_horiz = max(abs(v.x) for v in measure_set) * 1.15
-            # equator (ear/temple level) — 0.46 × head_height for cap size;
-            # shift the equator ring up by 10 % of head_r so the cap sits higher.
-            head_r       = max(head_height * 0.46, actual_height * 0.055)
-            hair_head_z  = crown_z - head_r * 0.65   # 10 % upward shift
-            hair_head_r  = head_r
-            head_z       = top_threshold + head_height * 0.50   # centre for face features
-            face_y       = min(v.y for v in head_scan_verts)
-            print(f"[template_mesh] NBM head scan: crown={crown_z:.3f}, "
-                  f"head_height={head_height:.3f}, head_r={head_r:.3f}, "
-                  f"head_r_horiz={head_r_horiz:.3f}, hair_head_z={hair_head_z:.3f}")
-        else:
-            # Fallback if scan finds nothing (shouldn't happen)
-            head_r       = actual_height * 0.065
-            head_z       = actual_height - head_r
-            head_r_horiz = None
-            hair_head_z  = head_z
-            hair_head_r  = head_r
-            world_verts = [mesh_obj.matrix_world @ _mu.Vector(v)
-                           for v in mesh_obj.bound_box]
-            face_y = min(v.y for v in world_verts)
 
     # ── Ensure new objects land in the main scene collection ─────────────────
     # After importing a GLB the active layer-collection can be left pointing
