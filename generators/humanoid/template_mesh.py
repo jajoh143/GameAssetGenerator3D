@@ -660,11 +660,15 @@ def create_body_from_template(cfg: dict):
     hair_style = cfg.get("hair_style", "short")
     hair_color = cfg.get("hair_color", None)
     # hair_head_z / hair_head_r are populated by the vertex scan above.
-    h_hz = hair_head_z
-    h_hr = hair_head_r
+    # Nudge the cap base lower (0.25 × head_r) so it covers more of the head,
+    # and scale both the vertical radius and horizontal radius up so the cap
+    # sits proud of the cartoon head's larger proportions.
+    h_hz = hair_head_z - hair_head_r * 0.25
+    h_hr = hair_head_r * 1.40
+    h_horiz = head_r_horiz * 1.25
     if hair_style and hair_style != "none":
         hair_obj = hair_module.create_hair(h_hz, h_hr, hair_style, hair_color,
-                                           head_r_horiz=head_r_horiz)
+                                           head_r_horiz=h_horiz)
 
     if hair_obj:
         hair_obj.location.y += 0.02 # nudge hair backward a bit

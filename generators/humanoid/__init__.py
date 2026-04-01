@@ -21,7 +21,7 @@ def generate(config=None):
             Special keys:
                 preset: Base character archetype name (default: "average").
                 build: Body build modifier (default: "average").
-                skin_tone: Named skin tone or RGBA tuple (default: "medium").
+                skin_tone: Named skin tone or RGBA tuple (default: "tan").
                 animations: List of animation names or "all" (default: "all").
                 randomize: Bool — add slight random variation (default: False).
                 seed: Int — random seed for reproducible variation.
