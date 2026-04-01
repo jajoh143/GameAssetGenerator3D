@@ -89,62 +89,43 @@ def _resolve_blend_path(gender: str, lod: str) -> str:
 
 
 def _import_mesh_from_blend(blend_path: str):
-    """Append the first mesh object found inside a .blend file.
+    """Load the body mesh from a .blend file by reading mesh data directly.
 
-    Uses bpy.data.libraries.load() to import all objects, then links them
-    explicitly to the main scene collection.  This avoids the collection-
-    ownership ambiguity of bpy.ops.wm.append() which can leave objects in
-    sub-collections that become orphaned after parent_clear().
+    Instead of importing objects (which drags in armatures, collections, and
+    parent relationships), we load only the MESH DATA BLOCKS from the library.
+    We then create a brand-new bpy.types.Object with identity transform and
+    link it to the scene.  This completely avoids every parent/collection/
+    orphan issue that plagued the wm.append and library-load-objects approaches.
 
-    Args:
-        blend_path: Absolute path to the source .blend file.
-
-    Returns:
-        The newly appended Blender mesh object (bpy.types.Object).
-
-    Raises:
-        RuntimeError: if no mesh object could be imported.
+    The largest mesh by vertex count is chosen as the body mesh, which reliably
+    selects the character body over any small helper meshes (icospheres, etc.).
     """
     import bpy
 
-    # Load all objects from the blend file into memory (no link = local copy)
     with bpy.data.libraries.load(blend_path, link=False) as (src, dst):
-        dst.objects = list(src.objects)
+        dst.meshes = list(src.meshes)
 
-    # Explicitly link every loaded object to the active scene collection so
-    # none of them are orphans that could be silently purged.
-    mesh_obj = None
-    for obj in dst.objects:
-        if obj is None:
-            continue
-        try:
-            bpy.context.scene.collection.objects.link(obj)
-        except RuntimeError:
-            pass  # already in scene (shouldn't happen with link=False)
-        if obj.type == 'MESH' and mesh_obj is None:
-            mesh_obj = obj
+    if not dst.meshes:
+        raise RuntimeError(f"No mesh data blocks found in {blend_path}")
 
-    if mesh_obj is None:
-        raise RuntimeError(
-            f"No MESH type object found in {blend_path}. "
-            f"Objects loaded: {[o.name for o in dst.objects if o]}"
-        )
+    # Pick the mesh with the most vertices — that's the body, not a helper
+    best = max(
+        (m for m in dst.meshes if m is not None),
+        key=lambda m: len(m.vertices),
+        default=None,
+    )
+    if best is None:
+        raise RuntimeError(f"All mesh data blocks were None in {blend_path}")
 
-    # Unparent the mesh from the NBM armature NOW, keeping world transform.
-    # Must happen before _clear_non_mesh_objects deletes the parent — otherwise
-    # Blender snaps the mesh to its local-space position.
-    if mesh_obj.parent is not None:
-        bpy.context.view_layer.objects.active = mesh_obj
-        mesh_obj.select_set(True)
-        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-        mesh_obj.select_set(False)
+    print(f"[import_blend] Using mesh '{best.name}' "
+          f"({len(best.vertices)} verts, {len(best.polygons)} faces)")
 
-    # Strip any armature modifier — rig.py will re-apply skinning
-    for mod in list(mesh_obj.modifiers):
-        if mod.type == 'ARMATURE':
-            mesh_obj.modifiers.remove(mod)
-
-    return mesh_obj
+    # Create a clean object with identity transform — no parent, no modifiers
+    obj = bpy.data.objects.new("Humanoid_Body", best)
+    bpy.context.scene.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    return obj
 
 
 def _import_glb_mesh(glb_path: str):
@@ -327,23 +308,13 @@ def _purge_gltf_not_exported():
 
 
 def _clear_non_mesh_objects(keep_names: set):
-    """Remove any objects added during import that are not the target mesh.
+    """Remove any stray objects that are not in keep_names.
 
-    This cleans up armatures, empties, or lights that may have been appended
-    alongside the mesh object.  Bone custom_shape references (icospheres used
-    as viewport bone display shapes) must be cleared first or Blender will keep
-    those objects alive even with do_unlink=True.
-
-    Args:
-        keep_names: Set of object names to preserve (mesh + pre-existing).
+    With the mesh-data-only import approach, no foreign objects are ever
+    imported, so this is mainly a safety net for any objects that existed in
+    the default Blender scene (cameras, lights, etc.).
     """
     import bpy
-    # Clear bone custom_shape pointers on any imported armatures so the
-    # viewport-display icospheres can be fully unlinked below.
-    for obj in bpy.data.objects:
-        if obj.type == 'ARMATURE' and obj.name not in keep_names and obj.pose:
-            for pbone in obj.pose.bones:
-                pbone.custom_shape = None
     to_remove = [o for o in bpy.data.objects if o.name not in keep_names]
     for obj in to_remove:
         bpy.data.objects.remove(obj, do_unlink=True)
