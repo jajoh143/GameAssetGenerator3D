@@ -91,68 +91,60 @@ def _resolve_blend_path(gender: str, lod: str) -> str:
 def _import_mesh_from_blend(blend_path: str):
     """Append the first mesh object found inside a .blend file.
 
-    Uses bpy.ops.wm.append() to bring the object into the current scene.
-    All mesh objects in the file are tried; the first successfully appended
-    one is returned.
+    Uses bpy.data.libraries.load() to import all objects, then links them
+    explicitly to the main scene collection.  This avoids the collection-
+    ownership ambiguity of bpy.ops.wm.append() which can leave objects in
+    sub-collections that become orphaned after parent_clear().
 
     Args:
         blend_path: Absolute path to the source .blend file.
 
     Returns:
-        The newly appended Blender object (bpy.types.Object).
+        The newly appended Blender mesh object (bpy.types.Object).
 
     Raises:
         RuntimeError: if no mesh object could be imported.
     """
     import bpy
 
-    # Collect object names already in the scene before import
-    before = {o.name for o in bpy.data.objects}
+    # Load all objects from the blend file into memory (no link = local copy)
+    with bpy.data.libraries.load(blend_path, link=False) as (src, dst):
+        dst.objects = list(src.objects)
 
-    # List object entries inside the blend file
-    with bpy.data.libraries.load(blend_path, link=False) as (src, _dst):
-        available_objects = list(src.objects)
+    # Explicitly link every loaded object to the active scene collection so
+    # none of them are orphans that could be silently purged.
+    mesh_obj = None
+    for obj in dst.objects:
+        if obj is None:
+            continue
+        try:
+            bpy.context.scene.collection.objects.link(obj)
+        except RuntimeError:
+            pass  # already in scene (shouldn't happen with link=False)
+        if obj.type == 'MESH' and mesh_obj is None:
+            mesh_obj = obj
 
-    if not available_objects:
-        raise RuntimeError(f"No objects found in {blend_path}")
-
-    # Try to append each object; take the first mesh we successfully get
-    for obj_name in available_objects:
-        bpy.ops.wm.append(
-            filepath=os.path.join(blend_path, "Object", obj_name),
-            directory=os.path.join(blend_path, "Object"),
-            filename=obj_name,
-            link=False,
-            autoselect=True,
+    if mesh_obj is None:
+        raise RuntimeError(
+            f"No MESH type object found in {blend_path}. "
+            f"Objects loaded: {[o.name for o in dst.objects if o]}"
         )
 
-        # Find what was actually added
-        after = {o.name for o in bpy.data.objects}
-        new_names = after - before
-        for name in new_names:
-            obj = bpy.data.objects[name]
-            if obj.type == 'MESH':
-                # Unparent from the NBM armature NOW, keeping world transform,
-                # before _clear_non_mesh_objects deletes the parent.  If we wait,
-                # Blender snaps the mesh to its local-space position when the
-                # parent is deleted, causing severe displacement.
-                if obj.parent is not None:
-                    bpy.context.view_layer.objects.active = obj
-                    obj.select_set(True)
-                    bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-                    obj.select_set(False)
-                # Strip any armature modifier — rig.py will re-apply skinning
-                for mod in list(obj.modifiers):
-                    if mod.type == 'ARMATURE':
-                        obj.modifiers.remove(mod)
-                return obj
-            # Not a mesh (e.g. armature that came along) — will be cleaned up later
-        before = after  # update baseline for next iteration
+    # Unparent the mesh from the NBM armature NOW, keeping world transform.
+    # Must happen before _clear_non_mesh_objects deletes the parent — otherwise
+    # Blender snaps the mesh to its local-space position.
+    if mesh_obj.parent is not None:
+        bpy.context.view_layer.objects.active = mesh_obj
+        mesh_obj.select_set(True)
+        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        mesh_obj.select_set(False)
 
-    raise RuntimeError(
-        f"No MESH type object could be imported from {blend_path}. "
-        f"Available objects: {available_objects}"
-    )
+    # Strip any armature modifier — rig.py will re-apply skinning
+    for mod in list(mesh_obj.modifiers):
+        if mod.type == 'ARMATURE':
+            mesh_obj.modifiers.remove(mod)
+
+    return mesh_obj
 
 
 def _import_glb_mesh(glb_path: str):
