@@ -21,7 +21,7 @@ def generate(config=None):
             Special keys:
                 preset: Base character archetype name (default: "average").
                 build: Body build modifier (default: "average").
-                skin_tone: Named skin tone or RGBA tuple (default: "medium").
+                skin_tone: Named skin tone or RGBA tuple (default: "tan").
                 animations: List of animation names or "all" (default: "all").
                 randomize: Bool — add slight random variation (default: False).
                 seed: Int — random seed for reproducible variation.
@@ -42,14 +42,14 @@ def generate(config=None):
     preset = config.pop("preset", "average")
     build = config.pop("build", "average")
     gender = config.pop("gender", "neutral")
-    skin_tone = config.pop("skin_tone", "medium")
+    skin_tone = config.pop("skin_tone", "tan")
     hair_style = config.pop("hair_style", "short")
     hair_color = config.pop("hair_color", "brown")
     anim_selection = config.pop("animations", "all")
     randomize = config.pop("randomize", False)
     seed = config.pop("seed", None)
     use_template = config.pop("use_template", True)
-    lod = config.pop("lod", "low")
+    lod = config.pop("lod", "mid")
 
     # Remaining config items become direct overrides
     cfg = resolve_config(
