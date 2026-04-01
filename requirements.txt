@@ -1,0 +1,5 @@
+pygltflib==1.16.5
+numpy
+flask
+python-dotenv
+pytest

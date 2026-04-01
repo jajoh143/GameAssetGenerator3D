@@ -68,64 +68,109 @@ def _compute_flat_normals(positions: np.ndarray, indices: np.ndarray) -> np.ndar
     return normals.astype(np.float32)
 
 
-def _get_accessor_data(gltf: "pygltflib.GLTF2", accessor_idx: int) -> np.ndarray:
-    """Extract accessor data as a numpy array."""
-    accessor = gltf.accessors[accessor_idx]
-    data = gltf.get_data_from_accessor(accessor_idx)
-    arr = np.array(data)
+_GLTF_TYPE_COMPONENTS = {
+    "SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4,
+    "MAT2": 4, "MAT3": 9, "MAT4": 16,
+}
 
-    # Determine component dtype
-    ct = accessor.componentType
-    if ct == pygltflib.FLOAT:
-        arr = arr.astype(np.float32)
-    elif ct == pygltflib.UNSIGNED_BYTE:
-        arr = arr.astype(np.uint8)
-    elif ct == pygltflib.UNSIGNED_SHORT:
-        arr = arr.astype(np.uint16)
-    elif ct == pygltflib.UNSIGNED_INT:
-        arr = arr.astype(np.uint32)
+_COMPONENT_DTYPE = {
+    5120: np.int8,
+    5121: np.uint8,
+    5122: np.int16,
+    5123: np.uint16,
+    5125: np.uint32,
+    5126: np.float32,
+}
+
+
+def _get_accessor_data(gltf: "pygltflib.GLTF2", accessor_idx: int,
+                       _blob_cache: list = None) -> np.ndarray:
+    """Extract accessor data from the GLB binary blob as a numpy array.
+
+    Works with pygltflib 1.16.x which does not have get_data_from_accessor.
+    """
+    accessor = gltf.accessors[accessor_idx]
+
+    # Get binary blob (cache it for performance across multiple calls)
+    if _blob_cache is not None and len(_blob_cache) == 0:
+        _blob_cache.append(gltf.binary_blob())
+    blob = _blob_cache[0] if _blob_cache else gltf.binary_blob()
+
+    bv = gltf.bufferViews[accessor.bufferView]
+
+    n_components = _GLTF_TYPE_COMPONENTS.get(accessor.type, 1)
+    dtype = _COMPONENT_DTYPE.get(accessor.componentType, np.float32)
+    item_size = np.dtype(dtype).itemsize
+
+    bv_offset = bv.byteOffset or 0
+    acc_offset = accessor.byteOffset or 0
+    byte_stride = bv.byteStride  # may be None
+
+    count = accessor.count
+
+    if byte_stride is None or byte_stride == n_components * item_size:
+        # Tightly packed — read directly
+        start = bv_offset + acc_offset
+        nbytes = count * n_components * item_size
+        arr = np.frombuffer(blob[start:start + nbytes], dtype=dtype).copy()
     else:
-        arr = arr.astype(np.float32)
+        # Interleaved data — read element by element
+        arr = np.zeros(count * n_components, dtype=dtype)
+        for i in range(count):
+            start = bv_offset + acc_offset + i * byte_stride
+            element = np.frombuffer(
+                blob[start:start + n_components * item_size], dtype=dtype
+            )
+            arr[i * n_components:(i + 1) * n_components] = element
 
     return arr
 
 
-def _extract_primitive(gltf: "pygltflib.GLTF2", prim) -> dict:
-    """Extract a single mesh primitive as numpy arrays."""
+def _extract_primitive(gltf: "pygltflib.GLTF2", prim, blob_cache: list) -> dict:
+    """Extract a single mesh primitive as numpy arrays.
+
+    Args:
+        gltf: GLTF2 object.
+        prim: Mesh primitive.
+        blob_cache: Single-element list caching the binary blob bytes.
+    """
     attrs = prim.attributes
 
+    def _get(idx):
+        return _get_accessor_data(gltf, idx, blob_cache)
+
     # Positions (required)
-    pos = _get_accessor_data(gltf, attrs.POSITION).reshape(-1, 3).astype(np.float32)
+    pos = _get(attrs.POSITION).reshape(-1, 3).astype(np.float32)
 
     # Normals (optional)
     if attrs.NORMAL is not None:
-        nrm = _get_accessor_data(gltf, attrs.NORMAL).reshape(-1, 3).astype(np.float32)
+        nrm = _get(attrs.NORMAL).reshape(-1, 3).astype(np.float32)
     else:
         nrm = None  # computed after merging
 
     # Texcoords (optional)
     if attrs.TEXCOORD_0 is not None:
-        uvs = _get_accessor_data(gltf, attrs.TEXCOORD_0).reshape(-1, 2).astype(np.float32)
+        uvs = _get(attrs.TEXCOORD_0).reshape(-1, 2).astype(np.float32)
     else:
         uvs = np.zeros((len(pos), 2), dtype=np.float32)
 
     # Joints (optional — may be absent for non-skinned primitives)
     if attrs.JOINTS_0 is not None:
-        jnts = _get_accessor_data(gltf, attrs.JOINTS_0).reshape(-1, 4)
+        jnts = _get(attrs.JOINTS_0).reshape(-1, 4)
         jnts = jnts.astype(np.uint16)
     else:
         jnts = np.zeros((len(pos), 4), dtype=np.uint16)
 
     # Weights (optional)
     if attrs.WEIGHTS_0 is not None:
-        wgts = _get_accessor_data(gltf, attrs.WEIGHTS_0).reshape(-1, 4).astype(np.float32)
+        wgts = _get(attrs.WEIGHTS_0).reshape(-1, 4).astype(np.float32)
     else:
         wgts = np.zeros((len(pos), 4), dtype=np.float32)
         wgts[:, 0] = 1.0  # full weight on bone 0
 
     # Indices
     if prim.indices is not None:
-        idx = _get_accessor_data(gltf, prim.indices).flatten().astype(np.uint32)
+        idx = _get(prim.indices).flatten().astype(np.uint32)
     else:
         idx = np.arange(len(pos), dtype=np.uint32)
 
@@ -219,10 +264,11 @@ def load_cartoon_male(target_height: float) -> MeshData:
         # else: unmapped joints will fallback to bone 0 (Hips) during remap
 
     # ── Extract and merge all mesh primitives ─────────────────────────────────
+    blob_cache = []  # lazily filled by first _get_accessor_data call
     all_prims = []
     for mesh in gltf.meshes:
         for prim in mesh.primitives:
-            all_prims.append(_extract_primitive(gltf, prim))
+            all_prims.append(_extract_primitive(gltf, prim, blob_cache))
 
     if not all_prims:
         raise RuntimeError("No mesh primitives found in Cartoon_Male.glb")
