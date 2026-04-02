@@ -52,8 +52,10 @@ export async function buildHumanoid(cfg) {
 
   // 6. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
-  if (hairStyle !== 'none') {
-    // Detect head position from body mesh bounding box (mesh is Z-up, skeleton is Y-up)
+  // TODO: Hair geometry needs to be rebuilt to match new mesh proportions
+  // Currently disabled while we work on positioning
+  if (hairStyle !== 'none' && false) {  // disabled for now
+    // Detect head position from body mesh bounding box top (Y-up)
     const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
     const headZ = box.max.z * 0.91;
     const headR = (box.max.z - headZ) * 1.40;
