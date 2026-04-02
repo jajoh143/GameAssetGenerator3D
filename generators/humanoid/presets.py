@@ -256,7 +256,7 @@ def get_gender_names():
 
 
 def resolve_config(preset="average", build="average", gender="neutral",
-                   skin_tone="medium",
+                   skin_tone="tan",
                    hair_style="none", hair_color="dark_brown",
                    use_template=True, lod="low",
                    overrides=None, randomize=False, seed=None):

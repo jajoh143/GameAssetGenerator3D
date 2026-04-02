@@ -106,7 +106,7 @@ class TestClothingConstants(unittest.TestCase):
     def test_clothing_types_preserved(self):
         """All expected clothing types should be available."""
         from generators.humanoid.clothing import CLOTHING_TYPES
-        expected = {"none", "tshirt", "jacket", "pants", "shorts", "armor", "robe"}
+        expected = {"none", "short_sleeve", "long_sleeve", "v_neck", "shorts", "jeans"}
         self.assertEqual(set(CLOTHING_TYPES), expected)
 
     def test_clothing_colors_preserved(self):
@@ -114,15 +114,15 @@ class TestClothingConstants(unittest.TestCase):
         from generators.humanoid.clothing import CLOTHING_COLORS
         expected_colors = {"white", "black", "grey", "red", "blue", "green",
                           "brown", "tan", "navy", "purple", "orange", "yellow",
-                          "steel", "gold", "bronze"}
+                          "denim", "light_denim"}
         self.assertEqual(set(CLOTHING_COLORS.keys()), expected_colors)
 
     def test_default_colors_preserved(self):
         """Default color assignments should be preserved."""
         from generators.humanoid.clothing import CLOTHING_DEFAULT_COLORS
-        self.assertEqual(CLOTHING_DEFAULT_COLORS["tshirt"], "grey")
-        self.assertEqual(CLOTHING_DEFAULT_COLORS["pants"], "navy")
-        self.assertEqual(CLOTHING_DEFAULT_COLORS["armor"], "steel")
+        self.assertEqual(CLOTHING_DEFAULT_COLORS["short_sleeve"], "red")
+        self.assertEqual(CLOTHING_DEFAULT_COLORS["jeans"], "denim")
+        self.assertEqual(CLOTHING_DEFAULT_COLORS["v_neck"], "navy")
 
     def test_color_values_are_rgba(self):
         """All color values should be 4-element tuples."""

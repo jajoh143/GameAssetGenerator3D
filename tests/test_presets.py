@@ -31,7 +31,7 @@ class TestPresets(unittest.TestCase):
                 self.assertIn(key, preset, f"Preset '{name}' missing '{key}'")
 
     def test_preset_count(self):
-        self.assertEqual(len(PRESETS), 6)
+        self.assertEqual(len(PRESETS), 7)
 
     def test_preset_names_sorted(self):
         names = get_preset_names()
@@ -164,8 +164,8 @@ class TestResolveConfig(unittest.TestCase):
 class TestHairStyles(unittest.TestCase):
 
     def test_style_count(self):
-        # 6 styles + "none"
-        self.assertEqual(len(HAIR_STYLES), 7)
+        # 7 styles + "none"
+        self.assertEqual(len(HAIR_STYLES), 8)
 
     def test_all_non_none_styles_have_builders(self):
         for style in HAIR_STYLES:
