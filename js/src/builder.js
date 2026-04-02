@@ -53,25 +53,18 @@ export async function buildHumanoid(cfg) {
   // 6. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
   if (hairStyle !== 'none') {
-    // Detect head position from body mesh bounding box (simple, reliable method)
+    // Get head bone and calculate radius from body
+    const headBoneIdx = BONE_NAMES.indexOf('Head');
+    const headBone = skeleton.bones[headBoneIdx];
+
+    // Estimate head radius from body width (simpler and more reliable)
     const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
-    const meshHeight = box.max.z - box.min.z;
-    const meshWidth = box.max.x - box.min.x;
+    const bodyWidth = box.max.x - box.min.x;
+    const headRadius = bodyWidth * 0.18;  // ~18% of body width
 
-    console.log(`[Hair] Body mesh bounds:`, {
-      x: [box.min.x.toFixed(3), box.max.x.toFixed(3)],
-      y: [box.min.y.toFixed(3), box.max.y.toFixed(3)],
-      z: [box.min.z.toFixed(3), box.max.z.toFixed(3)],
-      height: meshHeight.toFixed(3),
-      width: meshWidth.toFixed(3)
-    });
+    console.log(`[Hair] Creating hair: style=${hairStyle}, headRadius=${headRadius.toFixed(3)}`);
 
-    const headZLocal = box.max.z - meshHeight * 0.13;  // head starts ~13% from top
-    const headR = meshWidth * 0.20;  // head radius ~ 20% of body width (increased from 0.15)
-
-    console.log(`[Hair] Detected head at Z=${headZLocal.toFixed(3)}, radius=${headR.toFixed(3)}`);
-
-    const hairGeo = buildHairGeometry(headZLocal, headR, hairStyle);
+    const hairGeo = buildHairGeometry(headRadius, hairStyle);
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
@@ -79,23 +72,21 @@ export async function buildHumanoid(cfg) {
         color: new THREE.Color(hairRgba[0], hairRgba[1], hairRgba[2]),
         roughness: 0.60,
         metalness: 0.0,
-        side: THREE.DoubleSide,  // ← Show both sides (debug)
       });
       const hairMesh = new THREE.Mesh(hairGeo, hairMat);
       hairMesh.name = 'Hair';
       hairMesh.castShadow = true;
       hairMesh.receiveShadow = true;
-      hairMesh.position.set(0, 0, 0);
 
-      // Add hair directly to scene (not to bone) so it uses the mesh's coordinate system
-      scene.add(hairMesh);
+      // Position hair above the head bone
+      // The hair mesh is positioned in local space of the head bone
+      hairMesh.position.set(0, headRadius * 0.9, 0);  // offset above head
 
-      console.log(`[Hair] Created hair geometry with ${hairGeo.attributes.position.count} vertices`);
-    } else {
-      console.log(`[Hair] buildHairGeometry returned null`);
+      // Add to head bone so it moves with animations
+      headBone.add(hairMesh);
+
+      console.log(`[Hair] Hair added to Head bone with ${hairGeo.attributes.position.count} vertices`);
     }
-  } else {
-    console.log(`[Hair] Style is 'none', skipping hair creation`);
   }
 
   // 7. Clothing
