@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node js/server.js",
-    "generate": "node js/generate.js"
+    "start": "node server.js",
+    "generate": "node generate.js"
   },
   "dependencies": {
     "three": "^0.160.0",
