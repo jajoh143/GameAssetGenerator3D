@@ -17,33 +17,34 @@ const H_SCALE = 1.20;
 /**
  * Build hair geometry as a THREE.BufferGeometry.
  *
- * @param {number} headZ - Z position of head centre
+ * @param {number} headY - Y position of head centre (Y-up)
  * @param {number} headR - head radius (vertical)
  * @param {string} [style='short'] - hair style name
  * @param {number|null} [headRHoriz=null] - horizontal head radius
  * @returns {THREE.BufferGeometry|null}
  */
-export function buildHairGeometry(headZ, headR, style = 'short', headRHoriz = null) {
+export function buildHairGeometry(headY, headR, style = 'short', headRHoriz = null) {
   if (style === 'none') return null;
   const hr = headRHoriz ?? headR;
   const verts = [];   // flat [x,y,z,x,y,z,...]
   const faces = [];   // flat [i,j,k,i,j,k,...] triangles
 
-  function ringVerts(cz, rxM, ryM) {
+  // Rings lie in XZ plane at height cy (Y-up convention)
+  function ringVerts(cy, rxM, ryM) {
     const start = verts.length / 3;
     for (let i = 0; i < RING_N; i++) {
       const a = 2 * Math.PI * i / RING_N;
       verts.push(
         hr * rxM * H_SCALE * Math.sin(a),
-        -hr * ryM * H_SCALE * Math.cos(a),
-        cz
+        cy,
+        -hr * ryM * H_SCALE * Math.cos(a)
       );
     }
     return start;  // index of first vertex in this ring
   }
 
-  const rings = CAP_LEVELS.map(([zOff, rxM, ryM]) =>
-    ringVerts(headZ + headR * zOff, rxM, ryM)
+  const rings = CAP_LEVELS.map(([yOff, rxM, ryM]) =>
+    ringVerts(headY + headR * yOff, rxM, ryM)
   );
 
   // Bridge rings with quads (2 triangles each)
@@ -58,22 +59,22 @@ export function buildHairGeometry(headZ, headR, style = 'short', headRHoriz = nu
   // Close crown with triangle fan
   const topStart = rings[rings.length - 1];
   const crownIdx = verts.length / 3;
-  verts.push(0, 0, headZ + headR);
+  verts.push(0, headY + headR, 0);
   for (let i = 0; i < RING_N; i++) {
     faces.push(topStart+i, topStart+(i+1)%RING_N, crownIdx);
   }
 
   // For 'short' or 'long' style also add a simple nape panel
   if (style === 'short' || style === 'long') {
-    const napeZ = headZ - headR * 0.3;
+    const napeY = headY - headR * 0.3;
     const hairlineStart = rings[0];
     const napeStart = verts.length / 3;
     for (let i = 0; i < RING_N; i++) {
       const a = 2 * Math.PI * i / RING_N;
       verts.push(
         hr * 0.97 * H_SCALE * Math.sin(a),
-        -hr * 0.90 * H_SCALE * Math.cos(a),
-        napeZ
+        napeY,
+        -hr * 0.90 * H_SCALE * Math.cos(a)
       );
     }
     // Bridge back half only (indices RING_N/4 to 3*RING_N/4)

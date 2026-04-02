@@ -88,22 +88,22 @@ export async function loadCartoonMale(targetHeight = 1.75) {
     positions[i * 3 + 2] = posAttr.getZ(i);
   }
 
-  // Find bounding box
-  let minZ = Infinity, maxZ = -Infinity;
+  // Find bounding box along Y (glTF/Three.js Y-up convention)
+  let minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < vCount; i++) {
-    const z = positions[i * 3 + 2];
-    if (z < minZ) minZ = z;
-    if (z > maxZ) maxZ = z;
+    const y = positions[i * 3 + 1];
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
   }
 
-  const origHeight = maxZ - minZ;
+  const origHeight = maxY - minY;
   const scale = targetHeight / origHeight;
 
-  // Shift and scale positions
+  // Shift feet to Y=0 and scale uniformly
   for (let i = 0; i < vCount; i++) {
     positions[i * 3]     = positions[i * 3] * scale;
-    positions[i * 3 + 1] = positions[i * 3 + 1] * scale;
-    positions[i * 3 + 2] = (positions[i * 3 + 2] - minZ) * scale;
+    positions[i * 3 + 1] = (positions[i * 3 + 1] - minY) * scale;
+    positions[i * 3 + 2] = positions[i * 3 + 2] * scale;
   }
 
   // Remap skin indices and weights

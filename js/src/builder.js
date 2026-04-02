@@ -53,14 +53,14 @@ export async function buildHumanoid(cfg) {
   // 6. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
   if (hairStyle !== 'none') {
-    // Detect head position from body mesh bounding box top
+    // Detect head position from body mesh bounding box top (Y-up)
     const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
-    const headZ = box.max.z * 0.91;
-    const headR = (box.max.z - headZ) * 1.40;
+    const headY = box.max.y * 0.91;
+    const headR = (box.max.y - headY) * 1.40;
     const headRHoriz = (box.max.x - box.min.x) * 0.5 * 1.25;
 
     const hairGeo = buildHairGeometry(
-      headZ - headR * 0.10, headR, hairStyle, headRHoriz
+      headY - headR * 0.10, headR, hairStyle, headRHoriz
     );
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';

@@ -162,18 +162,18 @@ function idleKfs(_cfg) {
     rotKfs.push(_rot('Spine', frame, fps, -spineAngle));
   }
 
-  // Head look left/right
+  // Head look left/right (Y rotation = yaw in Y-up)
   for (const [frame, angle] of [
     [0, 0], [q, hl], [q * 2, 0], [q * 3, -hl], [f, 0],
   ]) {
-    rotKfs.push(_rot('Head', frame, fps, 0, 0, angle));
+    rotKfs.push(_rot('Head', frame, fps, 0, angle, 0));
   }
 
-  // Hip sway (Z rotation)
+  // Hip sway (Y rotation = yaw in Y-up)
   for (const [frame, sway] of [
     [0, 0], [q, hs], [q * 2, 0], [q * 3, -hs], [f, 0],
   ]) {
-    rotKfs.push(_rot('Hips', frame, fps, 0, 0, sway));
+    rotKfs.push(_rot('Hips', frame, fps, 0, sway, 0));
   }
 
   // Arm breathing
@@ -265,8 +265,8 @@ function walkKfs(_cfg) {
     [half + hh,  bob,   0],
     [frames,     0,    -sway],
   ]) {
-    transKfs.push(_trans('Hips', frame, fps, 0, 0, b));
-    rotKfs.push(_rot('Hips', frame, fps, 0, 0, s));
+    transKfs.push(_trans('Hips', frame, fps, 0, b, 0));  // Y = vertical bob
+    rotKfs.push(_rot('Hips', frame, fps, 0, s, 0));       // Y = yaw sway
   }
 
   const st = wp.spine_twist;
@@ -278,7 +278,7 @@ function walkKfs(_cfg) {
     [half + hh,  0,   -sl * 0.5],
     [frames,     st,   sl],
   ]) {
-    rotKfs.push(_rot('Spine', frame, fps, lean, 0, twist));
+    rotKfs.push(_rot('Spine', frame, fps, lean, twist, 0));  // Y = yaw twist
   }
 
   return { rotKfs, transKfs };
@@ -356,7 +356,7 @@ function runKfs(_cfg) {
     [half + hh,  0],
     [frames,     twist],
   ]) {
-    rotKfs.push(_rot('Spine', frame, fps, lean, 0, tw));
+    rotKfs.push(_rot('Spine', frame, fps, lean, tw, 0));  // Y = yaw twist
   }
 
   for (const frame of [0, hh, half, half + hh, frames]) {
@@ -372,8 +372,8 @@ function runKfs(_cfg) {
     [half + hh,  bob,   0],
     [frames,     0,    -sway],
   ]) {
-    transKfs.push(_trans('Hips', frame, fps, 0, 0, b));
-    rotKfs.push(_rot('Hips', frame, fps, 0, 0, s));
+    transKfs.push(_trans('Hips', frame, fps, 0, b, 0));  // Y = vertical bob
+    rotKfs.push(_rot('Hips', frame, fps, 0, s, 0));       // Y = yaw sway
   }
 
   return { rotKfs, transKfs };
@@ -417,7 +417,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fCrouch, fps, cs));
   rotKfs.push(_rot('Chest', fCrouch, fps, cs * 0.6));
-  transKfs.push(_trans('Hips', fCrouch, fps, 0, 0, -0.08));
+  transKfs.push(_trans('Hips', fCrouch, fps, 0, -0.08, 0));  // Y = vertical
 
   // Launch
   const llLaunch = jp.launch_legs;
@@ -432,7 +432,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fLaunch, fps, ls));
   rotKfs.push(_rot('Chest', fLaunch, fps, ls * 0.5));
-  transKfs.push(_trans('Hips', fLaunch, fps, 0, 0, jp.hip_height));
+  transKfs.push(_trans('Hips', fLaunch, fps, 0, jp.hip_height, 0));  // Y = vertical
 
   // Apex tuck
   const tl = jp.tuck_legs;
@@ -443,7 +443,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fApex, fps, 5));
   rotKfs.push(_rot('Chest', fApex, fps, 3));
-  transKfs.push(_trans('Hips', fApex, fps, 0, 0, jp.hip_height * 0.8));
+  transKfs.push(_trans('Hips', fApex, fps, 0, jp.hip_height * 0.8, 0));  // Y = vertical
 
   // Landing
   const la = jp.land_absorb;
@@ -456,7 +456,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fLand, fps, -10));
   rotKfs.push(_rot('Chest', fLand, fps, -8));
-  transKfs.push(_trans('Hips', fLand, fps, 0, 0, -0.06));
+  transKfs.push(_trans('Hips', fLand, fps, 0, -0.06, 0));  // Y = vertical
 
   // Return to neutral
   for (const bn of ['Spine', 'Chest']) {
@@ -499,8 +499,8 @@ function attackKfs(_cfg) {
 
   // Windup
   const tt = ap.torso_twist;
-  rotKfs.push(_rot('Spine', fWindup, fps, -5, 0, -tt));
-  rotKfs.push(_rot('Chest', fWindup, fps, 0, 0, -tt * 0.6));
+  rotKfs.push(_rot('Spine', fWindup, fps, -5, -tt, 0));       // Y = yaw twist
+  rotKfs.push(_rot('Chest', fWindup, fps, 0, -tt * 0.6, 0));  // Y = yaw twist
   rotKfs.push(_rot('UpperArm.R', fWindup, fps, ap.windup_arm));
   rotKfs.push(_rot('LowerArm.R', fWindup, fps, ap.windup_forearm));
   rotKfs.push(_rot('UpperArm.L', fWindup, fps, -15));
@@ -509,8 +509,8 @@ function attackKfs(_cfg) {
   rotKfs.push(_rot('UpperLeg.L', fWindup, fps, ap.lunge_leg * 0.5));
 
   // Strike
-  rotKfs.push(_rot('Spine', fStrike, fps, 8, 0, tt * 0.8));
-  rotKfs.push(_rot('Chest', fStrike, fps, 0, 0, tt * 0.5));
+  rotKfs.push(_rot('Spine', fStrike, fps, 8, tt * 0.8, 0));   // Y = yaw twist
+  rotKfs.push(_rot('Chest', fStrike, fps, 0, tt * 0.5, 0));   // Y = yaw twist
   rotKfs.push(_rot('UpperArm.R', fStrike, fps, ap.strike_arm));
   rotKfs.push(_rot('LowerArm.R', fStrike, fps, ap.strike_forearm));
   rotKfs.push(_rot('UpperArm.L', fStrike, fps, -20));
@@ -520,8 +520,8 @@ function attackKfs(_cfg) {
   rotKfs.push(_rot('UpperLeg.R', fStrike, fps, ap.rear_leg));
 
   // Follow-through
-  rotKfs.push(_rot('Spine', fFollow, fps, 3, 0, tt * 0.3));
-  rotKfs.push(_rot('Chest', fFollow, fps, 0, 0, tt * 0.2));
+  rotKfs.push(_rot('Spine', fFollow, fps, 3, tt * 0.3, 0));   // Y = yaw twist
+  rotKfs.push(_rot('Chest', fFollow, fps, 0, tt * 0.2, 0));   // Y = yaw twist
   rotKfs.push(_rot('UpperArm.R', fFollow, fps, ap.strike_arm + 15));
   rotKfs.push(_rot('LowerArm.R', fFollow, fps, ap.strike_forearm - 10));
 
