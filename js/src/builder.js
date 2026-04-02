@@ -56,6 +56,14 @@ export async function buildHumanoid(cfg) {
     // Detect head position from body mesh bounding box (simple, reliable method)
     const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
     const meshHeight = box.max.z - box.min.z;
+
+    console.log(`[Hair] Body mesh bounds:`, {
+      x: [box.min.x.toFixed(3), box.max.x.toFixed(3)],
+      y: [box.min.y.toFixed(3), box.max.y.toFixed(3)],
+      z: [box.min.z.toFixed(3), box.max.z.toFixed(3)],
+      height: meshHeight.toFixed(3)
+    });
+
     const headZLocal = box.max.z - meshHeight * 0.13;  // head starts ~13% from top
     const headR = meshHeight * 0.12;  // head radius ~ 12% of body height
 
@@ -80,7 +88,11 @@ export async function buildHumanoid(cfg) {
       scene.add(hairMesh);
 
       console.log(`[Hair] Created hair geometry with ${hairGeo.attributes.position.count} vertices`);
+    } else {
+      console.log(`[Hair] buildHairGeometry returned null`);
     }
+  } else {
+    console.log(`[Hair] Style is 'none', skipping hair creation`);
   }
 
   // 7. Clothing
