@@ -67,7 +67,7 @@ export async function buildHumanoid(cfg) {
     });
 
     const headZLocal = box.max.z - meshHeight * 0.13;  // head starts ~13% from top
-    const headR = meshWidth * 0.15;  // head radius ~ 15% of body width (was way too small!)
+    const headR = meshWidth * 0.20;  // head radius ~ 20% of body width (increased from 0.15)
 
     console.log(`[Hair] Detected head at Z=${headZLocal.toFixed(3)}, radius=${headR.toFixed(3)}`);
 
@@ -79,6 +79,7 @@ export async function buildHumanoid(cfg) {
         color: new THREE.Color(hairRgba[0], hairRgba[1], hairRgba[2]),
         roughness: 0.60,
         metalness: 0.0,
+        side: THREE.DoubleSide,  // ← Show both sides (debug)
       });
       const hairMesh = new THREE.Mesh(hairGeo, hairMat);
       hairMesh.name = 'Hair';
