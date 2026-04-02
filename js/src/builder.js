@@ -56,16 +56,18 @@ export async function buildHumanoid(cfg) {
     // Detect head position from body mesh bounding box (simple, reliable method)
     const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
     const meshHeight = box.max.z - box.min.z;
+    const meshWidth = box.max.x - box.min.x;
 
     console.log(`[Hair] Body mesh bounds:`, {
       x: [box.min.x.toFixed(3), box.max.x.toFixed(3)],
       y: [box.min.y.toFixed(3), box.max.y.toFixed(3)],
       z: [box.min.z.toFixed(3), box.max.z.toFixed(3)],
-      height: meshHeight.toFixed(3)
+      height: meshHeight.toFixed(3),
+      width: meshWidth.toFixed(3)
     });
 
     const headZLocal = box.max.z - meshHeight * 0.13;  // head starts ~13% from top
-    const headR = meshHeight * 0.12;  // head radius ~ 12% of body height
+    const headR = meshWidth * 0.15;  // head radius ~ 15% of body width (was way too small!)
 
     console.log(`[Hair] Detected head at Z=${headZLocal.toFixed(3)}, radius=${headR.toFixed(3)}`);
 
