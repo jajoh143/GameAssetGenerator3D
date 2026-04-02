@@ -23,31 +23,30 @@ export const BONE_PARENTS = [-1,0,1,2,3,2,5,6,7,2,9,10,11,0,13,14,0,16,17];
  */
 export function boneWorldPositions(H) {
   return [
-    // [x, y=height, z=depth] — Y-up convention
     // Spine/head chain
-    [0.0,          H * 0.52,  0.0],          // 0  Hips
-    [0.0,          H * 0.60,  0.0],          // 1  Spine
-    [0.0,          H * 0.68,  0.0],          // 2  Chest
-    [0.0,          H * 0.82,  0.0],          // 3  Neck
-    [0.0,          H * 0.87,  0.0],          // 4  Head
+    [0.0,          0.0,          H * 0.52],  // 0  Hips
+    [0.0,          0.0,          H * 0.60],  // 1  Spine
+    [0.0,          0.0,          H * 0.68],  // 2  Chest
+    [0.0,          0.0,          H * 0.82],  // 3  Neck
+    [0.0,          0.0,          H * 0.87],  // 4  Head
     // Left arm chain
-    [+H * 0.08,    H * 0.72,  0.0],          // 5  Shoulder.L
-    [+H * 0.14,    H * 0.70,  0.0],          // 6  UpperArm.L
-    [+H * 0.14,    H * 0.53,  0.0],          // 7  LowerArm.L
-    [+H * 0.14,    H * 0.38,  0.0],          // 8  Hand.L
+    [+H * 0.08,    0.0,          H * 0.72],  // 5  Shoulder.L
+    [+H * 0.14,    0.0,          H * 0.70],  // 6  UpperArm.L
+    [+H * 0.14,    0.0,          H * 0.53],  // 7  LowerArm.L
+    [+H * 0.14,    0.0,          H * 0.38],  // 8  Hand.L
     // Right arm chain
-    [-H * 0.08,    H * 0.72,  0.0],          // 9  Shoulder.R
-    [-H * 0.14,    H * 0.70,  0.0],          // 10 UpperArm.R
-    [-H * 0.14,    H * 0.53,  0.0],          // 11 LowerArm.R
-    [-H * 0.14,    H * 0.38,  0.0],          // 12 Hand.R
+    [-H * 0.08,    0.0,          H * 0.72],  // 9  Shoulder.R
+    [-H * 0.14,    0.0,          H * 0.70],  // 10 UpperArm.R
+    [-H * 0.14,    0.0,          H * 0.53],  // 11 LowerArm.R
+    [-H * 0.14,    0.0,          H * 0.38],  // 12 Hand.R
     // Left leg chain
-    [+H * 0.09,    H * 0.50,  0.0],          // 13 UpperLeg.L
-    [+H * 0.09,    H * 0.27,  0.0],          // 14 LowerLeg.L
-    [+H * 0.09,    H * 0.03,  H * 0.08],     // 15 Foot.L
+    [+H * 0.09,    0.0,          H * 0.50],  // 13 UpperLeg.L
+    [+H * 0.09,    0.0,          H * 0.27],  // 14 LowerLeg.L
+    [+H * 0.09,    H * 0.08,     H * 0.03],  // 15 Foot.L
     // Right leg chain
-    [-H * 0.09,    H * 0.50,  0.0],          // 16 UpperLeg.R
-    [-H * 0.09,    H * 0.27,  0.0],          // 17 LowerLeg.R
-    [-H * 0.09,    H * 0.03,  H * 0.08],     // 18 Foot.R
+    [-H * 0.09,    0.0,          H * 0.50],  // 16 UpperLeg.R
+    [-H * 0.09,    0.0,          H * 0.27],  // 17 LowerLeg.R
+    [-H * 0.09,    H * 0.08,     H * 0.03],  // 18 Foot.R
   ];
 }
 

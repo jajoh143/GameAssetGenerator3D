@@ -15,18 +15,17 @@ import * as THREE from 'three';
 export function buildClothingGeometry(bodyGeo, cfg) {
   const H = cfg.height ?? 1.75;
   const footTop = 0.06;
-  const hipY   = H * 0.50;
-  const chestY = H * 0.68;
+  const hipZ   = H * 0.50;
+  const chestZ = H * 0.68;
   const waistGap = 0.02;
   const BODY_X_CAP = 0.28;
 
-  // Zone boundaries are Y heights (Y-up convention)
   const ZONES = {
-    short_sleeve: [hipY + waistGap, chestY + 0.05, true],
-    long_sleeve:  [hipY + waistGap, chestY + 0.05, true],
-    v_neck:       [hipY + waistGap, chestY + 0.05, true],
-    jeans:        [footTop - 0.02,  hipY + (chestY - hipY) * 0.10, false],
-    shorts:       [footTop + (hipY - footTop) * 0.38, hipY + (chestY - hipY) * 0.10, false],
+    short_sleeve: [hipZ + waistGap, chestZ + 0.05, true],
+    long_sleeve:  [hipZ + waistGap, chestZ + 0.05, true],
+    v_neck:       [hipZ + waistGap, chestZ + 0.05, true],
+    jeans:        [footTop - 0.02,  hipZ + (chestZ - hipZ) * 0.10, false],
+    shorts:       [footTop + (hipZ - footTop) * 0.38, hipZ + (chestZ - hipZ) * 0.10, false],
   };
 
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
@@ -38,7 +37,7 @@ export function buildClothingGeometry(bodyGeo, cfg) {
     if (ctype === 'none') continue;
     const zone = ZONES[ctype];
     if (!zone) continue;
-    const [yLo, yHi, includeArms] = zone;
+    const [zLo, zHi, includeArms] = zone;
 
     const verts = [];
     const faces = [];
@@ -54,17 +53,15 @@ export function buildClothingGeometry(bodyGeo, cfg) {
         x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i), i,
       }));
 
-      // Zone test uses Y for height (Y-up convention)
-      const anyInZone = vs.some(v => v.y >= yLo && v.y <= yHi);
+      const anyInZone = vs.some(v => v.z >= zLo && v.z <= zHi);
       if (!anyInZone) continue;
       if (!includeArms && vs.some(v => Math.abs(v.x) > BODY_X_CAP)) continue;
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
-          // Extrude outward in XZ plane (perpendicular to Y-up axis), keep Y
-          const len = Math.sqrt(v.x**2 + v.z**2) || 0.001;
+          const len = Math.sqrt(v.x**2 + v.y**2) || 0.001;
           const off = 0.015 / len;
-          verts.push(v.x + v.x * off, v.y, v.z + v.z * off);
+          verts.push(v.x + v.x * off, v.y + v.y * off, v.z);
           vertMap.set(v.i, verts.length / 3 - 1);
         }
         return vertMap.get(v.i);
