@@ -53,14 +53,15 @@ export async function buildHumanoid(cfg) {
   // 6. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
   if (hairStyle !== 'none') {
-    // Get head position from skeleton (Head bone is at index 4)
-    const headBoneIdx = BONE_NAMES.indexOf('Head');
-    const chestBoneIdx = BONE_NAMES.indexOf('Chest');
-    const headZ = skeleton.bones[headBoneIdx].position.z;
-    const chestZ = skeleton.bones[chestBoneIdx].position.z;
-    const headR = (headZ - chestZ) * 1.2;  // estimate radius from bone distance
+    // Detect head position from body mesh bounding box (simple, reliable method)
+    const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
+    const meshHeight = box.max.z - box.min.z;
+    const headZLocal = box.max.z - meshHeight * 0.13;  // head starts ~13% from top
+    const headR = meshHeight * 0.12;  // head radius ~ 12% of body height
 
-    const hairGeo = buildHairGeometry(headZ, headR, hairStyle);
+    console.log(`[Hair] Detected head at Z=${headZLocal.toFixed(3)}, radius=${headR.toFixed(3)}`);
+
+    const hairGeo = buildHairGeometry(headZLocal, headR, hairStyle);
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
@@ -71,10 +72,14 @@ export async function buildHumanoid(cfg) {
       });
       const hairMesh = new THREE.Mesh(hairGeo, hairMat);
       hairMesh.name = 'Hair';
-      hairMesh.position.set(0, 0, 0);  // positioned at bone origin
-      // Parent hair to Head bone so it moves with it
-      const headBone = skeleton.bones[headBoneIdx];
-      headBone.add(hairMesh);
+      hairMesh.castShadow = true;
+      hairMesh.receiveShadow = true;
+      hairMesh.position.set(0, 0, 0);
+
+      // Add hair directly to scene (not to bone) so it uses the mesh's coordinate system
+      scene.add(hairMesh);
+
+      console.log(`[Hair] Created hair geometry with ${hairGeo.attributes.position.count} vertices`);
     }
   }
 
