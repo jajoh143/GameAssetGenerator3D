@@ -70,17 +70,20 @@ export async function buildHumanoid(cfg) {
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
       const hairMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(hairRgba[0], hairRgba[1], hairRgba[2]),
-        roughness: 0.60,
+        roughness: 0.75,  // Increased for more realistic hair appearance
         metalness: 0.0,
+        side: THREE.DoubleSide,  // Render both sides for better layered appearance
+        flatShading: false,  // Smooth shading to reduce geometric look
       });
       const hairMesh = new THREE.Mesh(hairGeo, hairMat);
       hairMesh.name = 'Hair';
       hairMesh.castShadow = true;
       hairMesh.receiveShadow = true;
 
-      // Position hair above the head bone
-      // The skeleton uses Z-up, but we need to offset in Y to move up the body
-      hairMesh.position.set(0, headRadius * 6.25, -.5);  // offset along the body (Y axis)
+      // Position hair on the head
+      // Empirically determined values for three.js Y-up coordinate system:
+      // X: 0 (centered), Y: headRadius * 6.25 (height on body), Z: -0.5 (forward-facing)
+      hairMesh.position.set(0, headRadius * 6.25, -0.5);
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
