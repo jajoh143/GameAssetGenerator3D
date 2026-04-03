@@ -35,8 +35,6 @@ export function buildHairGeometry(headRadius, style = 'short') {
     style === 'short' ? 3 : 4,
     style === 'short' ? 0.95 : 1.0
   );
-  layer2.position.y -= 0.15 * headRadius;  // Offset for layering effect
-  layer2.position.z += 0.1 * headRadius;   // Slight back offset
 
   // Hair layer 3: Top crown for shape definition
   const layer3 = createHairLayer(
@@ -45,25 +43,30 @@ export function buildHairGeometry(headRadius, style = 'short') {
     style === 'short' ? 3 : 4,
     style === 'short' ? 1.3 : 1.25
   );
-  layer3.position.y += 0.4 * headRadius;   // Top position
 
-  // Merge all layers into single geometry
+  // Merge all layers into single geometry with offsets
   const mergedGeometry = new THREE.BufferGeometry();
-  const geometries = [layer1, layer2, layer3];
+  const layerData = [
+    { geo: layer1, offset: { x: 0, y: 0, z: 0 } },
+    { geo: layer2, offset: { x: 0, y: -0.15 * headRadius, z: 0.1 * headRadius } },
+    { geo: layer3, offset: { x: 0, y: 0.4 * headRadius, z: 0 } }
+  ];
 
   let vertexOffset = 0;
   const positions = [];
   const indices = [];
   const normals = [];
 
-  for (const geo of geometries) {
+  for (const layer of layerData) {
+    const geo = layer.geo;
+    const offset = layer.offset;
     const pos = geo.attributes.position.array;
     const idx = geo.index ? geo.index.array : null;
     const norm = geo.attributes.normal.array;
 
-    // Add positions
+    // Add positions with layer offset applied
     for (let i = 0; i < pos.length; i += 3) {
-      positions.push(pos[i], pos[i + 1], pos[i + 2]);
+      positions.push(pos[i] + offset.x, pos[i + 1] + offset.y, pos[i + 2] + offset.z);
       normals.push(norm[i], norm[i + 1], norm[i + 2]);
     }
 
