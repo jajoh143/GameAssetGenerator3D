@@ -24,7 +24,7 @@ export function buildHairGeometry(headRadius, style = 'short') {
   const layer1 = createHairLayer(
     headRadius,
     style === 'long' ? 1.8 : 1.3,  // heightScale
-    style === 'short' ? 4 : 5,      // detail level
+    style === 'short' ? 5 : 6,      // detail level (increased for smoothness)
     style === 'short' ? 1.15 : 1.2  // radiusScale
   );
 
@@ -32,7 +32,7 @@ export function buildHairGeometry(headRadius, style = 'short') {
   const layer2 = createHairLayer(
     headRadius,
     style === 'long' ? 1.5 : 1.0,
-    style === 'short' ? 3 : 4,
+    style === 'short' ? 5 : 5,      // detail level (increased for smoothness)
     style === 'short' ? 0.95 : 1.0
   );
 
@@ -40,7 +40,7 @@ export function buildHairGeometry(headRadius, style = 'short') {
   const layer3 = createHairLayer(
     headRadius * 0.6,
     style === 'long' ? 1.2 : 0.8,
-    style === 'short' ? 3 : 4,
+    style === 'short' ? 5 : 5,      // detail level (increased for smoothness)
     style === 'short' ? 1.3 : 1.25
   );
 
@@ -99,31 +99,36 @@ function createHairLayer(headRadius, heightScale, detail, radiusScale) {
   // Use IcosahedronGeometry for smooth, organic base
   const geometry = new THREE.IcosahedronGeometry(radius, detail);
 
-  // Apply organic deformation to vertices
+  // Apply smooth organic deformation to vertices
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i++) {
     const x = positions.getX(i);
     const y = positions.getY(i);
     const z = positions.getZ(i);
 
+    // Normalize to sphere distance for smooth deformation
+    const dist = Math.sqrt(x * x + y * y + z * z);
+    if (dist < 0.001) continue;  // Skip center
+
     // Create dome shape with variable height
     if (y > 0) {
-      // Top half: stretch with height scale
-      positions.setY(i, y * heightScale);
+      // Top half: stretch with height scale using smooth curve
+      const stretchFactor = 0.5 + 0.5 * Math.sin((y / radius + 1) * Math.PI / 2);  // Smooth curve
+      positions.setY(i, y * heightScale * stretchFactor);
 
-      // Add subtle noise to break up geometric appearance
-      const noise = Math.sin(x * 3 + z * 2) * 0.05 * radius;
-      positions.setX(i, x + noise);
+      // Minimal subtle variation for organic look (very reduced)
+      const subtleNoise = Math.cos(x * 2) * Math.sin(z * 2) * 0.02 * radius;
+      positions.setX(i, x + subtleNoise);
     } else {
-      // Bottom half: create gradual tapering
-      const taper = Math.max(0, (y + radius) / radius);  // 0 to 1 as we go up
-      positions.setY(i, y * taper * 0.4);
+      // Bottom half: smooth gradual tapering
+      const normalizedY = (y + radius) / radius;  // 0 to 1
+      const taper = Math.max(0, Math.pow(normalizedY, 1.5));  // Smooth power curve
+      positions.setY(i, y * taper * 0.3);
 
-      // Taper sides slightly
-      const taperedX = x * (0.7 + taper * 0.3);
-      const taperedZ = z * (0.7 + taper * 0.3);
-      positions.setX(i, taperedX);
-      positions.setZ(i, taperedZ);
+      // Smooth side tapering using cosine for gradual transition
+      const sideScale = 0.6 + taper * 0.4;  // 0.6 to 1.0
+      positions.setX(i, x * sideScale);
+      positions.setZ(i, z * sideScale);
     }
   }
   positions.needsUpdate = true;

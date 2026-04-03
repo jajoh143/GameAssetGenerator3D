@@ -81,9 +81,8 @@ export async function buildHumanoid(cfg) {
       hairMesh.receiveShadow = true;
 
       // Position hair on the head
-      // Empirically determined values for three.js Y-up coordinate system:
-      // X: 0 (centered), Y: headRadius * 6.25 (height on body), Z: -0.5 (forward-facing)
-      hairMesh.position.set(0, headRadius * 6.25, -0.5);
+      // Y: lowered to sit properly on head (was 6.25, now adjusted lower)
+      hairMesh.position.set(0, headRadius * 4.8, -0.5);
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
