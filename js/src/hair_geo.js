@@ -6,9 +6,9 @@
 import * as THREE from 'three';
 
 /**
- * Build hair geometry with organic, multi-layered shape.
+ * Build hair geometry with distinct stylized sections.
  * Designed for Three.js Y-up coordinate system.
- * Inspired by hair card and fuzzy mesh techniques from three.js community.
+ * Based on low-poly character hair techniques from game development.
  *
  * @param {number} headRadius - radius of the head
  * @param {string} [style='short'] - hair style name
@@ -17,56 +17,64 @@ import * as THREE from 'three';
 export function buildHairGeometry(headRadius, style = 'short') {
   if (style === 'none') return null;
 
-  // Create a multi-layered hair geometry for more organic appearance
-  const group = new THREE.Group();
+  // Create distinct hair sections for stylized low-poly look
+  const sections = [];
 
-  // Hair layer 1: Main body with high detail
-  const layer1 = createHairLayer(
+  // Top section (crown)
+  sections.push(createHairSection(
     headRadius,
-    style === 'long' ? 1.8 : 1.3,  // heightScale
-    style === 'short' ? 5 : 6,      // detail level (increased for smoothness)
-    style === 'short' ? 1.15 : 1.2  // radiusScale
-  );
+    'top',
+    style === 'long' ? 1.6 : 1.2,
+    { y: 0.3, z: -0.05 }
+  ));
 
-  // Hair layer 2: Secondary shape for volume (offset slightly)
-  const layer2 = createHairLayer(
+  // Front section (bangs/fringe area)
+  sections.push(createHairSection(
     headRadius,
-    style === 'long' ? 1.5 : 1.0,
-    style === 'short' ? 5 : 5,      // detail level (increased for smoothness)
-    style === 'short' ? 0.95 : 1.0
-  );
+    'front',
+    style === 'long' ? 1.4 : 1.0,
+    { y: 0.1, z: -0.25 }
+  ));
 
-  // Hair layer 3: Top crown for shape definition
-  const layer3 = createHairLayer(
-    headRadius * 0.6,
-    style === 'long' ? 1.2 : 0.8,
-    style === 'short' ? 5 : 5,      // detail level (increased for smoothness)
-    style === 'short' ? 1.3 : 1.25
-  );
+  // Back section (back of head)
+  sections.push(createHairSection(
+    headRadius,
+    'back',
+    style === 'long' ? 1.8 : 1.1,
+    { y: -0.1, z: 0.15 }
+  ));
 
-  // Merge all layers into single geometry with offsets
+  // Side sections (left and right)
+  if (style === 'short') {
+    sections.push(createHairSection(
+      headRadius * 0.8,
+      'side',
+      1.0,
+      { y: 0, z: -0.1, x: 0.35 }
+    ));
+    sections.push(createHairSection(
+      headRadius * 0.8,
+      'side',
+      1.0,
+      { y: 0, z: -0.1, x: -0.35 }
+    ));
+  }
+
+  // Merge all sections into single geometry
   const mergedGeometry = new THREE.BufferGeometry();
-  const layerData = [
-    { geo: layer1, offset: { x: 0, y: 0, z: 0 } },
-    { geo: layer2, offset: { x: 0, y: -0.15 * headRadius, z: 0.1 * headRadius } },
-    { geo: layer3, offset: { x: 0, y: 0.4 * headRadius, z: 0 } }
-  ];
-
   let vertexOffset = 0;
   const positions = [];
   const indices = [];
   const normals = [];
 
-  for (const layer of layerData) {
-    const geo = layer.geo;
-    const offset = layer.offset;
-    const pos = geo.attributes.position.array;
-    const idx = geo.index ? geo.index.array : null;
-    const norm = geo.attributes.normal.array;
+  for (const section of sections) {
+    const pos = section.attributes.position.array;
+    const idx = section.index ? section.index.array : null;
+    const norm = section.attributes.normal.array;
 
-    // Add positions with layer offset applied
+    // Add positions
     for (let i = 0; i < pos.length; i += 3) {
-      positions.push(pos[i] + offset.x, pos[i + 1] + offset.y, pos[i + 2] + offset.z);
+      positions.push(pos[i], pos[i + 1], pos[i + 2]);
       normals.push(norm[i], norm[i + 1], norm[i + 2]);
     }
 
@@ -90,51 +98,68 @@ export function buildHairGeometry(headRadius, style = 'short') {
 }
 
 /**
- * Create a single hair layer geometry with organic deformation.
+ * Create a single hair section with defined shape and position offset.
  * @private
  */
-function createHairLayer(headRadius, heightScale, detail, radiusScale) {
-  const radius = headRadius * radiusScale;
+function createHairSection(headRadius, sectionType, heightScale, positionOffset) {
+  let radius, geometry;
 
-  // Use IcosahedronGeometry for smooth, organic base
-  const geometry = new THREE.IcosahedronGeometry(radius, detail);
+  if (sectionType === 'top') {
+    // Top crown: rounded cap
+    radius = headRadius * 1.25;
+    geometry = new THREE.IcosahedronGeometry(radius, 4);
+  } else if (sectionType === 'front') {
+    // Front bangs: smaller, more angular
+    radius = headRadius * 0.9;
+    geometry = new THREE.ConeGeometry(radius, radius * heightScale, 6, 4);
+    // Rotate cone to point down
+    geometry.rotateZ(Math.PI);
+  } else if (sectionType === 'back') {
+    // Back of head: bulbous shape
+    radius = headRadius * 1.1;
+    geometry = new THREE.IcosahedronGeometry(radius, 4);
+  } else if (sectionType === 'side') {
+    // Side pieces: small pods
+    radius = headRadius * 0.7;
+    geometry = new THREE.IcosahedronGeometry(radius, 3);
+  }
 
-  // Apply smooth organic deformation to vertices
+  // Apply section-specific deformation
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i++) {
     const x = positions.getX(i);
     const y = positions.getY(i);
     const z = positions.getZ(i);
 
-    // Normalize to sphere distance for smooth deformation
-    const dist = Math.sqrt(x * x + y * y + z * z);
-    if (dist < 0.001) continue;  // Skip center
-
-    // Create dome shape with variable height
-    if (y > 0) {
-      // Top half: stretch with height scale using smooth curve
-      const stretchFactor = 0.5 + 0.5 * Math.sin((y / radius + 1) * Math.PI / 2);  // Smooth curve
-      positions.setY(i, y * heightScale * stretchFactor);
-
-      // Minimal subtle variation for organic look (very reduced)
-      const subtleNoise = Math.cos(x * 2) * Math.sin(z * 2) * 0.02 * radius;
-      positions.setX(i, x + subtleNoise);
-    } else {
-      // Bottom half: smooth gradual tapering
-      const normalizedY = (y + radius) / radius;  // 0 to 1
-      const taper = Math.max(0, Math.pow(normalizedY, 1.5));  // Smooth power curve
-      positions.setY(i, y * taper * 0.3);
-
-      // Smooth side tapering using cosine for gradual transition
-      const sideScale = 0.6 + taper * 0.4;  // 0.6 to 1.0
-      positions.setX(i, x * sideScale);
-      positions.setZ(i, z * sideScale);
+    // Scale height based on section
+    if (sectionType === 'top' || sectionType === 'back') {
+      if (y > 0) {
+        positions.setY(i, y * heightScale);
+      }
+    } else if (sectionType === 'front') {
+      // Front section tapers
+      positions.setY(i, y * heightScale * 1.2);
+      positions.setX(i, x * 0.85);
+      positions.setZ(i, z * 0.85);
     }
   }
   positions.needsUpdate = true;
 
-  // Recalculate normals for proper lighting
-  geometry.computeVertexNormals();
+  // Apply position offset
+  const offsetX = positionOffset.x || 0;
+  const offsetY = positionOffset.y || 0;
+  const offsetZ = positionOffset.z || 0;
 
+  for (let i = 0; i < positions.count; i++) {
+    positions.setXYZ(
+      i,
+      positions.getX(i) + offsetX * headRadius,
+      positions.getY(i) + offsetY * headRadius,
+      positions.getZ(i) + offsetZ * headRadius
+    );
+  }
+  positions.needsUpdate = true;
+
+  geometry.computeVertexNormals();
   return geometry;
 }
