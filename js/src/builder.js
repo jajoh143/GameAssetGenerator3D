@@ -79,8 +79,9 @@ export async function buildHumanoid(cfg) {
       hairMesh.receiveShadow = true;
 
       // Position hair above the head bone
-      // The hair mesh is positioned in local space of the head bone
-      hairMesh.position.set(0, headRadius * 0.9, 0);  // offset above head
+      // NOTE: The skeleton uses Z as the height axis (Blender convention),
+      // so we offset in Z, not Y
+      hairMesh.position.set(0, 0, headRadius * 1.1);  // offset ABOVE head in Z direction
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
