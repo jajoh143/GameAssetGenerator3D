@@ -44,21 +44,48 @@ export function buildHairGeometry(headRadius, style = 'short') {
     { y: -0.1, z: 0.15 }
   ));
 
-  // Side sections (left and right)
-  if (style === 'short') {
-    sections.push(createHairSection(
-      headRadius * 0.8,
-      'side',
-      1.0,
-      { y: 0, z: -0.1, x: 0.35 }
-    ));
-    sections.push(createHairSection(
-      headRadius * 0.8,
-      'side',
-      1.0,
-      { y: 0, z: -0.1, x: -0.35 }
-    ));
-  }
+  // Side sections - wrap around head for fuller hair coverage
+  // Upper sides (temple area)
+  sections.push(createHairSection(
+    headRadius * 0.85,
+    'side-upper',
+    style === 'long' ? 1.3 : 1.05,
+    { y: 0.15, z: -0.05, x: 0.4 }
+  ));
+  sections.push(createHairSection(
+    headRadius * 0.85,
+    'side-upper',
+    style === 'long' ? 1.3 : 1.05,
+    { y: 0.15, z: -0.05, x: -0.4 }
+  ));
+
+  // Middle sides (ear area)
+  sections.push(createHairSection(
+    headRadius * 0.75,
+    'side-mid',
+    style === 'long' ? 1.4 : 1.0,
+    { y: 0, z: -0.08, x: 0.45 }
+  ));
+  sections.push(createHairSection(
+    headRadius * 0.75,
+    'side-mid',
+    style === 'long' ? 1.4 : 1.0,
+    { y: 0, z: -0.08, x: -0.45 }
+  ));
+
+  // Lower sides (jaw area)
+  sections.push(createHairSection(
+    headRadius * 0.7,
+    'side-lower',
+    style === 'long' ? 1.5 : 0.95,
+    { y: -0.15, z: 0, x: 0.4 }
+  ));
+  sections.push(createHairSection(
+    headRadius * 0.7,
+    'side-lower',
+    style === 'long' ? 1.5 : 0.95,
+    { y: -0.15, z: 0, x: -0.4 }
+  ));
 
   // Merge all sections into single geometry
   const mergedGeometry = new THREE.BufferGeometry();
@@ -118,8 +145,20 @@ function createHairSection(headRadius, sectionType, heightScale, positionOffset)
     // Back of head: bulbous shape
     radius = headRadius * 1.1;
     geometry = new THREE.IcosahedronGeometry(radius, 4);
+  } else if (sectionType === 'side-upper') {
+    // Upper side (temple area): tapered bulge
+    radius = headRadius * 0.65;
+    geometry = new THREE.IcosahedronGeometry(radius, 3);
+  } else if (sectionType === 'side-mid') {
+    // Middle side (ear area): flattened pod
+    radius = headRadius * 0.6;
+    geometry = new THREE.IcosahedronGeometry(radius, 3);
+  } else if (sectionType === 'side-lower') {
+    // Lower side (jaw area): tapered pod
+    radius = headRadius * 0.55;
+    geometry = new THREE.IcosahedronGeometry(radius, 3);
   } else if (sectionType === 'side') {
-    // Side pieces: small pods
+    // Original side pieces (fallback)
     radius = headRadius * 0.7;
     geometry = new THREE.IcosahedronGeometry(radius, 3);
   }
@@ -141,6 +180,12 @@ function createHairSection(headRadius, sectionType, heightScale, positionOffset)
       positions.setY(i, y * heightScale * 1.2);
       positions.setX(i, x * 0.85);
       positions.setZ(i, z * 0.85);
+    } else if (sectionType.startsWith('side')) {
+      // Side sections: subtle tapering for smooth blending
+      positions.setY(i, y * heightScale);
+      // Subtle inward taper for sides
+      const taperAmount = 0.05 * Math.abs(z);  // More taper toward front/back
+      positions.setX(i, x * (0.95 - taperAmount));
     }
   }
   positions.needsUpdate = true;
