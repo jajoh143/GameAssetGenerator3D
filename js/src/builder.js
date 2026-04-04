@@ -126,19 +126,32 @@ export async function buildHumanoid(cfg) {
   }
 
   // 8. Clothing
-  const clothingColors = cfg.clothingColor ?? {};
-  const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
-  for (const [ctype, geo] of Object.entries(clothingGeos)) {
-    const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
-    const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
-    const mat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(rgba[0], rgba[1], rgba[2]),
-      roughness: 0.65,
-      metalness: 0.0,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = `Clothing_${ctype}`;
-    scene.add(mesh);
+  {
+    const clothingColors = cfg.clothingColor ?? {};
+    const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
+
+    // Create a clothing group to attach to skeleton
+    const clothingGroup = new THREE.Group();
+    clothingGroup.name = 'Clothing';
+    rootBone.add(clothingGroup);
+
+    for (const [ctype, geo] of Object.entries(clothingGeos)) {
+      const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
+      const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(rgba[0], rgba[1], rgba[2]),
+        roughness: 0.65,
+        metalness: 0.0,
+        side: THREE.DoubleSide,  // Render both sides to prevent clipping
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = `Clothing_${ctype}`;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      clothingGroup.add(mesh);
+
+      console.log(`[Clothing] Added ${ctype} (${geo.attributes.position.count} verts) with color ${colorName}`);
+    }
   }
 
   // 9. Animations
