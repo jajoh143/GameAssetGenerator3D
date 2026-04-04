@@ -363,6 +363,8 @@ function buildSpiky(geometry, headZ, headR, headRHoriz = null) {
 
 /**
  * Build hair geometry for the given style.
+ * Geometry is centered at origin - positioning/rotation handled by builder.
+ *
  * @param {number} headRadius - Head radius in 3D units
  * @param {string} style - Hair style name ('short', 'long', 'spiky', 'buzzed', etc.)
  * @returns {THREE.BufferGeometry|null}
@@ -370,8 +372,9 @@ function buildSpiky(geometry, headZ, headR, headRHoriz = null) {
 export function buildHairGeometry(headRadius, style = 'short') {
   if (style === 'none') return null;
 
-  // Head position (using convention from skeleton)
-  const headZ = headRadius * 6.25;  // Adjusted for three.js Y-up system
+  // Build geometry centered at origin (Z=0)
+  // This allows builder.js to handle all positioning/rotation
+  const headZ = 0;
 
   // Create accumulator geometry
   const geom = new THREE.BufferGeometry();
