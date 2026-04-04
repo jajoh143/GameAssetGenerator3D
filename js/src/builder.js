@@ -85,10 +85,12 @@ export async function buildHumanoid(cfg) {
       hairMesh.rotation.x = -Math.PI / 2;
 
       // Position at top of head
-      hairMesh.position.set(0, headRadius * 4.2, -headRadius * 0.2);
+      hairMesh.position.set(0, headRadius * 5.5, -headRadius * 0.6);
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
+      hairMesh.scale.set(0.8, 0.8, 0.8);  // 1.0 = normal, 1.2 = 20% larger, 0.8 = 20% smaller
+
 
       console.log(`[Hair] Hair added to Head bone with ${hairGeo.attributes.position.count} vertices`);
     }
