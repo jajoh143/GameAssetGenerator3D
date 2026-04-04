@@ -84,8 +84,8 @@ export async function buildHumanoid(cfg) {
       // Rotate -90° around X-axis to point cap upward
       hairMesh.rotation.x = -Math.PI / 2;
 
-      // Position at top of head - much higher Y offset needed
-      hairMesh.position.set(0, headRadius * 3.5, -headRadius * 0.2);
+      // Position at top of head
+      hairMesh.position.set(0, headRadius * 4.2, -headRadius * 0.2);
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
