@@ -9,6 +9,7 @@ import { writeFileSync } from 'fs';
 import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
+import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
 import { buildClothingGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
@@ -96,7 +97,35 @@ export async function buildHumanoid(cfg) {
     }
   }
 
-  // 7. Clothing
+  // 7. Eyes
+  {
+    const headBoneIdx = BONE_NAMES.indexOf('Head');
+    const headBone = skeleton.bones[headBoneIdx];
+
+    const eyeGeos = buildEyeGeometry(headRadius);
+    const eyeMats = createEyeMaterials();
+
+    // Eye disc mesh
+    const eyeDiscMesh = new THREE.Mesh(eyeGeos.eyeDiscGeometry, eyeMats.eyeDiscMaterial);
+    eyeDiscMesh.name = 'Eyes';
+    eyeDiscMesh.castShadow = true;
+    eyeDiscMesh.receiveShadow = true;
+    // Position relative to head bone
+    eyeDiscMesh.position.set(0, 0, 0);  // Adjust if needed
+    headBone.add(eyeDiscMesh);
+
+    // Eye highlight mesh
+    const highlightMesh = new THREE.Mesh(eyeGeos.highlightGeometry, eyeMats.highlightMaterial);
+    highlightMesh.name = 'EyeHighlights';
+    highlightMesh.castShadow = true;
+    highlightMesh.receiveShadow = true;
+    highlightMesh.position.set(0, 0, 0);
+    headBone.add(highlightMesh);
+
+    console.log(`[Eyes] Eyes added to Head bone with ${eyeGeos.eyeDiscGeometry.attributes.position.count} vertices`);
+  }
+
+  // 8. Clothing
   const clothingColors = cfg.clothingColor ?? {};
   const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
   for (const [ctype, geo] of Object.entries(clothingGeos)) {
@@ -112,7 +141,7 @@ export async function buildHumanoid(cfg) {
     scene.add(mesh);
   }
 
-  // 8. Animations
+  // 9. Animations
   const clips = buildAnimations(cfg);
 
   return { scene, clips };
