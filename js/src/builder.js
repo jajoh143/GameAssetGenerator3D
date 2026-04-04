@@ -81,16 +81,11 @@ export async function buildHumanoid(cfg) {
       hairMesh.receiveShadow = true;
 
       // Hair positioning and rotation
-      // The hair geometry is built with rings at different elevations
-      // Hair cap elevation 0° (hairline) is at Y=0 in the geometry
-      // Need to rotate to align with head orientation and position at head center
+      // Rotate -90° around X-axis to point cap upward
+      hairMesh.rotation.x = -Math.PI / 2;
 
-      // Rotate 90° around X-axis to point cap upward (from ring orientation)
-      hairMesh.rotation.x = Math.PI / 2;
-
-      // Position at head center with slight forward offset
-      // Y offset moves up the body, Z offset positions forward/back
-      hairMesh.position.set(0, headRadius * 0.8, -headRadius * 0.3);
+      // Position at top of head - much higher Y offset needed
+      hairMesh.position.set(0, headRadius * 3.5, -headRadius * 0.2);
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
