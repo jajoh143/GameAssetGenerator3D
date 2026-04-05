@@ -53,15 +53,16 @@ export async function buildHumanoid(cfg) {
 
   // 6. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
+
+  // Estimate head radius from body width (used by hair, eyes, etc.)
+  const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
+  const bodyWidth = box.max.x - box.min.x;
+  const headRadius = bodyWidth * 0.18;  // ~18% of body width
+
   if (hairStyle !== 'none') {
     // Get head bone and calculate radius from body
     const headBoneIdx = BONE_NAMES.indexOf('Head');
     const headBone = skeleton.bones[headBoneIdx];
-
-    // Estimate head radius from body width (simpler and more reliable)
-    const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
-    const bodyWidth = box.max.x - box.min.x;
-    const headRadius = bodyWidth * 0.18;  // ~18% of body width
 
     console.log(`[Hair] Creating hair: style=${hairStyle}, headRadius=${headRadius.toFixed(3)}`);
 
