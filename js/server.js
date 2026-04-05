@@ -40,8 +40,8 @@ async function runJob(jobId, cfgFn, outputPath) {
 }
 
 function cfgFromBody(data, animations = 'all') {
-  const top    = data.clothing_top    ?? 'short_sleeve';
-  const bottom = data.clothing_bottom ?? 'jeans';
+  const top    = data.clothing_top    ?? 'none';
+  const bottom = data.clothing_bottom ?? 'none';
   const clothing = [top, bottom].filter(c => c && c !== 'none');
 
   const clothingColor = {};
