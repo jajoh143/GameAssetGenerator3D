@@ -88,7 +88,7 @@ export async function loadCartoonMale(targetHeight = 1.75) {
     positions[i * 3 + 2] = posAttr.getZ(i);
   }
 
-  // Find bounding box
+  // Find bounding box along Z (input GLB is Z-up from Blender)
   let minZ = Infinity, maxZ = -Infinity;
   for (let i = 0; i < vCount; i++) {
     const z = positions[i * 3 + 2];
@@ -99,7 +99,7 @@ export async function loadCartoonMale(targetHeight = 1.75) {
   const origHeight = maxZ - minZ;
   const scale = targetHeight / origHeight;
 
-  // Shift and scale positions
+  // Scale uniformly, shift Z to 0
   for (let i = 0; i < vCount; i++) {
     positions[i * 3]     = positions[i * 3] * scale;
     positions[i * 3 + 1] = positions[i * 3 + 1] * scale;

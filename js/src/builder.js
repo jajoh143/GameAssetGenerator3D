@@ -9,6 +9,7 @@ import { writeFileSync } from 'fs';
 import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
+import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
 import { buildClothingGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
@@ -53,49 +54,107 @@ export async function buildHumanoid(cfg) {
   // 6. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
   if (hairStyle !== 'none') {
-    // Detect head position from body mesh bounding box top
-    const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
-    const headZ = box.max.z * 0.91;
-    const headR = (box.max.z - headZ) * 1.40;
-    const headRHoriz = (box.max.x - box.min.x) * 0.5 * 1.25;
+    // Get head bone and calculate radius from body
+    const headBoneIdx = BONE_NAMES.indexOf('Head');
+    const headBone = skeleton.bones[headBoneIdx];
 
-    const hairGeo = buildHairGeometry(
-      headZ - headR * 0.10, headR, hairStyle, headRHoriz
-    );
+    // Estimate head radius from body width (simpler and more reliable)
+    const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
+    const bodyWidth = box.max.x - box.min.x;
+    const headRadius = bodyWidth * 0.18;  // ~18% of body width
+
+    console.log(`[Hair] Creating hair: style=${hairStyle}, headRadius=${headRadius.toFixed(3)}`);
+
+    const hairGeo = buildHairGeometry(headRadius, hairStyle);
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
       const hairMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(hairRgba[0], hairRgba[1], hairRgba[2]),
-        roughness: 0.60,
+        roughness: 0.75,  // Increased for more realistic hair appearance
         metalness: 0.0,
+        side: THREE.DoubleSide,  // Render both sides for better layered appearance
+        flatShading: false,  // Smooth shading to reduce geometric look
       });
       const hairMesh = new THREE.Mesh(hairGeo, hairMat);
       hairMesh.name = 'Hair';
-      hairMesh.position.set(0.01, 0.02, 0); // match Python nudges
-      // Parent hair to Head bone so it moves with it
-      const headBone = skeleton.bones[BONE_NAMES.indexOf('Head')];
+      hairMesh.castShadow = true;
+      hairMesh.receiveShadow = true;
+
+      // Hair positioning and rotation
+      // Rotate -90° around X-axis to point cap upward
+      hairMesh.rotation.x = -Math.PI / 2;
+
+      // Position at top of head
+      hairMesh.position.set(0, headRadius * 5.5, -headRadius * 0.6);
+
+      // Add to head bone so it moves with animations
       headBone.add(hairMesh);
+      hairMesh.scale.set(0.725, 0.725, 0.725);  // 1.0 = normal, 1.2 = 20% larger, 0.8 = 20% smaller
+
+
+      console.log(`[Hair] Hair added to Head bone with ${hairGeo.attributes.position.count} vertices`);
     }
   }
 
-  // 7. Clothing
-  const clothingColors = cfg.clothingColor ?? {};
-  const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
-  for (const [ctype, geo] of Object.entries(clothingGeos)) {
-    const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
-    const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
-    const mat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(rgba[0], rgba[1], rgba[2]),
-      roughness: 0.65,
-      metalness: 0.0,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = `Clothing_${ctype}`;
-    scene.add(mesh);
+  // 7. Eyes
+  {
+    const headBoneIdx = BONE_NAMES.indexOf('Head');
+    const headBone = skeleton.bones[headBoneIdx];
+
+    const eyeGeos = buildEyeGeometry(headRadius);
+    const eyeMats = createEyeMaterials();
+
+    // Eye disc mesh
+    const eyeDiscMesh = new THREE.Mesh(eyeGeos.eyeDiscGeometry, eyeMats.eyeDiscMaterial);
+    eyeDiscMesh.name = 'Eyes';
+    eyeDiscMesh.castShadow = true;
+    eyeDiscMesh.receiveShadow = true;
+    // Position relative to head bone
+    eyeDiscMesh.position.set(0, 0, 0);  // Adjust if needed
+    headBone.add(eyeDiscMesh);
+
+    // Eye highlight mesh
+    const highlightMesh = new THREE.Mesh(eyeGeos.highlightGeometry, eyeMats.highlightMaterial);
+    highlightMesh.name = 'EyeHighlights';
+    highlightMesh.castShadow = true;
+    highlightMesh.receiveShadow = true;
+    highlightMesh.position.set(0, 0, 0);
+    headBone.add(highlightMesh);
+
+    console.log(`[Eyes] Eyes added to Head bone with ${eyeGeos.eyeDiscGeometry.attributes.position.count} vertices`);
   }
 
-  // 8. Animations
+  // 8. Clothing
+  {
+    const clothingColors = cfg.clothingColor ?? {};
+    const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
+
+    // Create a clothing group to attach to skeleton
+    const clothingGroup = new THREE.Group();
+    clothingGroup.name = 'Clothing';
+    rootBone.add(clothingGroup);
+
+    for (const [ctype, geo] of Object.entries(clothingGeos)) {
+      const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
+      const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(rgba[0], rgba[1], rgba[2]),
+        roughness: 0.65,
+        metalness: 0.0,
+        side: THREE.DoubleSide,  // Render both sides to prevent clipping
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = `Clothing_${ctype}`;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      clothingGroup.add(mesh);
+
+      console.log(`[Clothing] Added ${ctype} (${geo.attributes.position.count} verts) with color ${colorName}`);
+    }
+  }
+
+  // 9. Animations
   const clips = buildAnimations(cfg);
 
   return { scene, clips };

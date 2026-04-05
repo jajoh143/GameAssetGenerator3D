@@ -409,11 +409,11 @@ function fitCameraToModel(model) {
 
   // Use character height (size.y) to drive distance — multiply by 0.75
   // so the full figure fills most of the viewport.
-  const dist = size.y * 0.75;
+  const dist = size.y * 1.25
 
   // Aim at mid-torso (~45 % up from feet) rather than geometric centre,
   // so the head isn't cropped and feet aren't wasted space.
-  const targetY = box.min.y + size.y * 0.45;
+  const targetY = box.min.y + size.y * 0.65;
   camera.position.set(center.x, targetY, center.z + dist);
   controls.target.set(center.x, targetY, center.z);
   controls.update();
