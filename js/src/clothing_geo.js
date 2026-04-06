@@ -38,13 +38,15 @@ export function buildClothingGeometry(bodyGeo, cfg) {
   }
   const bodyHeight = maxY - minY;
 
-  // Zone boundaries as fractions of body height
-  // T-pose character: feet at minY, head at maxY
-  const footTop  = minY + bodyHeight * 0.06;   // just above floor level
-  const hipY     = minY + bodyHeight * 0.50;   // hip/waist height
-  const chestY   = minY + bodyHeight * 0.68;   // chest height
-  const armY     = minY + bodyHeight * 0.72;   // T-pose arm height (horizontal)
-  const waistGap = bodyHeight * 0.012;
+  // Zone boundaries as fractions of body height.
+  // The cartoon character has a large head (~28% of total Y), so body landmarks
+  // sit lower than realistic proportions. Fractions tuned for Cartoon_Male.glb.
+  const footTop  = minY + bodyHeight * 0.05;   // just above floor level
+  const kneeY    = minY + bodyHeight * 0.24;   // knee height
+  const hipY     = minY + bodyHeight * 0.43;   // hip/waist height
+  const chestY   = minY + bodyHeight * 0.57;   // lower chest height
+  const armY     = minY + bodyHeight * 0.63;   // shoulder / shirt collar height
+  const waistGap = bodyHeight * 0.010;
 
   // Per-type X caps to exclude arm geometry in T-pose.
   // Arms are horizontal: maxAbsX ≈ full arm span. Use centroid-based X test
@@ -52,7 +54,7 @@ export function buildClothingGeometry(bodyGeo, cfg) {
   const X_TORSO        = maxAbsX * 0.20;   // torso body only
   const X_LEGS         = maxAbsX * 0.28;   // hip + legs (legs splay slightly)
   const X_SHORT_SLEEVE = maxAbsX * 0.34;   // shoulder + short sleeve stub
-  const kneeY          = minY + bodyHeight * 0.28;  // approximate knee height
+  // kneeY already defined above
 
   // Define clothing zones: [yMin, yMax, xCap]
   // xCap applied to face centroid |x| so partial-boundary faces aren't dropped.
@@ -60,8 +62,8 @@ export function buildClothingGeometry(bodyGeo, cfg) {
     short_sleeve: [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
     long_sleeve:  [hipY + waistGap, armY,                 Infinity      ],
     v_neck:       [hipY + waistGap, chestY,               X_TORSO       ],
-    jeans:        [footTop,         hipY + waistGap * 0.5, X_LEGS       ],
-    shorts:       [kneeY,           hipY + waistGap * 0.5, X_LEGS       ],
+    jeans:        [footTop,         hipY,                  X_LEGS       ],
+    shorts:       [kneeY,           hipY,                  X_LEGS       ],
   };
 
   // Offset from body surface along vertex normals (clothing thickness).

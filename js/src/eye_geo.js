@@ -163,10 +163,10 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
 
   // Eye sizing and positioning
   // Coordinate system: Y = up (height), Z = forward (toward viewer), X = left/right
-  const eyeR = hrH * 0.18;        // 18% of horizontal head radius
+  const eyeR = hrH * 0.12;        // 12% of horizontal head radius (smaller)
   const rx = eyeR * 1.25;         // Slightly wider than tall
   const ry = eyeR * 1.05;         // Slightly taller
-  const eyeX = hrH * 0.36;        // Lateral separation
+  const eyeX = hrH * 0.46;        // Lateral separation (wider apart)
   const eyeY = headRadius * 5.0;  // Height: in the face region (hair base ≈ headRadius*5.5)
   const eyeZ = headRadius * 0.10; // Forward: pulled back slightly from face surface
 
