@@ -154,13 +154,16 @@ export function buildClothingGeometry(bodyGeo, cfg) {
 export function buildCollarGeometry(bodyGeo, armY, bodyHeight, baseOffset) {
   const posAttr = bodyGeo.attributes.position;
   const yWindow = bodyHeight * 0.04;
+  // Only sample neck-width geometry — the arms extend to large X at this height
+  // so we cap sampling to just the neck/throat area (~5% of body height wide)
+  const neckXCap = bodyHeight * 0.05;
 
   let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
   for (let i = 0; i < posAttr.count; i++) {
-    const y = posAttr.getY(i);
-    if (Math.abs(y - armY) < yWindow) {
-      const z  = posAttr.getZ(i);
-      const ax = Math.abs(posAttr.getX(i));
+    const y  = posAttr.getY(i);
+    const ax = Math.abs(posAttr.getX(i));
+    if (Math.abs(y - armY) < yWindow && ax < neckXCap) {
+      const z = posAttr.getZ(i);
       if (z > maxZ) maxZ = z;
       if (z < minZ) minZ = z;
       if (ax > maxAbsX) maxAbsX = ax;
