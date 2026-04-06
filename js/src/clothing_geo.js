@@ -23,8 +23,9 @@ import * as THREE from 'three';
  * @returns {Object} map of clothing type name → THREE.BufferGeometry
  */
 export function buildClothingGeometry(bodyGeo, cfg) {
-  const posAttr = bodyGeo.attributes.position;
-  const idxAttr = bodyGeo.index;
+  const posAttr  = bodyGeo.attributes.position;
+  const normAttr = bodyGeo.attributes.normal;
+  const idxAttr  = bodyGeo.index;
 
   // Compute body Y (height) range and max X extent from actual geometry
   let minY = Infinity, maxY = -Infinity, maxAbsX = 0;
@@ -61,8 +62,9 @@ export function buildClothingGeometry(bodyGeo, cfg) {
     shorts:       [footTop + (hipY - footTop) * 0.38, hipY + waistGap * 0.5, X_TORSO],
   };
 
-  // Radial offset from body surface, scales with body height
-  const baseOffset = 0.015 * (bodyHeight / 1.75);
+  // Offset from body surface along vertex normals (clothing thickness).
+  // Use a fixed 1.5cm — normal vectors are unit-length so this is in metres.
+  const baseOffset = 0.015;
 
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
@@ -99,13 +101,14 @@ export function buildClothingGeometry(bodyGeo, cfg) {
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
-          // Radial extrusion in X-Z plane (horizontal plane), Y unchanged
-          const radialDist = Math.sqrt(v.x * v.x + v.z * v.z) || 0.001;
-          const offsetAmount = baseOffset / radialDist;
+          // Offset along body surface normal for a uniform-thickness clothing layer
+          const nx = normAttr ? normAttr.getX(v.i) : 0;
+          const ny = normAttr ? normAttr.getY(v.i) : 0;
+          const nz = normAttr ? normAttr.getZ(v.i) : 0;
           verts.push(
-            v.x + v.x * offsetAmount,  // X outward
-            v.y,                        // Y unchanged (height preserved)
-            v.z + v.z * offsetAmount   // Z outward
+            v.x + nx * baseOffset,
+            v.y + ny * baseOffset,
+            v.z + nz * baseOffset
           );
           vertMap.set(v.i, verts.length / 3 - 1);
         }

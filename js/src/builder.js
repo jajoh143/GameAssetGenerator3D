@@ -131,10 +131,11 @@ export async function buildHumanoid(cfg) {
     const clothingColors = cfg.clothingColor ?? {};
     const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
 
-    // Create a clothing group to attach to skeleton
+    // Clothing vertices are in scene/world space (same as bodyGeo).
+    // Add directly to scene — NOT to a bone — to avoid double-transform.
     const clothingGroup = new THREE.Group();
     clothingGroup.name = 'Clothing';
-    rootBone.add(clothingGroup);
+    scene.add(clothingGroup);
 
     for (const [ctype, geo] of Object.entries(clothingGeos)) {
       const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
