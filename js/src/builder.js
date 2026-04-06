@@ -10,7 +10,7 @@ import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
 import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
-import { buildClothingGeometry } from './clothing_geo.js';
+import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
@@ -153,6 +153,57 @@ export async function buildHumanoid(cfg) {
       clothingGroup.add(mesh);
 
       console.log(`[Clothing] Added ${ctype} (${geo.attributes.position.count} verts) with color ${colorName}`);
+    }
+
+    // Compute Y range for collar / button placement (same math as clothing_geo.js)
+    const _pos = bodyGeo.attributes.position;
+    let _minY = Infinity, _maxY = -Infinity;
+    for (let i = 0; i < _pos.count; i++) { const y = _pos.getY(i); if (y < _minY) _minY = y; if (y > _maxY) _maxY = y; }
+    const _bodyH = _maxY - _minY;
+    const _armY  = _minY + _bodyH * 0.63;
+    const _hipY  = _minY + _bodyH * 0.43;
+
+    const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
+
+    // Polo collar — procedural ring around the neck
+    if (clothingList.includes('polo')) {
+      const collarGeo = buildCollarGeometry(bodyGeo, _armY, _bodyH, 0.020);
+      if (collarGeo) {
+        const topColorName = (cfg.clothingColor ?? {})['polo'] ?? 'grey';
+        const topRgba = CLOTHING_COLORS[topColorName] ?? CLOTHING_COLORS.grey;
+        const collarMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(
+            Math.min(1, topRgba[0] * 1.15),
+            Math.min(1, topRgba[1] * 1.15),
+            Math.min(1, topRgba[2] * 1.15)
+          ),
+          roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide,
+        });
+        const collarMesh = new THREE.Mesh(collarGeo, collarMat);
+        collarMesh.name = 'Clothing_polo_collar';
+        collarMesh.castShadow = true;
+        clothingGroup.add(collarMesh);
+        console.log('[Clothing] Added polo collar');
+      }
+    }
+
+    // Buttons — available on polo, short_sleeve, v_neck, long_sleeve
+    if (cfg.buttons) {
+      const shirtTypes = ['polo', 'short_sleeve', 'v_neck', 'long_sleeve'];
+      if (clothingList.some(c => shirtTypes.includes(c))) {
+        const buttonGeo = buildButtonGeometry(bodyGeo, _hipY, _armY, 4);
+        if (buttonGeo) {
+          const buttonMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(0.92, 0.92, 0.92),
+            roughness: 0.3, metalness: 0.1,
+          });
+          const buttonMesh = new THREE.Mesh(buttonGeo, buttonMat);
+          buttonMesh.name = 'Clothing_buttons';
+          buttonMesh.castShadow = true;
+          clothingGroup.add(buttonMesh);
+          console.log('[Clothing] Added buttons');
+        }
+      }
     }
   }
 

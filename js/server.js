@@ -48,6 +48,8 @@ function cfgFromBody(data, animations = 'all') {
   if (data.top_color    && top    !== 'none') clothingColor[top]    = data.top_color;
   if (data.bottom_color && bottom !== 'none') clothingColor[bottom] = data.bottom_color;
 
+  const buttons = data.buttons === 'true' || data.buttons === '1' || data.buttons === true;
+
   return resolveConfig({
     preset:       data.preset       ?? 'average',
     build:        data.build        ?? 'average',
@@ -57,6 +59,7 @@ function cfgFromBody(data, animations = 'all') {
     hairColor:    data.hair_color   ?? 'brown',
     clothing,
     clothingColor,
+    buttons,
     animations,
     lod:          data.lod          ?? 'mid',
   });

@@ -168,7 +168,7 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   const ry = eyeR * 1.05;         // Slightly taller
   const eyeX = hrH * 0.46;        // Lateral separation (wider apart)
   const eyeY = headRadius * 5.0;  // Height: in the face region (hair base ≈ headRadius*5.5)
-  const eyeZ = headRadius * 0.10; // Forward: pulled back slightly from face surface
+  const eyeZ = headRadius * 0.22; // Forward: at face surface (head bone Z=1.52, face front Z≈1.74)
 
   // Highlight sizing
   const highlightR = eyeR * 0.18; // Small glint

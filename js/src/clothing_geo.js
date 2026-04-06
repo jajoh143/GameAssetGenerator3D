@@ -60,6 +60,7 @@ export function buildClothingGeometry(bodyGeo, cfg) {
   // xCap applied to face centroid |x| so partial-boundary faces aren't dropped.
   const ZONES = {
     short_sleeve: [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
+    polo:         [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
     long_sleeve:  [hipY + waistGap, armY,                 Infinity      ],
     v_neck:       [hipY + waistGap, chestY,               X_TORSO       ],
     jeans:        [footTop,         hipY,                  X_LEGS       ],
@@ -138,4 +139,117 @@ export function buildClothingGeometry(bodyGeo, cfg) {
   }
 
   return result;
+}
+
+/**
+ * Build a procedural collar ring for a polo shirt.
+ * Samples the neck cross-section from the body geometry and builds a cylinder band.
+ *
+ * @param {THREE.BufferGeometry} bodyGeo
+ * @param {number} armY - Y position of the collar level (top of shirt zone)
+ * @param {number} bodyHeight - total Y range of the body mesh
+ * @param {number} baseOffset - radial offset from body surface
+ * @returns {THREE.BufferGeometry|null}
+ */
+export function buildCollarGeometry(bodyGeo, armY, bodyHeight, baseOffset) {
+  const posAttr = bodyGeo.attributes.position;
+  const yWindow = bodyHeight * 0.04;
+
+  let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    if (Math.abs(y - armY) < yWindow) {
+      const z  = posAttr.getZ(i);
+      const ax = Math.abs(posAttr.getX(i));
+      if (z > maxZ) maxZ = z;
+      if (z < minZ) minZ = z;
+      if (ax > maxAbsX) maxAbsX = ax;
+    }
+  }
+  if (maxZ === -Infinity) return null;
+
+  const collarH   = bodyHeight * 0.04;
+  const collarOff = baseOffset * 1.8;
+  const radiusX   = maxAbsX + collarOff;
+  const radiusZ   = (maxZ - minZ) / 2 + collarOff;
+  const centerZ   = (maxZ + minZ) / 2;
+  const segments  = 16;
+
+  const positions = [];
+  const indices   = [];
+
+  for (let i = 0; i < segments; i++) {
+    const angle = (2 * Math.PI * i) / segments;
+    const x = radiusX * Math.cos(angle);
+    const z = centerZ + radiusZ * Math.sin(angle);
+    positions.push(x, armY - collarH * 0.25, z);  // bottom of collar band
+    positions.push(x, armY + collarH * 0.75, z);  // top of collar band
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    const b0 = i * 2, b1 = next * 2;
+    const t0 = b0 + 1,  t1 = b1 + 1;
+    indices.push(b0, t0, b1, b1, t0, t1);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+  geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Place small flat disc buttons along the center-front of the shirt zone.
+ *
+ * @param {THREE.BufferGeometry} bodyGeo
+ * @param {number} yLo - bottom Y of the shirt zone
+ * @param {number} yHi - top Y of the shirt zone
+ * @param {number} numButtons
+ * @returns {THREE.BufferGeometry|null}
+ */
+export function buildButtonGeometry(bodyGeo, yLo, yHi, numButtons = 4) {
+  const posAttr = bodyGeo.attributes.position;
+
+  let maxZ = -Infinity;
+  for (let i = 0; i < posAttr.count; i++) {
+    const y  = posAttr.getY(i);
+    const ax = Math.abs(posAttr.getX(i));
+    const z  = posAttr.getZ(i);
+    if (y >= yLo && y <= yHi && ax < 0.05) {
+      if (z > maxZ) maxZ = z;
+    }
+  }
+  if (maxZ === -Infinity) return null;
+
+  const buttonZ = maxZ + 0.030;
+  const buttonR = 0.018;
+  const segs    = 8;
+  const yStart  = yLo + (yHi - yLo) * 0.15;
+  const yEnd    = yHi - (yHi - yLo) * 0.12;
+  const yStep   = numButtons > 1 ? (yEnd - yStart) / (numButtons - 1) : 0;
+
+  const positions = [];
+  const indices   = [];
+
+  for (let b = 0; b < numButtons; b++) {
+    const by     = yStart + b * yStep;
+    const center = positions.length / 3;
+    positions.push(0, by, buttonZ);
+    for (let i = 0; i < segs; i++) {
+      const angle = (2 * Math.PI * i) / segs;
+      positions.push(buttonR * Math.cos(angle), by + buttonR * Math.sin(angle), buttonZ);
+    }
+    for (let i = 0; i < segs; i++) {
+      const next = (i + 1) % segs;
+      indices.push(center, center + 1 + i, center + 1 + next);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
+  geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+  geo.computeVertexNormals();
+  return geo;
 }
