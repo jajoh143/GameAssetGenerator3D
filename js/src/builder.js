@@ -126,10 +126,8 @@ export async function buildHumanoid(cfg) {
     console.log(`[Eyes] Eyes added to Head bone with ${eyeGeos.eyeDiscGeometry.attributes.position.count} vertices`);
   }
 
-  // 8. Clothing — disabled: face-extrusion uses wrong axis (Z depth vs Y height).
-  // Proper clothing uses separate skinned meshes like the ExampleCharacters.
-  // eslint-disable-next-line no-constant-condition
-  if (false) {
+  // 8. Clothing — face-extrusion using Y-axis height filtering and X-Z plane radial extrusion.
+  if (cfg.clothing && cfg.clothing.length > 0) {
     const clothingColors = cfg.clothingColor ?? {};
     const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
 
@@ -155,7 +153,7 @@ export async function buildHumanoid(cfg) {
 
       console.log(`[Clothing] Added ${ctype} (${geo.attributes.position.count} verts) with color ${colorName}`);
     }
-  } // end if (false)
+  }
 
   // 9. Animations
   const clips = buildAnimations(cfg);

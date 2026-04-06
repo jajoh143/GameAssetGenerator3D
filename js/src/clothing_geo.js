@@ -3,8 +3,14 @@
  * Port of generators/humanoid/gltf_pipeline/clothing_geo.py
  *
  * Clothing is created by selecting faces from the body mesh within a
- * Z-height range, then offsetting their vertices radially outward.
- * This creates a layer that fits over the body like actual clothing.
+ * Y-height range (Y=up in glTF/Three.js), then offsetting their vertices
+ * radially outward in the X-Z plane (keeping Y unchanged).
+ *
+ * Zone boundaries are computed from the actual body geometry's Y range,
+ * so they work correctly regardless of character height/scale.
+ *
+ * T-pose note: arms are horizontal at ~72% body height with large X extent.
+ * Per-type X caps exclude arm vertices for torso-only clothing.
  */
 
 import * as THREE from 'three';
@@ -12,82 +18,94 @@ import * as THREE from 'three';
 /**
  * Build clothing geometry by extruding body mesh faces outward.
  *
- * Clothing types and their Z-height ranges:
- * - short_sleeve, long_sleeve, v_neck: Cover torso (waist to chest)
- * - shorts: Cover upper legs
- * - jeans: Cover full legs (feet to below hip)
- *
  * @param {THREE.BufferGeometry} bodyGeo - the body mesh geometry
- * @param {Object} cfg - character config with .height and .clothing
+ * @param {Object} cfg - character config with .clothing array
  * @returns {Object} map of clothing type name → THREE.BufferGeometry
  */
 export function buildClothingGeometry(bodyGeo, cfg) {
-  const H = cfg.height ?? 1.75;
-  const footTop = 0.06;
-  const hipZ   = H * 0.50;
-  const chestZ = H * 0.68;
-  const waistGap = 0.02;
-  const BODY_X_CAP = 0.28;  // Max X extent for torso (excludes arms)
-
-  // Define clothing zones by Z-height ranges and arm inclusion
-  // Format: [zMin, zMax, includeArms]
-  const ZONES = {
-    short_sleeve: [hipZ + waistGap, chestZ + 0.05, true],
-    long_sleeve:  [hipZ + waistGap, chestZ + 0.05, true],
-    v_neck:       [hipZ + waistGap, chestZ + 0.05, true],
-    jeans:        [footTop - 0.02,  hipZ + (chestZ - hipZ) * 0.10, false],
-    shorts:       [footTop + (hipZ - footTop) * 0.38, hipZ + (chestZ - hipZ) * 0.10, false],
-  };
-
-  // Radial offset from body surface (scales with character height)
-  const baseOffset = 0.015 * (H / 1.75);  // 15mm base, scales with height
-
-  const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const posAttr = bodyGeo.attributes.position;
   const idxAttr = bodyGeo.index;
+
+  // Compute body Y (height) range and max X extent from actual geometry
+  let minY = Infinity, maxY = -Infinity, maxAbsX = 0;
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    const ax = Math.abs(posAttr.getX(i));
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    if (ax > maxAbsX) maxAbsX = ax;
+  }
+  const bodyHeight = maxY - minY;
+
+  // Zone boundaries as fractions of body height
+  // T-pose character: feet at minY, head at maxY
+  const footTop  = minY + bodyHeight * 0.06;   // just above floor level
+  const hipY     = minY + bodyHeight * 0.50;   // hip/waist height
+  const chestY   = minY + bodyHeight * 0.68;   // chest height
+  const armY     = minY + bodyHeight * 0.72;   // T-pose arm height (horizontal)
+  const waistGap = bodyHeight * 0.012;
+
+  // Per-type X caps to exclude arm geometry in T-pose.
+  // Arms are horizontal: maxAbsX ≈ full arm span (~1.81m for default mesh).
+  // Torso-only: ~17% of arm span. Short sleeves: ~28% (includes shoulder stub).
+  const X_TORSO        = maxAbsX * 0.17;   // torso body only
+  const X_SHORT_SLEEVE = maxAbsX * 0.28;   // shoulder + short sleeve
+
+  // Define clothing zones: [yMin, yMax, xCap]
+  // xCap = max allowed |x| for a vertex to be included (Infinity = include all)
+  const ZONES = {
+    short_sleeve: [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
+    long_sleeve:  [hipY + waistGap, armY,                 Infinity      ],
+    v_neck:       [hipY + waistGap, chestY,               X_TORSO       ],
+    jeans:        [footTop,         hipY + waistGap * 0.5, X_TORSO      ],
+    shorts:       [footTop + (hipY - footTop) * 0.38, hipY + waistGap * 0.5, X_TORSO],
+  };
+
+  // Radial offset from body surface, scales with body height
+  const baseOffset = 0.015 * (bodyHeight / 1.75);
+
+  const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
   for (const ctype of clothingList) {
     if (ctype === 'none') continue;
     const zone = ZONES[ctype];
     if (!zone) continue;
-    const [zLo, zHi, includeArms] = zone;
+    const [yLo, yHi, xCap] = zone;
 
     const verts = [];
     const faces = [];
     const vertMap = new Map(); // original vertex index → new index
 
-    // Iterate through all faces in the body mesh
     const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
     for (let t = 0; t < triCount; t++) {
-      // Get face vertex indices
       const [ia, ib, ic] = idxAttr
         ? [idxAttr.getX(t*3), idxAttr.getX(t*3+1), idxAttr.getX(t*3+2)]
         : [t*3, t*3+1, t*3+2];
 
-      // Fetch vertex positions
       const vs = [ia, ib, ic].map(i => ({
-        x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i), i,
+        x: posAttr.getX(i),
+        y: posAttr.getY(i),
+        z: posAttr.getZ(i),
+        i,
       }));
 
-      // Check if any vertex is in the clothing zone
-      const anyInZone = vs.some(v => v.z >= zLo && v.z <= zHi);
+      // Face must have at least one vertex in the Y zone
+      const anyInZone = vs.some(v => v.y >= yLo && v.y <= yHi);
       if (!anyInZone) continue;
 
-      // For clothing types without arms, exclude vertices beyond torso width
-      if (!includeArms && vs.some(v => Math.abs(v.x) > BODY_X_CAP)) continue;
+      // Exclude faces where any vertex exceeds the X cap (arm filtering)
+      if (vs.some(v => Math.abs(v.x) > xCap)) continue;
 
-      // Create offset vertices (radially outward from body center)
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
-          // Calculate radial distance from Y axis (body center)
-          const radialDist = Math.sqrt(v.x**2 + v.y**2) || 0.001;
-          // Offset proportional to distance (farther out vertices get offset proportionally)
+          // Radial extrusion in X-Z plane (horizontal plane), Y unchanged
+          const radialDist = Math.sqrt(v.x * v.x + v.z * v.z) || 0.001;
           const offsetAmount = baseOffset / radialDist;
           verts.push(
-            v.x + v.x * offsetAmount,
-            v.y + v.y * offsetAmount,
-            v.z
+            v.x + v.x * offsetAmount,  // X outward
+            v.y,                        // Y unchanged (height preserved)
+            v.z + v.z * offsetAmount   // Z outward
           );
           vertMap.set(v.i, verts.length / 3 - 1);
         }
@@ -96,14 +114,18 @@ export function buildClothingGeometry(bodyGeo, cfg) {
       faces.push(...newIdxs);
     }
 
-    if (verts.length === 0) continue;
+    if (verts.length === 0) {
+      console.warn(`[Clothing] No faces found for '${ctype}' (yLo=${yLo.toFixed(3)}, yHi=${yHi.toFixed(3)}, xCap=${xCap.toFixed(3)})`);
+      continue;
+    }
 
-    // Create THREE.js geometry from vertices and faces
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     geo.setIndex(new THREE.BufferAttribute(new Uint32Array(faces), 1));
     geo.computeVertexNormals();
     result[ctype] = geo;
+
+    console.log(`[Clothing] Built '${ctype}': ${verts.length / 3} verts, ${faces.length / 3} faces`);
   }
 
   return result;
