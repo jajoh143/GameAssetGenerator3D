@@ -47,24 +47,26 @@ export function buildClothingGeometry(bodyGeo, cfg) {
   const waistGap = bodyHeight * 0.012;
 
   // Per-type X caps to exclude arm geometry in T-pose.
-  // Arms are horizontal: maxAbsX ≈ full arm span (~1.81m for default mesh).
-  // Torso-only: ~17% of arm span. Short sleeves: ~28% (includes shoulder stub).
-  const X_TORSO        = maxAbsX * 0.17;   // torso body only
-  const X_SHORT_SLEEVE = maxAbsX * 0.28;   // shoulder + short sleeve
+  // Arms are horizontal: maxAbsX ≈ full arm span. Use centroid-based X test
+  // so one wide vertex doesn't discard the whole face.
+  const X_TORSO        = maxAbsX * 0.20;   // torso body only
+  const X_LEGS         = maxAbsX * 0.28;   // hip + legs (legs splay slightly)
+  const X_SHORT_SLEEVE = maxAbsX * 0.34;   // shoulder + short sleeve stub
+  const kneeY          = minY + bodyHeight * 0.28;  // approximate knee height
 
   // Define clothing zones: [yMin, yMax, xCap]
-  // xCap = max allowed |x| for a vertex to be included (Infinity = include all)
+  // xCap applied to face centroid |x| so partial-boundary faces aren't dropped.
   const ZONES = {
     short_sleeve: [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
     long_sleeve:  [hipY + waistGap, armY,                 Infinity      ],
     v_neck:       [hipY + waistGap, chestY,               X_TORSO       ],
-    jeans:        [footTop,         hipY + waistGap * 0.5, X_TORSO      ],
-    shorts:       [footTop + (hipY - footTop) * 0.38, hipY + waistGap * 0.5, X_TORSO],
+    jeans:        [footTop,         hipY + waistGap * 0.5, X_LEGS       ],
+    shorts:       [kneeY,           hipY + waistGap * 0.5, X_LEGS       ],
   };
 
   // Offset from body surface along vertex normals (clothing thickness).
-  // Use a fixed 1.5cm — normal vectors are unit-length so this is in metres.
-  const baseOffset = 0.015;
+  // 2cm gives enough separation to prevent z-fighting without looking puffy.
+  const baseOffset = 0.020;
 
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
@@ -96,8 +98,10 @@ export function buildClothingGeometry(bodyGeo, cfg) {
       const anyInZone = vs.some(v => v.y >= yLo && v.y <= yHi);
       if (!anyInZone) continue;
 
-      // Exclude faces where any vertex exceeds the X cap (arm filtering)
-      if (vs.some(v => Math.abs(v.x) > xCap)) continue;
+      // Exclude faces whose centroid X exceeds the cap (arm filtering).
+      // Centroid-based avoids discarding faces that merely touch the boundary.
+      const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
+      if (Math.abs(centX) > xCap) continue;
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
