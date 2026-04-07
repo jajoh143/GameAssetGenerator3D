@@ -3,8 +3,8 @@
  * to targetHeight.
  */
 
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { NullEngine, Scene, SceneLoader } from '@babylonjs/core';
+import '@babylonjs/loaders/glTF';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -28,38 +28,52 @@ const GLB_JOINT_TO_BONE_IDX = {
 };
 
 /**
+ * Unpack one of the 4 Babylon-packed bone indices from a single Float32.
+ * Babylon stores 4 uint8 joint indices packed into one float via DataView.
+ */
+function unpackBoneIndex(packedFloat, slot) {
+  const buf = new ArrayBuffer(4);
+  new DataView(buf).setFloat32(0, packedFloat, true);
+  return new DataView(buf).getUint8(slot);
+}
+
+/**
  * Load Cartoon_Male.glb, remap skin indices to our 19-bone layout,
  * shift foot to Z=0, and scale to targetHeight.
  *
  * @param {number} targetHeight - desired character height in metres
- * @returns {Promise<{geometry: THREE.BufferGeometry, height: number}>}
+ * @returns {Promise<{positions, normals, uvs, skinIndices, skinWeights, indices, height}>}
  */
 export async function loadCartoonMale(targetHeight = 1.75) {
   const glbPath = join(PROJECT_ROOT, 'assets', 'TemplateMeshes', 'Cartoon_Male.glb');
   const buf = readFileSync(glbPath);
+  const b64 = buf.toString('base64');
+  const dataUrl = `data:model/gltf-binary;base64,${b64}`;
 
-  const loader = new GLTFLoader();
-  const gltf = await new Promise((res, rej) => loader.parse(buf.buffer, '', res, rej));
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
 
-  // Find the main SkinnedMesh (skip tiny helpers < 30 verts)
+  const result = await SceneLoader.ImportMeshAsync('', '', dataUrl, scene, null, '.glb');
+
+  // Find the main skinned mesh (skip tiny helpers < 30 verts)
   let skinnedMesh = null;
-  gltf.scene.traverse(obj => {
-    if (obj.isSkinnedMesh) {
-      const vCount = obj.geometry.attributes.position.count;
-      if (vCount >= 30) {
-        if (!skinnedMesh || vCount > skinnedMesh.geometry.attributes.position.count) {
-          skinnedMesh = obj;
-        }
-      }
+  for (const mesh of result.meshes) {
+    if (!mesh.skeleton) continue;
+    const vCount = mesh.getTotalVertices();
+    if (vCount < 30) continue;
+    if (!skinnedMesh || vCount > skinnedMesh.getTotalVertices()) {
+      skinnedMesh = mesh;
     }
-  });
+  }
 
   if (!skinnedMesh) {
+    engine.dispose();
     throw new Error('No SkinnedMesh found in Cartoon_Male.glb');
   }
 
   // Build origJointIdx → ourBoneIdx mapping
-  const origBoneNames = skinnedMesh.skeleton.bones.map(b => b.name);
+  const skeleton = skinnedMesh.skeleton;
+  const origBoneNames = skeleton.bones.map(b => b.name);
   const origToOur = new Array(origBoneNames.length).fill(-1);
   for (let i = 0; i < origBoneNames.length; i++) {
     const name = origBoneNames[i];
@@ -68,27 +82,21 @@ export async function loadCartoonMale(targetHeight = 1.75) {
     }
   }
 
-  const srcGeo = skinnedMesh.geometry;
+  // Extract vertex data
+  const posArr  = skinnedMesh.getVerticesData('position');   // Float32Array, stride 3
+  const normArr = skinnedMesh.getVerticesData('normal');     // Float32Array, stride 3
+  const uvArr   = skinnedMesh.getVerticesData('uv');         // Float32Array, stride 2
+  // Babylon packs 4 uint8 bone indices into 1 float — stride 4 floats = 4 packed indices
+  const matIdxArr = skinnedMesh.getVerticesData('matricesIndices');  // Float32Array, stride 4
+  const matWtArr  = skinnedMesh.getVerticesData('matricesWeights');  // Float32Array, stride 4
+  const idxArr    = skinnedMesh.getIndices();
 
-  // Extract attributes
-  const posAttr = srcGeo.attributes.position;
-  const normAttr = srcGeo.attributes.normal;
-  const uvAttr = srcGeo.attributes.uv;
-  const skinIdxAttr = srcGeo.attributes.skinIndex;
-  const skinWtAttr = srcGeo.attributes.skinWeight;
-  const idxAttr = srcGeo.index;
+  const vCount = posArr.length / 3;
 
-  const vCount = posAttr.count;
+  // Clone positions
+  const positions = new Float32Array(posArr);
 
-  // Clone positions to float array
-  const positions = new Float32Array(vCount * 3);
-  for (let i = 0; i < vCount; i++) {
-    positions[i * 3]     = posAttr.getX(i);
-    positions[i * 3 + 1] = posAttr.getY(i);
-    positions[i * 3 + 2] = posAttr.getZ(i);
-  }
-
-  // Find bounding box along Z (input GLB is Z-up from Blender)
+  // Find bounding box along Z (Blender Z-up)
   let minZ = Infinity, maxZ = -Infinity;
   for (let i = 0; i < vCount; i++) {
     const z = positions[i * 3 + 2];
@@ -101,9 +109,9 @@ export async function loadCartoonMale(targetHeight = 1.75) {
 
   // Scale uniformly, shift Z to 0
   for (let i = 0; i < vCount; i++) {
-    positions[i * 3]     = positions[i * 3] * scale;
-    positions[i * 3 + 1] = positions[i * 3 + 1] * scale;
-    positions[i * 3 + 2] = (positions[i * 3 + 2] - minZ) * scale;
+    positions[i * 3]     *= scale;
+    positions[i * 3 + 1] *= scale;
+    positions[i * 3 + 2]  = (positions[i * 3 + 2] - minZ) * scale;
   }
 
   // Remap skin indices and weights
@@ -111,12 +119,11 @@ export async function loadCartoonMale(targetHeight = 1.75) {
   const skinWeights = new Float32Array(vCount * 4);
 
   for (let v = 0; v < vCount; v++) {
-    // Accumulate weights per our-bone index
     const accum = new Map(); // ourBoneIdx → accumulated weight
 
     for (let j = 0; j < 4; j++) {
-      const origIdx = skinIdxAttr.getComponent(v, j);
-      const wt = skinWtAttr.getComponent(v, j);
+      const origIdx = unpackBoneIndex(matIdxArr[v * 4 + j], 0); // packed into slot 0
+      const wt = matWtArr[v * 4 + j];
       if (wt <= 0) continue;
 
       const ourIdx = origToOur[origIdx] ?? -1;
@@ -143,37 +150,16 @@ export async function loadCartoonMale(targetHeight = 1.75) {
     }
   }
 
-  // Build new geometry
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  // Build normals (scaled normals stay unit — scaling is uniform)
+  const normals = normArr ? new Float32Array(normArr) : null;
 
-  if (normAttr) {
-    const normals = new Float32Array(vCount * 3);
-    for (let i = 0; i < vCount; i++) {
-      normals[i * 3]     = normAttr.getX(i);
-      normals[i * 3 + 1] = normAttr.getY(i);
-      normals[i * 3 + 2] = normAttr.getZ(i);
-    }
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  }
+  // Build UVs
+  const uvs = uvArr ? new Float32Array(uvArr) : null;
 
-  if (uvAttr) {
-    const uvs = new Float32Array(vCount * 2);
-    for (let i = 0; i < vCount; i++) {
-      uvs[i * 2]     = uvAttr.getX(i);
-      uvs[i * 2 + 1] = uvAttr.getY(i);
-    }
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  }
+  // Indices
+  const indices = new Uint32Array(idxArr);
 
-  geo.setAttribute('skinIndex',  new THREE.Uint16BufferAttribute(skinIndices, 4));
-  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+  engine.dispose();
 
-  if (idxAttr) {
-    geo.setIndex(Array.from(idxAttr.array));
-  }
-
-  if (!normAttr) geo.computeVertexNormals();
-
-  return { geometry: geo, height: targetHeight };
+  return { positions, normals, uvs, skinIndices, skinWeights, indices, height: targetHeight };
 }

@@ -1,9 +1,9 @@
 /**
- * 19-bone skeleton hierarchy using THREE.Bone/Skeleton.
+ * 19-bone skeleton hierarchy using BABYLON.Bone/Skeleton.
  * Port of generators/humanoid/gltf_pipeline/skeleton.py
  */
 
-import * as THREE from 'three';
+import { Skeleton, Bone, Matrix } from '@babylonjs/core';
 
 export const BONE_NAMES = [
   'Hips',                                              // 0  — root
@@ -51,35 +51,32 @@ export function boneWorldPositions(H) {
 }
 
 /**
- * Build a THREE.Skeleton with 19 bones at rest positions proportional to H.
+ * Build a BABYLON.Skeleton with 19 bones at rest positions proportional to H.
  * @param {number} H - character height in metres
- * @returns {THREE.Skeleton}
+ * @param {BABYLON.Scene} scene - Babylon scene the skeleton belongs to
+ * @returns {BABYLON.Skeleton}
  */
-export function buildSkeleton(H) {
+export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
+  const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
 
   // Create all bones
   const bones = BONE_NAMES.map((name, i) => {
-    const bone = new THREE.Bone();
-    bone.name = name;
-    return bone;
-  });
-
-  // Set local positions and wire up parent/child hierarchy
-  for (let i = 0; i < bones.length; i++) {
     const parentIdx = BONE_PARENTS[i];
+    const parentBone = parentIdx === -1 ? null : bones[parentIdx];
     const [wx, wy, wz] = worldPos[i];
 
+    let lx, ly, lz;
     if (parentIdx === -1) {
-      // Root bone: local position == world position
-      bones[i].position.set(wx, wy, wz);
+      lx = wx; ly = wy; lz = wz;
     } else {
-      // Local position = world position minus parent world position
       const [px, py, pz] = worldPos[parentIdx];
-      bones[i].position.set(wx - px, wy - py, wz - pz);
-      bones[parentIdx].add(bones[i]);
+      lx = wx - px; ly = wy - py; lz = wz - pz;
     }
-  }
 
-  return new THREE.Skeleton(bones);
+    const localMatrix = Matrix.Translation(lx, ly, lz);
+    return new Bone(name, skeleton, parentBone, localMatrix);
+  });
+
+  return skeleton;
 }

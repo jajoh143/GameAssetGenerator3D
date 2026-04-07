@@ -3,8 +3,11 @@
  */
 
 import './node_polyfills.js';
-import * as THREE from 'three';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import {
+  NullEngine, Scene, Mesh, VertexData, Skeleton, PBRMaterial, Color3,
+  Animation, AnimationGroup, Vector3, Quaternion,
+} from '@babylonjs/core';
+import { GLTF2Export } from '@babylonjs/serializers';
 import { writeFileSync } from 'fs';
 import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
@@ -16,51 +19,173 @@ import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
 import { CLOTHING_COLORS, CLOTHING_DEFAULT_COLORS } from './clothing_colors.js';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Pack flat Uint16Array bone indices into Babylon's format:
+ * 4 floats per vertex, each float stores one uint8 index in its low byte.
+ */
+function packSkinIndices(skinIndices, vCount) {
+  const packed = new Float32Array(vCount * 4);
+  const buf = new ArrayBuffer(4);
+  const dv  = new DataView(buf);
+  for (let v = 0; v < vCount; v++) {
+    for (let j = 0; j < 4; j++) {
+      dv.setUint8(0, skinIndices[v * 4 + j]);
+      dv.setUint8(1, 0);
+      dv.setUint8(2, 0);
+      dv.setUint8(3, 0);
+      packed[v * 4 + j] = dv.getFloat32(0, true);
+    }
+  }
+  return packed;
+}
+
+/**
+ * Apply a raw geometry object { positions, normals, uvs?, indices } to a Babylon Mesh.
+ */
+function applyRawGeoToMesh(mesh, geo) {
+  const vd = new VertexData();
+  vd.positions = geo.positions;
+  vd.normals   = geo.normals;
+  if (geo.uvs)    vd.uvs     = geo.uvs;
+  if (geo.indices) vd.indices = geo.indices;
+  vd.applyToMesh(mesh);
+}
+
+/**
+ * Create a PBRMaterial from a plain params object or [r,g,b] array.
+ */
+function makePBR(scene, name, colorRgba, roughness = 0.5, metallic = 0.0) {
+  const mat = new PBRMaterial(name, scene);
+  mat.albedoColor = new Color3(colorRgba[0], colorRgba[1], colorRgba[2]);
+  mat.roughness  = roughness;
+  mat.metallic   = metallic;
+  return mat;
+}
+
+/**
+ * Build Babylon AnimationGroups from the plain clip data returned by buildAnimations().
+ */
+function buildAnimationGroups(clips, skeleton, scene) {
+  const groups = [];
+
+  for (const clip of clips) {
+    const group = new AnimationGroup(clip.name, scene);
+
+    // Rotation tracks
+    for (const [boneName, { times, values }] of clip.rotByBone) {
+      const bone = skeleton.bones.find(b => b.name === boneName);
+      if (!bone) continue;
+
+      const anim = new Animation(
+        `${clip.name}_${boneName}_rot`,
+        'rotationQuaternion',
+        clip.fps,
+        Animation.ANIMATIONTYPE_QUATERNION,
+        Animation.ANIMATIONLOOPMODE_CYCLE,
+      );
+
+      const keys = [];
+      for (let i = 0; i < times.length; i++) {
+        keys.push({
+          frame: Math.round(times[i] * clip.fps),
+          value: new Quaternion(
+            values[i * 4],
+            values[i * 4 + 1],
+            values[i * 4 + 2],
+            values[i * 4 + 3],
+          ),
+        });
+      }
+      anim.setKeys(keys);
+      group.addTargetedAnimation(anim, bone);
+    }
+
+    // Translation tracks
+    for (const [boneName, { times, values }] of clip.transByBone) {
+      const bone = skeleton.bones.find(b => b.name === boneName);
+      if (!bone) continue;
+
+      const anim = new Animation(
+        `${clip.name}_${boneName}_pos`,
+        'position',
+        clip.fps,
+        Animation.ANIMATIONTYPE_VECTOR3,
+        Animation.ANIMATIONLOOPMODE_CYCLE,
+      );
+
+      const keys = [];
+      for (let i = 0; i < times.length; i++) {
+        keys.push({
+          frame: Math.round(times[i] * clip.fps),
+          value: new Vector3(values[i * 3], values[i * 3 + 1], values[i * 3 + 2]),
+        });
+      }
+      anim.setKeys(keys);
+      group.addTargetedAnimation(anim, bone);
+    }
+
+    groups.push(group);
+  }
+
+  return groups;
+}
+
+// ── Main builder ──────────────────────────────────────────────────────────────
+
 /**
  * Build the full humanoid scene from a resolved config.
  * @param {Object} cfg - resolved character config
- * @returns {Promise<{scene: THREE.Scene, clips: THREE.AnimationClip[]}>}
+ * @returns {Promise<{scene: BABYLON.Scene, engine: BABYLON.NullEngine}>}
  */
 export async function buildHumanoid(cfg) {
   const H = cfg.height ?? 1.75;
 
-  // 1. Load body mesh
-  const { geometry: bodyGeo } = await loadCartoonMale(H);
+  const engine = new NullEngine();
+  const scene  = new Scene(engine);
+
+  // 1. Load body mesh data
+  const bodyData = await loadCartoonMale(H);
+  const { positions, normals, uvs, skinIndices, skinWeights, indices } = bodyData;
+  const vCount = positions.length / 3;
 
   // 2. Build skeleton
-  const skeleton = buildSkeleton(H);
-  const rootBone = skeleton.bones[0]; // Hips
+  const skeleton = buildSkeleton(H, scene);
 
   // 3. Skin material
   const skinRgba = Array.isArray(cfg.skinTone)
     ? cfg.skinTone
     : (SKIN_TONES[cfg.skinTone] ?? SKIN_TONES.tan);
-  const skinMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(skinRgba[0], skinRgba[1], skinRgba[2]),
-    roughness: 0.42,
-    metalness: 0.0,
-  });
+  const skinMat = makePBR(scene, 'SkinMaterial', skinRgba, 0.42, 0.0);
 
   // 4. Create skinned mesh
-  const skinnedMesh = new THREE.SkinnedMesh(bodyGeo, skinMat);
-  skinnedMesh.name = 'Body';
-  skinnedMesh.add(rootBone);
-  skinnedMesh.bind(skeleton);
+  const bodyMesh = new Mesh('Body', scene);
+  bodyMesh.material = skinMat;
 
-  // 5. Build scene
-  const scene = new THREE.Scene();
-  scene.add(skinnedMesh);
+  const vd = new VertexData();
+  vd.positions = positions;
+  if (normals)  vd.normals   = normals;
+  if (uvs)      vd.uvs       = uvs;
+  vd.indices   = indices;
+  vd.matricesIndices = packSkinIndices(skinIndices, vCount);
+  vd.matricesWeights = skinWeights;
+  vd.applyToMesh(bodyMesh);
+  bodyMesh.skeleton = skeleton;
 
-  // 6. Hair
+  // Estimate head radius from body width
+  let minX = Infinity, maxX = -Infinity;
+  for (let i = 0; i < vCount; i++) {
+    const x = positions[i * 3];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  }
+  const bodyWidth = maxX - minX;
+  const headRadius = bodyWidth * 0.18;
+
+  // 5. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
-
-  // Estimate head radius from body width (used by hair, eyes, etc.)
-  const box = new THREE.Box3().setFromBufferAttribute(bodyGeo.attributes.position);
-  const bodyWidth = box.max.x - box.min.x;
-  const headRadius = bodyWidth * 0.18;  // ~18% of body width
-
   if (hairStyle !== 'none') {
-    // Get head bone and calculate radius from body
     const headBoneIdx = BONE_NAMES.indexOf('Head');
     const headBone = skeleton.bones[headBoneIdx];
 
@@ -70,162 +195,151 @@ export async function buildHumanoid(cfg) {
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
-      const hairMat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(hairRgba[0], hairRgba[1], hairRgba[2]),
-        roughness: 0.75,  // Increased for more realistic hair appearance
-        metalness: 0.0,
-        side: THREE.DoubleSide,  // Render both sides for better layered appearance
-        flatShading: false,  // Smooth shading to reduce geometric look
-      });
-      const hairMesh = new THREE.Mesh(hairGeo, hairMat);
-      hairMesh.name = 'Hair';
-      hairMesh.castShadow = true;
-      hairMesh.receiveShadow = true;
+      const hairMat = makePBR(scene, 'HairMaterial', hairRgba, 0.75, 0.0);
+      hairMat.backFaceCulling = false;
 
-      // Hair positioning and rotation
-      // Rotate -90° around X-axis to point cap upward
+      const hairMesh = new Mesh('Hair', scene);
+      hairMesh.material = hairMat;
+      applyRawGeoToMesh(hairMesh, hairGeo);
+
+      // Rotate -90° around X-axis to point cap upward, position at head
       hairMesh.rotation.x = -Math.PI / 2;
-
-      // Position at top of head
       hairMesh.position.set(0, headRadius * 5.5, -headRadius * 0.6);
+      hairMesh.scaling.setAll(0.725);
 
-      // Add to head bone so it moves with animations
-      headBone.add(hairMesh);
-      hairMesh.scale.set(0.725, 0.725, 0.725);  // 1.0 = normal, 1.2 = 20% larger, 0.8 = 20% smaller
+      // Attach to head bone (moves with animations)
+      hairMesh.attachToBone(headBone, bodyMesh);
 
-
-      console.log(`[Hair] Hair added to Head bone with ${hairGeo.attributes.position.count} vertices`);
+      console.log(`[Hair] Hair added to Head bone with ${hairGeo.positions.length / 3} vertices`);
     }
   }
 
-  // 7. Eyes
+  // 6. Eyes
   {
     const headBoneIdx = BONE_NAMES.indexOf('Head');
     const headBone = skeleton.bones[headBoneIdx];
 
     const eyeGeos = buildEyeGeometry(headRadius);
-    const eyeMats = createEyeMaterials();
+    const eyeMatParams = createEyeMaterials();
 
-    // Eye disc mesh
-    const eyeDiscMesh = new THREE.Mesh(eyeGeos.eyeDiscGeometry, eyeMats.eyeDiscMaterial);
-    eyeDiscMesh.name = 'Eyes';
-    eyeDiscMesh.castShadow = true;
-    eyeDiscMesh.receiveShadow = true;
-    // Position relative to head bone
-    eyeDiscMesh.position.set(0, 0, 0);  // Adjust if needed
-    headBone.add(eyeDiscMesh);
+    const eyeDiscMesh = new Mesh('Eyes', scene);
+    const eyeMat = new PBRMaterial('EyeMaterial', scene);
+    eyeMat.albedoColor = new Color3(...eyeMatParams.eyeDiscMaterial.albedoColor);
+    eyeMat.roughness   = eyeMatParams.eyeDiscMaterial.roughness;
+    eyeMat.metallic    = eyeMatParams.eyeDiscMaterial.metallic;
+    eyeDiscMesh.material = eyeMat;
+    applyRawGeoToMesh(eyeDiscMesh, eyeGeos.eyeDiscGeometry);
+    eyeDiscMesh.attachToBone(headBone, bodyMesh);
 
-    // Eye highlight mesh
-    const highlightMesh = new THREE.Mesh(eyeGeos.highlightGeometry, eyeMats.highlightMaterial);
-    highlightMesh.name = 'EyeHighlights';
-    highlightMesh.castShadow = true;
-    highlightMesh.receiveShadow = true;
-    highlightMesh.position.set(0, 0, 0);
-    headBone.add(highlightMesh);
+    const highlightMesh = new Mesh('EyeHighlights', scene);
+    const hlMat = new PBRMaterial('HighlightMaterial', scene);
+    hlMat.albedoColor    = new Color3(...eyeMatParams.highlightMaterial.albedoColor);
+    hlMat.roughness      = eyeMatParams.highlightMaterial.roughness;
+    hlMat.metallic       = eyeMatParams.highlightMaterial.metallic;
+    hlMat.emissiveColor  = new Color3(...eyeMatParams.highlightMaterial.emissiveColor);
+    hlMat.backFaceCulling = eyeMatParams.highlightMaterial.backFaceCulling;
+    highlightMesh.material = hlMat;
+    applyRawGeoToMesh(highlightMesh, eyeGeos.highlightGeometry);
+    highlightMesh.attachToBone(headBone, bodyMesh);
 
-    console.log(`[Eyes] Eyes added to Head bone with ${eyeGeos.eyeDiscGeometry.attributes.position.count} vertices`);
+    console.log(`[Eyes] Eyes added to Head bone with ${eyeGeos.eyeDiscGeometry.positions.length / 3} vertices`);
   }
 
-  // 8. Clothing — face-extrusion using Y-axis height filtering and X-Z plane radial extrusion.
+  // 7. Clothing
   if (cfg.clothing && cfg.clothing.length > 0) {
     const clothingColors = cfg.clothingColor ?? {};
-    const clothingGeos = buildClothingGeometry(bodyGeo, cfg);
-
-    // Clothing vertices are in scene/world space (same as bodyGeo).
-    // Add directly to scene — NOT to a bone — to avoid double-transform.
-    const clothingGroup = new THREE.Group();
-    clothingGroup.name = 'Clothing';
-    scene.add(clothingGroup);
+    const clothingGeos = buildClothingGeometry(bodyData, cfg);
 
     for (const [ctype, geo] of Object.entries(clothingGeos)) {
       const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
       const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
-      const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(rgba[0], rgba[1], rgba[2]),
-        roughness: 0.65,
-        metalness: 0.0,
-        side: THREE.DoubleSide,  // Render both sides to prevent clipping
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.name = `Clothing_${ctype}`;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      clothingGroup.add(mesh);
+      const mat = makePBR(scene, `ClothingMat_${ctype}`, rgba, 0.65, 0.0);
+      mat.backFaceCulling = false;
 
-      console.log(`[Clothing] Added ${ctype} (${geo.attributes.position.count} verts) with color ${colorName}`);
+      const mesh = new Mesh(`Clothing_${ctype}`, scene);
+      mesh.material = mat;
+      applyRawGeoToMesh(mesh, geo);
+
+      console.log(`[Clothing] Added ${ctype} (${geo.positions.length / 3} verts) with color ${colorName}`);
     }
 
-    // Compute Y range for collar / button placement (same math as clothing_geo.js)
-    const _pos = bodyGeo.attributes.position;
+    // Compute Y range for collar / button placement
     let _minY = Infinity, _maxY = -Infinity;
-    for (let i = 0; i < _pos.count; i++) { const y = _pos.getY(i); if (y < _minY) _minY = y; if (y > _maxY) _maxY = y; }
+    for (let i = 0; i < vCount; i++) {
+      const y = positions[i * 3 + 1];
+      if (y < _minY) _minY = y;
+      if (y > _maxY) _maxY = y;
+    }
     const _bodyH = _maxY - _minY;
     const _armY  = _minY + _bodyH * 0.63;
     const _hipY  = _minY + _bodyH * 0.43;
 
     const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
 
-    // Polo collar — procedural ring around the neck
     if (clothingList.includes('polo')) {
-      const collarGeo = buildCollarGeometry(bodyGeo, _armY, _bodyH, 0.020);
+      const collarGeo = buildCollarGeometry(bodyData, _armY, _bodyH, 0.020);
       if (collarGeo) {
         const topColorName = (cfg.clothingColor ?? {})['polo'] ?? 'grey';
         const topRgba = CLOTHING_COLORS[topColorName] ?? CLOTHING_COLORS.grey;
-        const collarMat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(
-            Math.min(1, topRgba[0] * 1.15),
-            Math.min(1, topRgba[1] * 1.15),
-            Math.min(1, topRgba[2] * 1.15)
-          ),
-          roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide,
-        });
-        const collarMesh = new THREE.Mesh(collarGeo, collarMat);
-        collarMesh.name = 'Clothing_polo_collar';
-        collarMesh.castShadow = true;
-        clothingGroup.add(collarMesh);
+        const lighterRgba = [
+          Math.min(1, topRgba[0] * 1.15),
+          Math.min(1, topRgba[1] * 1.15),
+          Math.min(1, topRgba[2] * 1.15),
+        ];
+        const collarMat = makePBR(scene, 'CollarMat', lighterRgba, 0.55, 0.0);
+        collarMat.backFaceCulling = false;
+        const collarMesh = new Mesh('Clothing_polo_collar', scene);
+        collarMesh.material = collarMat;
+        applyRawGeoToMesh(collarMesh, collarGeo);
         console.log('[Clothing] Added polo collar');
       }
     }
 
-    // Buttons — available on polo, short_sleeve, v_neck, long_sleeve
     if (cfg.buttons) {
       const shirtTypes = ['polo', 'short_sleeve', 'v_neck', 'long_sleeve'];
       if (clothingList.some(c => shirtTypes.includes(c))) {
-        const buttonGeo = buildButtonGeometry(bodyGeo, _hipY, _armY, 4);
+        const buttonGeo = buildButtonGeometry(bodyData, _hipY, _armY, 4);
         if (buttonGeo) {
-          const buttonMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(0.92, 0.92, 0.92),
-            roughness: 0.3, metalness: 0.1,
-          });
-          const buttonMesh = new THREE.Mesh(buttonGeo, buttonMat);
-          buttonMesh.name = 'Clothing_buttons';
-          buttonMesh.castShadow = true;
-          clothingGroup.add(buttonMesh);
+          const buttonMat = makePBR(scene, 'ButtonMat', [0.92, 0.92, 0.92], 0.3, 0.1);
+          const buttonMesh = new Mesh('Clothing_buttons', scene);
+          buttonMesh.material = buttonMat;
+          applyRawGeoToMesh(buttonMesh, buttonGeo);
           console.log('[Clothing] Added buttons');
         }
       }
     }
   }
 
-  // 9. Animations
+  // 8. Animations
   const clips = buildAnimations(cfg);
+  buildAnimationGroups(clips, skeleton, scene);
 
-  return { scene, clips };
+  return { scene, engine };
 }
 
 /**
- * Export scene + clips to a GLB file.
- * @param {THREE.Scene} scene
- * @param {THREE.AnimationClip[]} clips
+ * Export scene to a GLB file.
+ * @param {BABYLON.Scene} scene
+ * @param {BABYLON.NullEngine} engine
  * @param {string} outputPath
  */
-export async function exportGLB(scene, clips, outputPath) {
-  const exporter = new GLTFExporter();
-  const result = await exporter.parseAsync(scene, {
-    binary: true,
-    animations: clips,
-    onlyVisible: false,
-  });
-  writeFileSync(outputPath, Buffer.from(result));
-  console.log(`[builder] Saved ${outputPath} (${result.byteLength} bytes)`);
+export async function exportGLB(scene, engine, outputPath) {
+  const result = await GLTF2Export.GLBAsync(scene, 'export', {});
+
+  // result is an object { 'export.glb': ArrayBuffer | Blob }
+  const glbData = result.glTFFiles['export.glb'];
+
+  let buffer;
+  if (glbData instanceof ArrayBuffer) {
+    buffer = Buffer.from(glbData);
+  } else {
+    // Blob (shouldn't happen in Node with NullEngine, but handle anyway)
+    const ab = await glbData.arrayBuffer();
+    buffer = Buffer.from(ab);
+  }
+
+  writeFileSync(outputPath, buffer);
+  console.log(`[builder] Saved ${outputPath} (${buffer.length} bytes)`);
+
+  engine.dispose();
 }
