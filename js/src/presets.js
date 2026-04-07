@@ -209,7 +209,7 @@ export function resolveConfig(opts = {}) {
     animations = 'all',
     lod = 'mid',
     useTemplate = true,
-    clothing = ['short_sleeve', 'jeans'],
+    clothing = [],
     clothingColor = {},
   } = opts;
 

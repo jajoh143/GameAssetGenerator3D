@@ -146,20 +146,27 @@
               <div class="field">
                 <label for="clothing_top">Style</label>
                 <select id="clothing_top" name="clothing_top">
-                  <option value="none">None</option>
-                  <option value="short_sleeve" selected>Short Sleeve</option>
+                  <option value="none" selected>None</option>
+                  <option value="short_sleeve">Short Sleeve</option>
+                  <option value="polo">Polo</option>
                   <option value="long_sleeve">Long Sleeve</option>
                   <option value="v_neck">V-Neck</option>
                 </select>
+              </div>
+              <div class="field" id="buttons-field" style="display:none">
+                <label>
+                  <input type="checkbox" id="buttons" name="buttons" value="true">
+                  Add Buttons
+                </label>
               </div>
               <div class="field" id="top-color-field">
                 <label for="top_color">Color</label>
                 <select id="top_color" name="top_color">
                   <option value="white">White</option>
                   <option value="black">Black</option>
-                  <option value="grey">Grey</option>
+                  <option value="grey" selected>Grey</option>
                   <option value="red">Red</option>
-                  <option value="blue" selected>Blue</option>
+                  <option value="blue">Blue</option>
                   <option value="green">Green</option>
                   <option value="brown">Brown</option>
                   <option value="tan">Tan</option>
@@ -179,9 +186,9 @@
               <div class="field">
                 <label for="clothing_bottom">Style</label>
                 <select id="clothing_bottom" name="clothing_bottom">
-                  <option value="none">None</option>
+                  <option value="none" selected>None</option>
                   <option value="shorts">Shorts</option>
-                  <option value="jeans" selected>Jeans</option>
+                  <option value="jeans">Jeans</option>
                 </select>
               </div>
               <div class="field" id="bottom-color-field">
@@ -547,6 +554,9 @@ function collectFormData() {
     document.querySelectorAll('input[name="animations"]:checked')
   ).map(cb => cb.value);
 
+  const buttonsEl = document.getElementById('buttons');
+  if (buttonsEl) data.buttons = buttonsEl.checked ? 'true' : 'false';
+
   return data;
 }
 
@@ -713,9 +723,15 @@ updateHairColorVisibility();
 
 const topSel = document.getElementById('clothing_top');
 const topColorField = document.getElementById('top-color-field');
-topSel.addEventListener('change', () => {
-  topColorField.style.display = (topSel.value === 'none') ? 'none' : '';
-});
+const buttonsField  = document.getElementById('buttons-field');
+const BUTTON_TOPS   = ['polo', 'short_sleeve', 'v_neck', 'long_sleeve'];
+function updateTopFields() {
+  const none = topSel.value === 'none';
+  topColorField.style.display = none ? 'none' : '';
+  buttonsField.style.display  = BUTTON_TOPS.includes(topSel.value) ? '' : 'none';
+}
+topSel.addEventListener('change', updateTopFields);
+updateTopFields();
 
 const bottomSel = document.getElementById('clothing_bottom');
 const bottomColorField = document.getElementById('bottom-color-field');
