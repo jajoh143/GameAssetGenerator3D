@@ -173,24 +173,31 @@ export async function buildHumanoid(cfg) {
   vd.applyToMesh(bodyMesh);
   bodyMesh.skeleton = skeleton;
 
-  // Estimate head radius from body width
-  let minX = Infinity, maxX = -Infinity;
+  // Compute head bounding box from vertices above 80% of body height (avoids arm span).
+  // Body uses Z as height (Z-up from mesh_loader), Y as forward depth.
+  const headZThresh = H * 0.80;
+  let hxMin = Infinity, hxMax = -Infinity, hyMax = -Infinity, hzMax = -Infinity;
   for (let i = 0; i < vCount; i++) {
-    const x = positions[i * 3];
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
+    const bz = positions[i * 3 + 2];
+    if (bz > headZThresh) {
+      const bx = positions[i * 3], by = positions[i * 3 + 1];
+      if (bx < hxMin) hxMin = bx;
+      if (bx > hxMax) hxMax = bx;
+      if (by > hyMax) hyMax = by;
+      if (bz > hzMax) hzMax = bz;
+    }
   }
-  const bodyWidth = maxX - minX;
-  const headRadius = bodyWidth * 0.18;
+  // headRadius = actual head half-width (not inflated by arm span)
+  const headRadius = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.12;
+  // faceFrontY = world Y of the front face surface (for eye/hair forward placement)
+  const faceFrontY = hyMax > -Infinity ? hyMax : H * 0.10;
+  const headBoneZ  = H * 0.87;  // world Z of Head bone (from boneWorldPositions)
+
+  console.log(`[Head] headRadius=${headRadius.toFixed(3)}, headBoneZ=${headBoneZ.toFixed(3)}, faceFrontY=${faceFrontY.toFixed(3)}`);
 
   // 5. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
   if (hairStyle !== 'none') {
-    const headBoneIdx = BONE_NAMES.indexOf('Head');
-    const headBone = skeleton.bones[headBoneIdx];
-
-    console.log(`[Hair] Creating hair: style=${hairStyle}, headRadius=${headRadius.toFixed(3)}`);
-
     const hairGeo = buildHairGeometry(headRadius, hairStyle);
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
@@ -202,47 +209,42 @@ export async function buildHumanoid(cfg) {
       hairMesh.material = hairMat;
       applyRawGeoToMesh(hairMesh, hairGeo);
 
-      // Rotate -90° around X-axis to point cap upward, position at head
-      hairMesh.rotation.x = -Math.PI / 2;
-      hairMesh.position.set(0, headRadius * 5.5, -headRadius * 0.6);
-      hairMesh.scaling.setAll(0.725);
+      // Hair geometry is Z-up (same as world). Rings lie in XY plane; fringe extends
+      // in -Y (which is behind in world space). rotation.z=PI flips Y so fringe faces
+      // +Y (front of character). X is also mirrored but hair is symmetric.
+      hairMesh.rotation.z = Math.PI;
+      // Base of cap (local Z=0) placed at ear level, slightly below head bone.
+      hairMesh.position.set(0, 0, headBoneZ - headRadius * 0.10);
 
-      // Attach to head bone (moves with animations)
-      hairMesh.attachToBone(headBone, bodyMesh);
-
-      console.log(`[Hair] Hair added to Head bone with ${hairGeo.positions.length / 3} vertices`);
+      console.log(`[Hair] Hair placed at Z=${hairMesh.position.z.toFixed(3)}, headRadius=${headRadius.toFixed(3)}`);
     }
   }
 
-  // 6. Eyes
+  // 6. Eyes — geometry is in absolute world space; no rotation or attachToBone needed.
   {
-    const headBoneIdx = BONE_NAMES.indexOf('Head');
-    const headBone = skeleton.bones[headBoneIdx];
-
-    const eyeGeos = buildEyeGeometry(headRadius);
+    const eyeGeos = buildEyeGeometry(headRadius, headBoneZ, faceFrontY);
     const eyeMatParams = createEyeMaterials();
 
     const eyeDiscMesh = new Mesh('Eyes', scene);
     const eyeMat = new PBRMaterial('EyeMaterial', scene);
-    eyeMat.albedoColor = new Color3(...eyeMatParams.eyeDiscMaterial.albedoColor);
-    eyeMat.roughness   = eyeMatParams.eyeDiscMaterial.roughness;
-    eyeMat.metallic    = eyeMatParams.eyeDiscMaterial.metallic;
-    eyeDiscMesh.material = eyeMat;
+    eyeMat.albedoColor    = new Color3(...eyeMatParams.eyeDiscMaterial.albedoColor);
+    eyeMat.roughness      = eyeMatParams.eyeDiscMaterial.roughness;
+    eyeMat.metallic       = eyeMatParams.eyeDiscMaterial.metallic;
+    eyeMat.backFaceCulling = false;
+    eyeDiscMesh.material  = eyeMat;
     applyRawGeoToMesh(eyeDiscMesh, eyeGeos.eyeDiscGeometry);
-    eyeDiscMesh.attachToBone(headBone, bodyMesh);
 
     const highlightMesh = new Mesh('EyeHighlights', scene);
     const hlMat = new PBRMaterial('HighlightMaterial', scene);
-    hlMat.albedoColor    = new Color3(...eyeMatParams.highlightMaterial.albedoColor);
-    hlMat.roughness      = eyeMatParams.highlightMaterial.roughness;
-    hlMat.metallic       = eyeMatParams.highlightMaterial.metallic;
-    hlMat.emissiveColor  = new Color3(...eyeMatParams.highlightMaterial.emissiveColor);
-    hlMat.backFaceCulling = eyeMatParams.highlightMaterial.backFaceCulling;
+    hlMat.albedoColor     = new Color3(...eyeMatParams.highlightMaterial.albedoColor);
+    hlMat.roughness       = eyeMatParams.highlightMaterial.roughness;
+    hlMat.metallic        = eyeMatParams.highlightMaterial.metallic;
+    hlMat.emissiveColor   = new Color3(...eyeMatParams.highlightMaterial.emissiveColor);
+    hlMat.backFaceCulling = false;
     highlightMesh.material = hlMat;
     applyRawGeoToMesh(highlightMesh, eyeGeos.highlightGeometry);
-    highlightMesh.attachToBone(headBone, bodyMesh);
 
-    console.log(`[Eyes] Eyes added to Head bone with ${eyeGeos.eyeDiscGeometry.positions.length / 3} vertices`);
+    console.log(`[Eyes] Eyes placed at world Z=${(headBoneZ + headRadius * 0.25).toFixed(3)}, Y=${(faceFrontY + 0.003).toFixed(3)}`);
   }
 
   // 7. Clothing
