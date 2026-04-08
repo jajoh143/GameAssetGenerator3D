@@ -4,7 +4,7 @@
  */
 
 import { NullEngine, Scene, SceneLoader } from '@babylonjs/core';
-import '@babylonjs/loaders/glTF';
+import '@babylonjs/loaders/glTF/index.js';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
