@@ -133,12 +133,12 @@ function createHighlightGeometry(eyeX, eyeFwdY, eyeHeightZ, highlightR, eyeRy, s
  * @returns {{ eyeDiscGeometry, highlightGeometry }}
  */
 export function buildEyeGeometry(headRadius, headBoneZ = 1.52, faceFrontY = 0.12) {
-  const eyeX        = headRadius * 0.46;               // lateral separation
-  const eyeHeightZ  = headBoneZ  + headRadius * 0.25;  // slightly above head bone centre
+  const eyeX        = headRadius * 0.45;               // lateral separation (slightly narrower)
+  const eyeHeightZ  = headBoneZ  + headRadius * 0.50;  // mid-head height (eye socket level)
   const eyeFwdY     = faceFrontY + 0.003;              // just in front of face surface
-  const rx          = headRadius * 0.15;               // horizontal radius of disc
-  const ry          = headRadius * 0.12;               // vertical radius of disc
-  const highlightR  = headRadius * 0.05;               // glint radius
+  const rx          = headRadius * 0.10;               // horizontal radius of disc (smaller)
+  const ry          = headRadius * 0.08;               // vertical radius of disc (smaller)
+  const highlightR  = headRadius * 0.035;              // glint radius
 
   return {
     eyeDiscGeometry:   createEyeDiscGeometry(eyeX, eyeFwdY, eyeHeightZ, rx, ry, 10),

@@ -187,13 +187,17 @@ export async function buildHumanoid(cfg) {
       if (bz > hzMax) hzMax = bz;
     }
   }
-  // headRadius = actual head half-width (not inflated by arm span)
-  const headRadius = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.12;
-  // faceFrontY = world Y of the front face surface (for eye/hair forward placement)
-  const faceFrontY = hyMax > -Infinity ? hyMax : H * 0.10;
   const headBoneZ  = H * 0.87;  // world Z of Head bone (from boneWorldPositions)
+  // Two estimates of head radius — take the larger so the cap covers the full head.
+  //   widthR: half the X span in the head zone
+  //   heightR: how far the head top extends above the head bone (≈ actual radius for round head)
+  const headWidthR  = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.13;
+  const headHeightR = hzMax > headBoneZ ? hzMax - headBoneZ : H * 0.13;
+  const headRadius  = Math.max(headWidthR, headHeightR, H * 0.12);
+  // faceFrontY = world Y of the front face surface (for eye/hair forward placement)
+  const faceFrontY  = hyMax > -Infinity ? hyMax : H * 0.10;
 
-  console.log(`[Head] headRadius=${headRadius.toFixed(3)}, headBoneZ=${headBoneZ.toFixed(3)}, faceFrontY=${faceFrontY.toFixed(3)}`);
+  console.log(`[Head] headRadius=${headRadius.toFixed(3)} (widthR=${headWidthR.toFixed(3)}, heightR=${headHeightR.toFixed(3)}), headBoneZ=${headBoneZ.toFixed(3)}, faceFrontY=${faceFrontY.toFixed(3)}`);
 
   // 5. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
@@ -213,8 +217,8 @@ export async function buildHumanoid(cfg) {
       // in -Y (which is behind in world space). rotation.z=PI flips Y so fringe faces
       // +Y (front of character). X is also mirrored but hair is symmetric.
       hairMesh.rotation.z = Math.PI;
-      // Base of cap (local Z=0) placed at ear level, slightly below head bone.
-      hairMesh.position.set(0, 0, headBoneZ - headRadius * 0.10);
+      // Place cap base slightly above the head bone (ear level).
+      hairMesh.position.set(0, 0, headBoneZ + headRadius * 0.05);
 
       console.log(`[Hair] Hair placed at Z=${hairMesh.position.z.toFixed(3)}, headRadius=${headRadius.toFixed(3)}`);
     }
