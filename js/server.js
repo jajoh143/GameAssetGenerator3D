@@ -29,8 +29,8 @@ async function runJob(jobId, cfgFn, outputPath) {
   try {
     const cfg = cfgFn();
     log.push(`[job] Building humanoid: ${JSON.stringify({ skinTone: cfg.skinTone, hairStyle: cfg.hairStyle })}`);
-    const { scene, clips } = await buildHumanoid(cfg);
-    await exportGLB(scene, clips, outputPath);
+    const { scene, engine } = await buildHumanoid(cfg);
+    await exportGLB(scene, engine, outputPath);
     log.push(`[job] Done: ${outputPath}`);
     jobs.set(jobId, { status: 'done', log, output: outputPath });
   } catch (err) {
