@@ -60,8 +60,10 @@ export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
   const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
 
-  // Create all bones
-  const bones = BONE_NAMES.map((name, i) => {
+  // Create all bones sequentially so each parent is available when children reference it
+  const bones = [];
+  for (let i = 0; i < BONE_NAMES.length; i++) {
+    const name = BONE_NAMES[i];
     const parentIdx = BONE_PARENTS[i];
     const parentBone = parentIdx === -1 ? null : bones[parentIdx];
     const [wx, wy, wz] = worldPos[i];
@@ -75,8 +77,8 @@ export function buildSkeleton(H, scene) {
     }
 
     const localMatrix = Matrix.Translation(lx, ly, lz);
-    return new Bone(name, skeleton, parentBone, localMatrix);
-  });
+    bones.push(new Bone(name, skeleton, parentBone, localMatrix));
+  }
 
   return skeleton;
 }
