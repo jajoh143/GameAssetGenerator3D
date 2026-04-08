@@ -212,15 +212,28 @@ export async function buildHumanoid(cfg) {
 
       const hairMesh = new Mesh('Hair', scene);
       hairMesh.material = hairMat;
+
+      // Bake Z-up → Y-up transform directly into positions/normals before applying.
+      // hair_geo builds rings in XY plane with Z as height.
+      // Transform: (x, y, z) → (x, z + earY, -y) where earY = headBoneY + headRadius*0.05.
+      // Doing this in JS rather than via hairMesh.rotation avoids GLTF2Export's
+      // handedness fix which would flip the sign of rotation.x (inverting the cap).
+      const hp = hairGeo.positions;
+      const hn = hairGeo.normals;
+      const earY = headBoneY + headRadius * 0.05;
+      for (let i = 0; i < hp.length / 3; i++) {
+        const hx = hp[i*3], hy = hp[i*3+1], hz = hp[i*3+2];
+        hp[i*3]   = hx;
+        hp[i*3+1] = hz + earY;  // new Y = old Z (height) + ear-level offset
+        hp[i*3+2] = -hy;         // new Z = -old Y (hair's -Y was "front"; +Z faces viewer)
+        const nx = hn[i*3], ny = hn[i*3+1], nz = hn[i*3+2];
+        hn[i*3]   = nx;
+        hn[i*3+1] = nz;
+        hn[i*3+2] = -ny;
+      }
       applyRawGeoToMesh(hairMesh, hairGeo);
 
-      // Hair geometry is built in Z-up local space (XY-plane rings, Z = height).
-      // rotation.x = -PI/2 converts to Y-up world: old Z → new Y (height), old -Y → new Z (forward).
-      hairMesh.rotation.x = -Math.PI / 2;
-      // Place cap base slightly above the head bone (ear level), Y = height.
-      hairMesh.position.set(0, headBoneY + headRadius * 0.05, 0);
-
-      console.log(`[Hair] Hair placed at Y=${hairMesh.position.y.toFixed(3)}, headRadius=${headRadius.toFixed(3)}`);
+      console.log(`[Hair] Hair placed at Y=${earY.toFixed(3)}, headRadius=${headRadius.toFixed(3)}`);
     }
   }
 
@@ -248,7 +261,7 @@ export async function buildHumanoid(cfg) {
     highlightMesh.material = hlMat;
     applyRawGeoToMesh(highlightMesh, eyeGeos.highlightGeometry);
 
-    console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.50).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
+    console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.20).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
   }
 
   // 7. Clothing

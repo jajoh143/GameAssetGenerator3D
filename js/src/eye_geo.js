@@ -133,7 +133,7 @@ function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segm
  */
 export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12) {
   const eyeX       = headRadius * 0.45;               // lateral separation
-  const eyeHeightY = headBoneY  + headRadius * 0.50;  // eye socket height
+  const eyeHeightY = headBoneY  + headRadius * 0.20;  // eye socket height (20% up from chin)
   const eyeZ       = faceFrontZ + 0.003;              // just in front of face surface
   const rx         = headRadius * 0.10;               // horizontal radius of disc
   const ry         = headRadius * 0.08;               // vertical radius of disc
