@@ -271,7 +271,7 @@ function walkKfs(_cfg) {
     [half + hh,  bob,   0],
     [frames,     0,    -sway],
   ]) {
-    transKfs.push(_trans('Hips', frame, fps, 0, 0, b));
+    transKfs.push(_trans('Hips', frame, fps, 0, b, 0));
     rotKfs.push(_rot('Hips', frame, fps, 0, 0, s));
   }
 
@@ -378,7 +378,7 @@ function runKfs(_cfg) {
     [half + hh,  bob,   0],
     [frames,     0,    -sway],
   ]) {
-    transKfs.push(_trans('Hips', frame, fps, 0, 0, b));
+    transKfs.push(_trans('Hips', frame, fps, 0, b, 0));
     rotKfs.push(_rot('Hips', frame, fps, 0, 0, s));
   }
 
@@ -419,7 +419,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fCrouch, fps, cs));
   rotKfs.push(_rot('Chest', fCrouch, fps, cs * 0.6));
-  transKfs.push(_trans('Hips', fCrouch, fps, 0, 0, -0.08));
+  transKfs.push(_trans('Hips', fCrouch, fps, 0, -0.08, 0));
 
   const llLaunch = jp.launch_legs;
   const ls = jp.launch_spine;
@@ -433,7 +433,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fLaunch, fps, ls));
   rotKfs.push(_rot('Chest', fLaunch, fps, ls * 0.5));
-  transKfs.push(_trans('Hips', fLaunch, fps, 0, 0, jp.hip_height));
+  transKfs.push(_trans('Hips', fLaunch, fps, 0, jp.hip_height, 0));
 
   const tl = jp.tuck_legs;
   for (const side of ['L', 'R']) {
@@ -443,7 +443,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fApex, fps, 5));
   rotKfs.push(_rot('Chest', fApex, fps, 3));
-  transKfs.push(_trans('Hips', fApex, fps, 0, 0, jp.hip_height * 0.8));
+  transKfs.push(_trans('Hips', fApex, fps, 0, jp.hip_height * 0.8, 0));
 
   const la = jp.land_absorb;
   for (const side of ['L', 'R']) {
@@ -455,7 +455,7 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fLand, fps, -10));
   rotKfs.push(_rot('Chest', fLand, fps, -8));
-  transKfs.push(_trans('Hips', fLand, fps, 0, 0, -0.06));
+  transKfs.push(_trans('Hips', fLand, fps, 0, -0.06, 0));
 
   for (const bn of ['Spine', 'Chest']) rotKfs.push(_rot(bn, fTotal, fps));
   for (const side of ['L', 'R']) {

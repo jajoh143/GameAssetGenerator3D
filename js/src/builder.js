@@ -174,30 +174,31 @@ export async function buildHumanoid(cfg) {
   bodyMesh.skeleton = skeleton;
 
   // Compute head bounding box from vertices above 80% of body height (avoids arm span).
-  // Body uses Z as height (Z-up from mesh_loader), Y as forward depth.
-  const headZThresh = H * 0.80;
+  // Body uses Y as height (Babylon/glTF Y-up), Z as forward depth.
+  const headYThresh = H * 0.80;
   let hxMin = Infinity, hxMax = -Infinity, hyMax = -Infinity, hzMax = -Infinity;
   for (let i = 0; i < vCount; i++) {
-    const bz = positions[i * 3 + 2];
-    if (bz > headZThresh) {
-      const bx = positions[i * 3], by = positions[i * 3 + 1];
+    const by = positions[i * 3 + 1];  // Y = height
+    if (by > headYThresh) {
+      const bx = positions[i * 3];
+      const bz = positions[i * 3 + 2];  // Z = forward
       if (bx < hxMin) hxMin = bx;
       if (bx > hxMax) hxMax = bx;
       if (by > hyMax) hyMax = by;
       if (bz > hzMax) hzMax = bz;
     }
   }
-  const headBoneZ  = H * 0.87;  // world Z of Head bone (from boneWorldPositions)
+  const headBoneY  = H * 0.87;  // world Y of Head bone
   // Two estimates of head radius — take the larger so the cap covers the full head.
   //   widthR: half the X span in the head zone
-  //   heightR: how far the head top extends above the head bone (≈ actual radius for round head)
+  //   heightR: how far the head top extends above the head bone
   const headWidthR  = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.13;
-  const headHeightR = hzMax > headBoneZ ? hzMax - headBoneZ : H * 0.13;
+  const headHeightR = hyMax > headBoneY ? hyMax - headBoneY : H * 0.13;
   const headRadius  = Math.max(headWidthR, headHeightR, H * 0.12);
-  // faceFrontY = world Y of the front face surface (for eye/hair forward placement)
-  const faceFrontY  = hyMax > -Infinity ? hyMax : H * 0.10;
+  // faceFrontZ = world Z of the front face surface (for eye/hair forward placement)
+  const faceFrontZ  = hzMax > -Infinity ? hzMax : H * 0.10;
 
-  console.log(`[Head] headRadius=${headRadius.toFixed(3)} (widthR=${headWidthR.toFixed(3)}, heightR=${headHeightR.toFixed(3)}), headBoneZ=${headBoneZ.toFixed(3)}, faceFrontY=${faceFrontY.toFixed(3)}`);
+  console.log(`[Head] headRadius=${headRadius.toFixed(3)} (widthR=${headWidthR.toFixed(3)}, heightR=${headHeightR.toFixed(3)}), headBoneY=${headBoneY.toFixed(3)}, faceFrontZ=${faceFrontZ.toFixed(3)}`);
 
   // 5. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
@@ -213,20 +214,19 @@ export async function buildHumanoid(cfg) {
       hairMesh.material = hairMat;
       applyRawGeoToMesh(hairMesh, hairGeo);
 
-      // Hair geometry is Z-up (same as world). Rings lie in XY plane; fringe extends
-      // in -Y (which is behind in world space). rotation.z=PI flips Y so fringe faces
-      // +Y (front of character). X is also mirrored but hair is symmetric.
-      hairMesh.rotation.z = Math.PI;
-      // Place cap base slightly above the head bone (ear level).
-      hairMesh.position.set(0, 0, headBoneZ + headRadius * 0.05);
+      // Hair geometry is built in Z-up local space (XY-plane rings, Z = height).
+      // rotation.x = -PI/2 converts to Y-up world: old Z → new Y (height), old -Y → new Z (forward).
+      hairMesh.rotation.x = -Math.PI / 2;
+      // Place cap base slightly above the head bone (ear level), Y = height.
+      hairMesh.position.set(0, headBoneY + headRadius * 0.05, 0);
 
-      console.log(`[Hair] Hair placed at Z=${hairMesh.position.z.toFixed(3)}, headRadius=${headRadius.toFixed(3)}`);
+      console.log(`[Hair] Hair placed at Y=${hairMesh.position.y.toFixed(3)}, headRadius=${headRadius.toFixed(3)}`);
     }
   }
 
-  // 6. Eyes — geometry is in absolute world space; no rotation or attachToBone needed.
+  // 6. Eyes — geometry is in absolute world space (Y-up); no rotation needed.
   {
-    const eyeGeos = buildEyeGeometry(headRadius, headBoneZ, faceFrontY);
+    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ);
     const eyeMatParams = createEyeMaterials();
 
     const eyeDiscMesh = new Mesh('Eyes', scene);
@@ -248,7 +248,7 @@ export async function buildHumanoid(cfg) {
     highlightMesh.material = hlMat;
     applyRawGeoToMesh(highlightMesh, eyeGeos.highlightGeometry);
 
-    console.log(`[Eyes] Eyes placed at world Z=${(headBoneZ + headRadius * 0.25).toFixed(3)}, Y=${(faceFrontY + 0.003).toFixed(3)}`);
+    console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.50).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
   }
 
   // 7. Clothing

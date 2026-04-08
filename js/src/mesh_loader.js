@@ -96,22 +96,22 @@ export async function loadCartoonMale(targetHeight = 1.75) {
   // Clone positions
   const positions = new Float32Array(posArr);
 
-  // Find bounding box along Z (Blender Z-up)
-  let minZ = Infinity, maxZ = -Infinity;
+  // Find bounding box along Y (Babylon/glTF Y-up)
+  let minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < vCount; i++) {
-    const z = positions[i * 3 + 2];
-    if (z < minZ) minZ = z;
-    if (z > maxZ) maxZ = z;
+    const y = positions[i * 3 + 1];
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
   }
 
-  const origHeight = maxZ - minZ;
+  const origHeight = maxY - minY;
   const scale = targetHeight / origHeight;
 
-  // Scale uniformly, shift Z to 0
+  // Scale uniformly, shift Y so feet start at 0
   for (let i = 0; i < vCount; i++) {
     positions[i * 3]     *= scale;
-    positions[i * 3 + 1] *= scale;
-    positions[i * 3 + 2]  = (positions[i * 3 + 2] - minZ) * scale;
+    positions[i * 3 + 1]  = (positions[i * 3 + 1] - minY) * scale;
+    positions[i * 3 + 2] *= scale;
   }
 
   // Remap skin indices and weights

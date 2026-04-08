@@ -1,9 +1,9 @@
 /**
- * Flat-disc eye geometry builder — world-space XZ-plane discs, no Three.js.
+ * Flat-disc eye geometry builder — world-space XY-plane discs, no Three.js.
  *
- * Discs lie in the XZ plane (normal faces +Y = toward viewer) so they can be
- * placed directly in world space without any rotation on the mesh.
- * buildEyeGeometry() takes the head bone's world Z and the face's forward Y
+ * Discs lie in the XY plane (normal faces +Z = toward viewer) matching
+ * Babylon/glTF Y-up coordinate system.
+ * buildEyeGeometry() takes the head bone's world Y and the face's forward Z
  * so the geometry has absolute world coordinates baked in.
  */
 
@@ -33,40 +33,39 @@ function computeVertexNormals(positions, indices) {
 }
 
 /**
- * Build a flat disc in the XZ plane (normal faces +Y).
+ * Build a flat disc in the XY plane (normal faces +Z = toward viewer).
  * eyeX        = lateral centre (±)
- * eyeFwdY     = world Y of disc (forward distance from origin)
- * eyeHeightZ  = world Z of disc centre (height)
+ * eyeZ        = world Z of disc (forward position, face front)
+ * eyeHeightY  = world Y of disc centre (height)
  */
-function createEyeDiscGeometry(eyeX, eyeFwdY, eyeHeightZ, rx, ry, segments = 10) {
+function createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, segments = 10) {
   const positions = [];
   const indices = [];
 
-  // Left eye — CCW winding viewed from +Y → normal in +Y direction
+  // Left eye — CCW winding viewed from +Z → normal in +Z direction
   const leftCenter = positions.length / 3;
-  positions.push(-eyeX, eyeFwdY, eyeHeightZ);
+  positions.push(-eyeX, eyeHeightY, eyeZ);
   const leftRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     leftRing.push(positions.length / 3);
-    positions.push(-eyeX + rx * Math.cos(angle), eyeFwdY, eyeHeightZ + ry * Math.sin(angle));
+    positions.push(-eyeX + rx * Math.cos(angle), eyeHeightY + ry * Math.sin(angle), eyeZ);
   }
   for (let i = 0; i < segments; i++) {
-    // Reverse winding so normal faces +Y
-    indices.push(leftCenter, leftRing[(i + 1) % segments], leftRing[i]);
+    indices.push(leftCenter, leftRing[i], leftRing[(i + 1) % segments]);
   }
 
   // Right eye
   const rightCenter = positions.length / 3;
-  positions.push(eyeX, eyeFwdY, eyeHeightZ);
+  positions.push(eyeX, eyeHeightY, eyeZ);
   const rightRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     rightRing.push(positions.length / 3);
-    positions.push(eyeX + rx * Math.cos(angle), eyeFwdY, eyeHeightZ + ry * Math.sin(angle));
+    positions.push(eyeX + rx * Math.cos(angle), eyeHeightY + ry * Math.sin(angle), eyeZ);
   }
   for (let i = 0; i < segments; i++) {
-    indices.push(rightCenter, rightRing[(i + 1) % segments], rightRing[i]);
+    indices.push(rightCenter, rightRing[i], rightRing[(i + 1) % segments]);
   }
 
   const pos = new Float32Array(positions);
@@ -75,47 +74,47 @@ function createEyeDiscGeometry(eyeX, eyeFwdY, eyeHeightZ, rx, ry, segments = 10)
 }
 
 /**
- * Small glint discs in the XZ plane, slightly forward of the eye disc.
+ * Small glint discs in the XY plane, slightly forward of the eye disc.
  */
-function createHighlightGeometry(eyeX, eyeFwdY, eyeHeightZ, highlightR, eyeRy, segments = 6) {
-  const hlHeightZ = eyeHeightZ + eyeRy * 0.45;   // upper portion of eye
-  const hlFwdY    = eyeFwdY + 0.002;              // slightly forward of eye disc
+function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segments = 6) {
+  const hlHeightY = eyeHeightY + eyeRy * 0.45;  // upper portion of eye
+  const hlZ       = eyeZ + 0.002;               // slightly forward of eye disc
 
   const positions = [];
   const indices = [];
 
   // Left highlight
   const leftHlCenter = positions.length / 3;
-  positions.push(-eyeX + eyeX * 0.35, hlFwdY, hlHeightZ);
+  positions.push(-eyeX + eyeX * 0.35, hlHeightY, hlZ);
   const leftHlRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     leftHlRing.push(positions.length / 3);
     positions.push(
       -eyeX + eyeX * 0.35 + highlightR * Math.cos(angle),
-      hlFwdY,
-      hlHeightZ + highlightR * Math.sin(angle)
+      hlHeightY + highlightR * Math.sin(angle),
+      hlZ
     );
   }
   for (let i = 0; i < segments; i++) {
-    indices.push(leftHlCenter, leftHlRing[(i + 1) % segments], leftHlRing[i]);
+    indices.push(leftHlCenter, leftHlRing[i], leftHlRing[(i + 1) % segments]);
   }
 
   // Right highlight
   const rightHlCenter = positions.length / 3;
-  positions.push(eyeX - eyeX * 0.35, hlFwdY, hlHeightZ);
+  positions.push(eyeX - eyeX * 0.35, hlHeightY, hlZ);
   const rightHlRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     rightHlRing.push(positions.length / 3);
     positions.push(
       eyeX - eyeX * 0.35 + highlightR * Math.cos(angle),
-      hlFwdY,
-      hlHeightZ + highlightR * Math.sin(angle)
+      hlHeightY + highlightR * Math.sin(angle),
+      hlZ
     );
   }
   for (let i = 0; i < segments; i++) {
-    indices.push(rightHlCenter, rightHlRing[(i + 1) % segments], rightHlRing[i]);
+    indices.push(rightHlCenter, rightHlRing[i], rightHlRing[(i + 1) % segments]);
   }
 
   const pos = new Float32Array(positions);
@@ -124,25 +123,25 @@ function createHighlightGeometry(eyeX, eyeFwdY, eyeHeightZ, highlightR, eyeRy, s
 }
 
 /**
- * Build eye geometry with vertices in absolute world space (Z-up, Y-forward).
+ * Build eye geometry with vertices in absolute world space (Y-up, Z-forward).
  * No rotation or attachToBone needed on the resulting meshes.
  *
  * @param {number} headRadius  - head half-width (X extent)
- * @param {number} headBoneZ   - world Z of the Head bone (default H*0.87 for H=1.75)
- * @param {number} faceFrontY  - world Y of the face surface (forward extent of head)
+ * @param {number} headBoneY   - world Y of the Head bone (height, default H*0.87 for H=1.75)
+ * @param {number} faceFrontZ  - world Z of the face surface (forward extent of head)
  * @returns {{ eyeDiscGeometry, highlightGeometry }}
  */
-export function buildEyeGeometry(headRadius, headBoneZ = 1.52, faceFrontY = 0.12) {
-  const eyeX        = headRadius * 0.45;               // lateral separation (slightly narrower)
-  const eyeHeightZ  = headBoneZ  + headRadius * 0.50;  // mid-head height (eye socket level)
-  const eyeFwdY     = faceFrontY + 0.003;              // just in front of face surface
-  const rx          = headRadius * 0.10;               // horizontal radius of disc (smaller)
-  const ry          = headRadius * 0.08;               // vertical radius of disc (smaller)
-  const highlightR  = headRadius * 0.035;              // glint radius
+export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12) {
+  const eyeX       = headRadius * 0.45;               // lateral separation
+  const eyeHeightY = headBoneY  + headRadius * 0.50;  // eye socket height
+  const eyeZ       = faceFrontZ + 0.003;              // just in front of face surface
+  const rx         = headRadius * 0.10;               // horizontal radius of disc
+  const ry         = headRadius * 0.08;               // vertical radius of disc
+  const highlightR = headRadius * 0.035;              // glint radius
 
   return {
-    eyeDiscGeometry:   createEyeDiscGeometry(eyeX, eyeFwdY, eyeHeightZ, rx, ry, 10),
-    highlightGeometry: createHighlightGeometry(eyeX, eyeFwdY, eyeHeightZ, highlightR, ry, 6),
+    eyeDiscGeometry:   createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, 10),
+    highlightGeometry: createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, ry, 6),
   };
 }
 
