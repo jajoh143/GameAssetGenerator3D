@@ -126,14 +126,16 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
   // ── Sizing — moderately larger for cartoony appeal ──
-  const eyeR = hrH * 0.14;          // 14% of horizontal head radius (up from 12%)
-  const scleraRx = eyeR * 1.20;     // Slightly wider than tall
-  const scleraRy = eyeR * 1.0;
+  const eyeR = hrH * 0.13;          // 13% of horizontal head radius (moderate increase from 12%)
+  const scleraRx = eyeR * 1.15;     // Slightly wider than tall
+  const scleraRy = eyeR * 0.95;
 
   // ── Positioning ──
-  const eyeX = hrH * 0.44;          // Lateral separation
-  const eyeY = headRadius * 4.80;   // Lower on face for cartoony appeal
-  const eyeZ = headRadius * 0.28;   // Forward — on face surface
+  // Coordinate system: Y = forward (toward face), Z = up (height on face), X = left/right
+  // Head in bone-local space: Z from 0.063 to 0.195, Y from 3.86 to 5.21, X ±0.28
+  const eyeX = hrH * 0.16;          // Lateral — within head width (head edge ~0.28)
+  const eyeY = headRadius * 5.05;   // Forward — near face front surface (front = 5.21)
+  const eyeZ = headRadius * 0.11;   // Height — slightly below head midpoint (0.129) for cartoony
 
   // ── Sclera (white dome) ──
   const scleraDomeDepth = eyeR * 0.10;  // Very slight convexity

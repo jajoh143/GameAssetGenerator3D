@@ -33,19 +33,19 @@ export function buildEyebrowGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
   // Match eye positioning from eye_geo.js
-  const eyeR = hrH * 0.14;
-  const eyeX = hrH * 0.44;
-  const eyeY = headRadius * 4.80;
-  const eyeZ = headRadius * 0.28;
+  const eyeR = hrH * 0.13;
+  const eyeX = hrH * 0.16;
+  const eyeY = headRadius * 5.05;
+  const eyeZ = headRadius * 0.11;
 
   // Eyebrow sizing
-  const browWidth = eyeR * 1.20 * 1.20;     // ~1.2x eye width
-  const browThickness = eyeR * 1.0 * 0.15;   // ~15% of eye height
-  const browGap = eyeR * 1.0 * 0.30;         // Gap above eye
+  const browWidth = eyeR * 1.15 * 1.20;     // ~1.2x eye width
+  const browThickness = eyeR * 0.95 * 0.14;  // ~14% of eye height
+  const browGap = eyeR * 0.95 * 0.25;        // Gap above eye
 
-  // Position above eyes
-  const browY = eyeY + eyeR * 1.0 + browGap;
-  const browZ = eyeZ + headRadius * 0.02;    // Slightly forward of eyes
+  // Position above eyes (Z = up)
+  const browZ = eyeZ + eyeR * 0.95 + browGap;
+  const browY = eyeY + headRadius * 0.01;    // Same forward position as eyes
 
   // Slight angle: inner edge lower, outer edge higher (neutral expression)
   const innerTilt = -browThickness * 0.15;
@@ -55,18 +55,19 @@ export function buildEyebrowGeometry(headRadius, headRadiusHoriz = null) {
   const indices = [];
 
   // Build one eyebrow as a quad (4 verts)
+  // Coords: X = left/right, Y = forward (face surface), Z = up (height)
   function addBrow(cx) {
     const baseIdx = positions.length / 3;
     const sign = cx > 0 ? 1 : -1;
 
     // Inner bottom
-    positions.push(cx - sign * browWidth * 0.5, browY + innerTilt, browZ);
+    positions.push(cx - sign * browWidth * 0.5, browY, browZ + innerTilt);
     // Outer bottom
-    positions.push(cx + sign * browWidth * 0.5, browY + outerTilt, browZ);
+    positions.push(cx + sign * browWidth * 0.5, browY, browZ + outerTilt);
     // Outer top
-    positions.push(cx + sign * browWidth * 0.5, browY + outerTilt + browThickness, browZ);
+    positions.push(cx + sign * browWidth * 0.5, browY, browZ + outerTilt + browThickness);
     // Inner top
-    positions.push(cx - sign * browWidth * 0.5, browY + innerTilt + browThickness, browZ);
+    positions.push(cx - sign * browWidth * 0.5, browY, browZ + innerTilt + browThickness);
 
     // Two triangles for quad
     indices.push(baseIdx, baseIdx + 1, baseIdx + 2);
@@ -93,39 +94,41 @@ export function buildNoseGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
   // Position below eyes, above mouth
-  const eyeY = headRadius * 4.80;
-  const eyeZ = headRadius * 0.28;
+  // Coords: Y = forward (face surface), Z = up (height on face)
+  const eyeY = headRadius * 5.05;    // Forward position (face surface)
+  const eyeZ = headRadius * 0.11;    // Height position (eye level)
 
-  const noseWidth = hrH * 0.05;        // Narrow, subtle wedge
-  const noseHeight = headRadius * 0.15; // Shorter vertical extent
-  const noseDepth = headRadius * 0.05;  // Subtle protrusion
+  const noseWidth = hrH * 0.04;        // Narrow, subtle wedge
+  const noseHeight = headRadius * 0.06; // Vertical extent (Z direction)
+  const noseDepth = headRadius * 0.04;  // How far forward it sticks (Y direction)
 
-  const noseTopY = eyeY - headRadius * 0.22;   // Bridge starts below eyes
-  const noseBotY = noseTopY - noseHeight;        // Tip
-  const noseZ = eyeZ + headRadius * 0.02;        // At face surface
+  const noseTopZ = eyeZ - headRadius * 0.04;   // Bridge starts below eyes (lower Z)
+  const noseBotZ = noseTopZ - noseHeight;        // Tip (lowest point)
+  const noseY = eyeY + headRadius * 0.01;        // At face surface (forward)
 
   const positions = [];
   const indices = [];
 
-  // Wedge shape: wide at base (noseBotY), narrow ridge at top
+  // Wedge shape: narrow at bridge (top Z), wider at tip (bottom Z)
+  // Coords: X = left/right, Y = forward, Z = up (height)
   const ridgeWidth = noseWidth * 0.3;  // Top ridge is narrower
 
-  // 6 vertices for the wedge
-  // Top left, top right (narrow ridge, at face surface)
-  positions.push(-ridgeWidth, noseTopY, noseZ);           // 0: top-left
-  positions.push(ridgeWidth, noseTopY, noseZ);            // 1: top-right
+  // 7 vertices for the wedge
+  // Bridge (top of nose, high Z) — at face surface
+  positions.push(-ridgeWidth, noseY, noseTopZ);           // 0: bridge-left
+  positions.push(ridgeWidth, noseY, noseTopZ);            // 1: bridge-right
 
-  // Mid-point (bridge) — slightly forward
-  const midY = noseTopY - noseHeight * 0.5;
-  positions.push(-noseWidth * 0.5, midY, noseZ + noseDepth * 0.5);  // 2: mid-left
-  positions.push(noseWidth * 0.5, midY, noseZ + noseDepth * 0.5);   // 3: mid-right
+  // Mid-point — slightly forward (higher Y)
+  const midZ = noseTopZ - noseHeight * 0.5;
+  positions.push(-noseWidth * 0.5, noseY + noseDepth * 0.5, midZ);  // 2: mid-left
+  positions.push(noseWidth * 0.5, noseY + noseDepth * 0.5, midZ);   // 3: mid-right
 
-  // Bottom (tip area) — slightly wider, most forward
-  positions.push(-noseWidth * 0.8, noseBotY, noseZ + noseDepth);   // 4: bottom-left
-  positions.push(noseWidth * 0.8, noseBotY, noseZ + noseDepth);    // 5: bottom-right
+  // Bottom (tip area, low Z) — widest, most forward (highest Y)
+  positions.push(-noseWidth * 0.8, noseY + noseDepth, noseBotZ);   // 4: bottom-left
+  positions.push(noseWidth * 0.8, noseY + noseDepth, noseBotZ);    // 5: bottom-right
 
-  // Tip center — forward point
-  positions.push(0, noseBotY + noseHeight * 0.05, noseZ + noseDepth * 1.05);  // 6: tip
+  // Tip center — most forward point
+  positions.push(0, noseY + noseDepth * 1.05, noseBotZ + noseHeight * 0.05);  // 6: tip
 
   // Front faces (2 quads as 4 triangles)
   // Upper front: 0, 1, 3, 2
@@ -157,15 +160,16 @@ export function buildNoseGeometry(headRadius, headRadiusHoriz = null) {
 export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
-  const eyeY = headRadius * 4.80;
-  const eyeZ = headRadius * 0.28;
-  const eyeX = hrH * 0.44;
+  // Coords: Y = forward (face surface), Z = up (height on face)
+  const eyeY = headRadius * 5.05;
+  const eyeZ = headRadius * 0.11;
+  const eyeX = hrH * 0.16;
 
   // Mouth sizing and position
-  const mouthWidth = eyeX * 0.70;           // Subtle width
-  const mouthThickness = headRadius * 0.018; // Thin strip
-  const mouthY = eyeY - headRadius * 0.60;   // Below nose
-  const mouthZ = eyeZ + headRadius * 0.03;   // At face surface
+  const mouthWidth = eyeX * 1.10;           // Slightly wider than eye spacing
+  const mouthThickness = headRadius * 0.012; // Thin strip (Z direction)
+  const mouthZ = eyeZ - headRadius * 0.12;   // Below nose (lower Z = lower on face)
+  const mouthY = eyeY + headRadius * 0.01;   // At face surface (forward)
 
   // Slight downward curve at corners for neutral expression
   const cornerDrop = mouthThickness * 0.6;
@@ -173,20 +177,21 @@ export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
   const positions = [];
   const indices = [];
 
-  // 6 vertices: left corner, left-mid, center (top/bottom), right-mid, right corner
-  // Top edge
-  positions.push(-mouthWidth, mouthY - cornerDrop, mouthZ);                  // 0: left corner top
-  positions.push(-mouthWidth * 0.45, mouthY + mouthThickness * 0.3, mouthZ); // 1: left-mid top
-  positions.push(0, mouthY + mouthThickness * 0.5, mouthZ);                  // 2: center top
-  positions.push(mouthWidth * 0.45, mouthY + mouthThickness * 0.3, mouthZ);  // 3: right-mid top
-  positions.push(mouthWidth, mouthY - cornerDrop, mouthZ);                   // 4: right corner top
+  // 10 vertices: left corner, left-mid, center, right-mid, right corner (top + bottom)
+  // Coords: X = left/right, Y = forward, Z = up
+  // Top edge (higher Z)
+  positions.push(-mouthWidth, mouthY, mouthZ + mouthThickness * 0.5 - cornerDrop);                  // 0: left corner top
+  positions.push(-mouthWidth * 0.45, mouthY, mouthZ + mouthThickness * 0.5 + mouthThickness * 0.3); // 1: left-mid top
+  positions.push(0, mouthY, mouthZ + mouthThickness * 0.5 + mouthThickness * 0.5);                  // 2: center top
+  positions.push(mouthWidth * 0.45, mouthY, mouthZ + mouthThickness * 0.5 + mouthThickness * 0.3);  // 3: right-mid top
+  positions.push(mouthWidth, mouthY, mouthZ + mouthThickness * 0.5 - cornerDrop);                   // 4: right corner top
 
-  // Bottom edge
-  positions.push(-mouthWidth, mouthY - cornerDrop - mouthThickness, mouthZ);                  // 5: left corner bot
-  positions.push(-mouthWidth * 0.45, mouthY - mouthThickness * 0.7, mouthZ);                  // 6: left-mid bot
-  positions.push(0, mouthY - mouthThickness * 0.5, mouthZ);                                   // 7: center bot
-  positions.push(mouthWidth * 0.45, mouthY - mouthThickness * 0.7, mouthZ);                   // 8: right-mid bot
-  positions.push(mouthWidth, mouthY - cornerDrop - mouthThickness, mouthZ);                   // 9: right corner bot
+  // Bottom edge (lower Z)
+  positions.push(-mouthWidth, mouthY, mouthZ - mouthThickness * 0.5 - cornerDrop);                  // 5: left corner bot
+  positions.push(-mouthWidth * 0.45, mouthY, mouthZ - mouthThickness * 0.7);                        // 6: left-mid bot
+  positions.push(0, mouthY, mouthZ - mouthThickness * 0.5);                                         // 7: center bot
+  positions.push(mouthWidth * 0.45, mouthY, mouthZ - mouthThickness * 0.7);                         // 8: right-mid bot
+  positions.push(mouthWidth, mouthY, mouthZ - mouthThickness * 0.5 - cornerDrop);                   // 9: right corner bot
 
   // 4 quads (8 triangles): left-corner-to-leftmid, leftmid-to-center, center-to-rightmid, rightmid-to-rightcorner
   for (let i = 0; i < 4; i++) {
@@ -211,33 +216,36 @@ export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
 export function buildEarGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
-  const eyeY = headRadius * 4.80;
+  // Coords: Y = forward, Z = up (height)
+  const eyeZ = headRadius * 0.11;
 
   // Ear position: at the sides of the head, roughly at eye level
-  const earX = hrH * 0.75;             // At head edge
-  const earY = eyeY - headRadius * 0.08;  // Slightly below eye line
-  const earZ = headRadius * 0.01;      // Near face center
+  // Head width is ~0.56, so head edge X is ~0.28
+  const earX = 0.26;                    // At head edge (actual head ~±0.28)
+  const earY = headRadius * 4.50;       // Side of head (less forward than face front)
+  const earZ = eyeZ - headRadius * 0.01;  // At eye level
 
-  const earWidth = hrH * 0.05;         // Subtle protrusion
-  const earHeight = headRadius * 0.14;  // Vertical size
-  const earDepth = headRadius * 0.025;  // Front-to-back thickness
+  const earWidth = 0.03;               // Subtle protrusion (absolute, ~3cm)
+  const earHeight = headRadius * 0.06;  // Vertical size (Z direction)
+  const earDepth = headRadius * 0.02;   // Front-to-back (Y direction)
 
   const positions = [];
   const indices = [];
 
+  // Coords: X = left/right, Y = forward, Z = up (height)
   function addEar(side) {
     const baseIdx = positions.length / 3;
     const sx = side * earX;
     const dir = side;  // +1 for right, -1 for left
 
-    // 4 vertices: base top, base bottom, outer top, outer bottom
-    positions.push(sx, earY + earHeight * 0.5, earZ + earDepth);   // 0: base top-front
-    positions.push(sx, earY - earHeight * 0.5, earZ + earDepth);   // 1: base bottom-front
-    positions.push(sx, earY - earHeight * 0.5, earZ - earDepth);   // 2: base bottom-back
-    positions.push(sx, earY + earHeight * 0.5, earZ - earDepth);   // 3: base top-back
+    // 5 vertices: 4 base points on head surface + 1 outer tip
+    positions.push(sx, earY + earDepth, earZ + earHeight * 0.5);   // 0: base front-top
+    positions.push(sx, earY + earDepth, earZ - earHeight * 0.5);   // 1: base front-bottom
+    positions.push(sx, earY - earDepth, earZ - earHeight * 0.5);   // 2: base back-bottom
+    positions.push(sx, earY - earDepth, earZ + earHeight * 0.5);   // 3: base back-top
 
-    // Outer point (ear tip, sticks outward)
-    positions.push(sx + dir * earWidth, earY + earHeight * 0.15, earZ);  // 4: outer tip
+    // Outer point (ear tip, sticks outward in X)
+    positions.push(sx + dir * earWidth, earY, earZ + earHeight * 0.15);  // 4: outer tip
 
     // Front face
     indices.push(baseIdx + 0, baseIdx + 1, baseIdx + 4);
