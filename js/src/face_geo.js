@@ -35,7 +35,7 @@ export function buildEyebrowGeometry(headRadius, headRadiusHoriz = null) {
   // Match eye positioning from eye_geo.js
   const eyeR = hrH * 0.13;
   const eyeX = hrH * 0.16;
-  const eyeY = headRadius * 5.05;
+  const eyeY = headRadius * 5.58;
   const eyeZ = headRadius * 0.11;
 
   // Eyebrow sizing
@@ -95,7 +95,7 @@ export function buildNoseGeometry(headRadius, headRadiusHoriz = null) {
 
   // Position below eyes, above mouth
   // Coords: Y = forward (face surface), Z = up (height on face)
-  const eyeY = headRadius * 5.05;    // Forward position (face surface)
+  const eyeY = headRadius * 5.58;    // Forward position (face surface)
   const eyeZ = headRadius * 0.11;    // Height position (eye level)
 
   const noseWidth = hrH * 0.04;        // Narrow, subtle wedge
@@ -161,14 +161,14 @@ export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
   // Coords: Y = forward (face surface), Z = up (height on face)
-  const eyeY = headRadius * 5.05;
+  const eyeY = headRadius * 5.58;
   const eyeZ = headRadius * 0.11;
   const eyeX = hrH * 0.16;
 
   // Mouth sizing and position
   const mouthWidth = eyeX * 1.10;           // Slightly wider than eye spacing
   const mouthThickness = headRadius * 0.012; // Thin strip (Z direction)
-  const mouthZ = eyeZ - headRadius * 0.12;   // Below nose (lower Z = lower on face)
+  const mouthZ = eyeZ - headRadius * 0.05;   // Below nose but still on face (face bottom ~Z=0.063)
   const mouthY = eyeY + headRadius * 0.01;   // At face surface (forward)
 
   // Slight downward curve at corners for neutral expression
@@ -222,7 +222,7 @@ export function buildEarGeometry(headRadius, headRadiusHoriz = null) {
   // Ear position: at the sides of the head, roughly at eye level
   // Head width is ~0.56, so head edge X is ~0.28
   const earX = 0.26;                    // At head edge (actual head ~±0.28)
-  const earY = headRadius * 4.50;       // Side of head (less forward than face front)
+  const earY = headRadius * 5.20;       // Side of head (slightly behind face front)
   const earZ = eyeZ - headRadius * 0.01;  // At eye level
 
   const earWidth = 0.03;               // Subtle protrusion (absolute, ~3cm)

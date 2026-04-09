@@ -247,7 +247,7 @@ function buildCap(geometry, headZ, headR, hScale = 1.20, capLevels = null, headR
 // ─── Style Builders (Modular) ───────────────────────────────────────────────
 
 function buildBuzzed(geometry, headZ, headR, headRHoriz = null) {
-  const rings = buildCap(geometry, headZ, headR, 1.22, CAP_LEVELS, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.17, CAP_LEVELS, headRHoriz);
   const hl = rings[0];
 
   // Single row around back for nape coverage
@@ -267,7 +267,7 @@ function buildShort(geometry, headZ, headR, headRHoriz = null) {
     [0.92, 0.18, 0.16],   // crown apex
   ];
 
-  const rings = buildCap(geometry, headZ, headR, 1.28, shortCapLevels, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.22, shortCapLevels, headRHoriz);
   const hl = rings[0];
 
   // Back-half panel (3 rows)
@@ -311,7 +311,7 @@ function buildLong(geometry, headZ, headR, headRHoriz = null) {
     [0.94, 0.20, 0.18],
   ];
 
-  const rings = buildCap(geometry, headZ, headR, 1.30, longCapLevels, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.24, longCapLevels, headRHoriz);
   const hl = rings[0];
 
   // Back curtain (6 rows for long hair)
@@ -360,7 +360,7 @@ function buildSpiky(geometry, headZ, headR, headRHoriz = null) {
     [0.88, 0.30, 0.28],   // small crown
   ];
 
-  const rings = buildCap(geometry, headZ, headR, 1.25, spikyCapLevels, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.20, spikyCapLevels, headRHoriz);
   const hl = rings[0];
 
   // Back panel

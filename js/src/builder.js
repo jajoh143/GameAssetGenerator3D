@@ -152,7 +152,7 @@ export async function buildHumanoid(cfg) {
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
-      hairMesh.scale.set(0.90, 0.90, 0.90);  // Increased from 0.725 for better volume
+      hairMesh.scale.set(0.78, 0.78, 0.78);  // Moderate volume increase from original 0.725
 
       console.log(`[Hair] Hair added to Head bone with ${hairGeo.attributes.position.count} vertices`);
     }
