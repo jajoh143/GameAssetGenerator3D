@@ -1,204 +1,252 @@
 /**
- * Professional flat-disc eye geometry builder for Three.js.
- * Based on GameAssetGenerator3D's Blender eye system.
+ * Improved eye geometry builder for Three.js.
  *
- * Each eye is a simple flat elliptical disc (not 3D sphere):
- * - Black matte disc for the eye itself
- * - Separate white highlight for shine/expression
+ * Each eye is a multi-layer system:
+ * - White sclera (slightly convex dome)
+ * - Colored iris ring
+ * - Black pupil disc
+ * - White highlight for shine/expression
  *
- * Total: ~28 faces (16 per eye + 12 highlights)
+ * Designed for cartoony low-poly characters with expressive, readable eyes.
  */
 
 import * as THREE from 'three';
 
+// ── Eye color palette ───────────────────────────────────────────────────────
+
+export const EYE_COLORS = {
+  brown:  [0.35, 0.20, 0.10],
+  blue:   [0.20, 0.45, 0.75],
+  green:  [0.22, 0.50, 0.28],
+  hazel:  [0.50, 0.38, 0.18],
+  grey:   [0.45, 0.48, 0.50],
+};
+
+// ── Geometry helpers ────────────────────────────────────────────────────────
+
 /**
- * Create vertices in an elliptical ring.
- * Used for both eye disc and highlight geometry.
+ * Create a shallow dome (convex disc) with triangle fan.
+ * center bulges forward in +Z by `depth`.
  */
-function createEllipticalRing(centerX, centerY, centerZ, rx, ry, segments = 10) {
-  const vertices = [];
+function createDomeGeometry(centerX, centerY, centerZ, rx, ry, depth, segments) {
+  const positions = [];
+  const indices = [];
+
+  // Center vertex — pushed forward
+  const cIdx = 0;
+  positions.push(centerX, centerY, centerZ + depth);
+
+  // Ring vertices — at base depth
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
-    vertices.push(new THREE.Vector3(
+    positions.push(
       centerX + rx * Math.cos(angle),
-      centerY,
-      centerZ + ry * Math.sin(angle)
-    ));
+      centerY + ry * Math.sin(angle),
+      centerZ
+    );
   }
-  return vertices;
+
+  // Triangle fan
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    indices.push(cIdx, 1 + i, 1 + next);
+  }
+
+  return { positions, indices };
 }
 
 /**
- * Create geometry for the eye disc itself.
- * Simple flat ellipse with triangle fan.
+ * Create an annular ring (iris) between inner and outer radius.
  */
-function createEyeDiscGeometry(eyeX, eyeY, eyeZ, rx, ry, segments = 10) {
-  const geometry = new THREE.BufferGeometry();
+function createRingGeometry(centerX, centerY, centerZ, innerRx, innerRy, outerRx, outerRy, segments) {
   const positions = [];
   const indices = [];
 
-  // Center vertex for left eye
-  const leftCenter = positions.length / 3;
-  positions.push(-eyeX, eyeY, eyeZ);
-
-  // Ring vertices for left eye — disc in X-Y plane, normal points in +Z (toward viewer)
-  const leftRing = [];
+  // Inner ring vertices
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
-    leftRing.push(positions.length / 3);
     positions.push(
-      -eyeX + rx * Math.cos(angle),
-      eyeY + ry * Math.sin(angle),
-      eyeZ
+      centerX + innerRx * Math.cos(angle),
+      centerY + innerRy * Math.sin(angle),
+      centerZ
     );
   }
 
-  // Triangle fan for left eye
-  for (let i = 0; i < segments; i++) {
-    const next = (i + 1) % segments;
-    indices.push(leftCenter, leftRing[i], leftRing[next]);
-  }
-
-  // Center vertex for right eye
-  const rightCenter = positions.length / 3;
-  positions.push(eyeX, eyeY, eyeZ);
-
-  // Ring vertices for right eye — same X-Y plane orientation
-  const rightRing = [];
+  // Outer ring vertices
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
-    rightRing.push(positions.length / 3);
     positions.push(
-      eyeX + rx * Math.cos(angle),
-      eyeY + ry * Math.sin(angle),
-      eyeZ
+      centerX + outerRx * Math.cos(angle),
+      centerY + outerRy * Math.sin(angle),
+      centerZ
     );
   }
 
-  // Triangle fan for right eye — same winding as left (both face +Z)
+  // Quad strip between inner and outer rings
   for (let i = 0; i < segments; i++) {
     const next = (i + 1) % segments;
-    indices.push(rightCenter, rightRing[i], rightRing[next]);
+    const inner0 = i;
+    const inner1 = next;
+    const outer0 = segments + i;
+    const outer1 = segments + next;
+    indices.push(inner0, outer0, outer1);
+    indices.push(inner0, outer1, inner1);
   }
 
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+  return { positions, indices };
+}
+
+/**
+ * Merge two eye geometries (left + right) into one BufferGeometry.
+ */
+function mergeEyePair(buildFn, eyeX, eyeY, eyeZ, ...args) {
+  const left = buildFn(-eyeX, eyeY, eyeZ, ...args);
+  const right = buildFn(eyeX, eyeY, eyeZ, ...args);
+
+  // Offset right indices
+  const leftVertCount = left.positions.length / 3;
+  const mergedPositions = [...left.positions, ...right.positions];
+  const mergedIndices = [...left.indices, ...right.indices.map(i => i + leftVertCount)];
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(mergedPositions), 3));
+  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(mergedIndices), 1));
   geometry.computeVertexNormals();
-
   return geometry;
 }
 
 /**
- * Create geometry for eye highlights (white glints).
- * Small highlights positioned in upper-right of each eye.
- */
-function createHighlightGeometry(eyeX, eyeY, eyeZ, highlightR, eyeRy, segments = 6) {
-  const geometry = new THREE.BufferGeometry();
-  const positions = [];
-  const indices = [];
-
-  // Highlight in X-Y plane, slightly in front of eye disc (+Z), upper-inner quadrant
-  const highlightY = eyeY + eyeRy * 0.45;   // Upper portion of eye (Y = up)
-  const highlightZ = eyeZ + highlightR * 0.05;  // Slightly forward of eye disc
-
-  // Left eye highlight
-  const leftHlCenter = positions.length / 3;
-  positions.push(-eyeX + eyeX * 0.35, highlightY, highlightZ);
-
-  const leftHlRing = [];
-  for (let i = 0; i < segments; i++) {
-    const angle = (2 * Math.PI * i) / segments;
-    leftHlRing.push(positions.length / 3);
-    positions.push(
-      -eyeX + eyeX * 0.35 + highlightR * Math.cos(angle),
-      highlightY + highlightR * Math.sin(angle),
-      highlightZ
-    );
-  }
-
-  // Triangle fan for left highlight
-  for (let i = 0; i < segments; i++) {
-    const next = (i + 1) % segments;
-    indices.push(leftHlCenter, leftHlRing[i], leftHlRing[next]);
-  }
-
-  // Right eye highlight
-  const rightHlCenter = positions.length / 3;
-  positions.push(eyeX - eyeX * 0.35, highlightY, highlightZ);
-
-  const rightHlRing = [];
-  for (let i = 0; i < segments; i++) {
-    const angle = (2 * Math.PI * i) / segments;
-    rightHlRing.push(positions.length / 3);
-    positions.push(
-      eyeX - eyeX * 0.35 + highlightR * Math.cos(angle),
-      highlightY + highlightR * Math.sin(angle),
-      highlightZ
-    );
-  }
-
-  // Triangle fan for right highlight — same winding as left (both face +Z)
-  for (let i = 0; i < segments; i++) {
-    const next = (i + 1) % segments;
-    indices.push(rightHlCenter, rightHlRing[i], rightHlRing[next]);
-  }
-
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-  geometry.computeVertexNormals();
-
-  return geometry;
-}
-
-/**
- * Build eye geometry for the character.
- * Returns { eyeDiscGeo, highlightGeo }
+ * Build all eye geometry layers for the character.
  *
  * @param {number} headRadius - Head radius (vertical)
  * @param {number} headRadiusHoriz - Head radius (horizontal, defaults to headRadius)
- * @returns {Object} { eyeDiscGeometry, highlightGeometry }
+ * @returns {Object} { scleraGeometry, irisGeometry, pupilGeometry, highlightGeometry }
  */
 export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
-  // Eye sizing and positioning
-  // Coordinate system: Y = up (height), Z = forward (toward viewer), X = left/right
-  const eyeR = hrH * 0.12;        // 12% of horizontal head radius (smaller)
-  const rx = eyeR * 1.25;         // Slightly wider than tall
-  const ry = eyeR * 1.05;         // Slightly taller
-  const eyeX = hrH * 0.46;        // Lateral separation (wider apart)
-  const eyeY = headRadius * 5.0;  // Height: in the face region (hair base ≈ headRadius*5.5)
-  const eyeZ = headRadius * 0.22; // Forward: at face surface (head bone Z=1.52, face front Z≈1.74)
+  // ── Sizing — larger for cartoony appeal ──
+  const eyeR = hrH * 0.18;          // 18% of horizontal head radius (up from 12%)
+  const scleraRx = eyeR * 1.30;     // Wider than tall for natural shape
+  const scleraRy = eyeR * 1.10;
 
-  // Highlight sizing
-  const highlightR = eyeR * 0.18; // Small glint
+  // ── Positioning ──
+  const eyeX = hrH * 0.42;          // Lateral separation (slightly closer together)
+  const eyeY = headRadius * 4.85;   // Slightly lower for cartoony appeal
+  const eyeZ = headRadius * 0.38;   // Further forward so eyes sit on face surface
 
-  // Create geometries
-  const eyeDiscGeo = createEyeDiscGeometry(eyeX, eyeY, eyeZ, rx, ry, 10);
-  const highlightGeo = createHighlightGeometry(eyeX, eyeY, eyeZ, highlightR, ry, 6);
+  // ── Sclera (white dome) ──
+  const scleraDomeDepth = eyeR * 0.15;  // Slight convexity
+  const scleraSegments = 12;
+  const scleraGeometry = mergeEyePair(
+    createDomeGeometry,
+    eyeX, eyeY, eyeZ,
+    scleraRx, scleraRy, scleraDomeDepth, scleraSegments
+  );
+
+  // ── Iris (colored ring) ──
+  const irisInnerRx = scleraRx * 0.42;  // Pupil hole
+  const irisInnerRy = scleraRy * 0.42;
+  const irisOuterRx = scleraRx * 0.72;  // Iris outer edge
+  const irisOuterRy = scleraRy * 0.72;
+  const irisZ = eyeZ + scleraDomeDepth * 0.6;  // Sits on top of sclera dome
+  const irisSegments = 10;
+  const irisGeometry = mergeEyePair(
+    createRingGeometry,
+    eyeX, eyeY, irisZ,
+    irisInnerRx, irisInnerRy, irisOuterRx, irisOuterRy, irisSegments
+  );
+
+  // ── Pupil (black center disc) ──
+  const pupilRx = irisInnerRx;
+  const pupilRy = irisInnerRy;
+  const pupilZ = irisZ + 0.001;  // Tiny offset to prevent z-fighting
+  const pupilDepth = 0;
+  const pupilSegments = 8;
+  const pupilGeometry = mergeEyePair(
+    createDomeGeometry,
+    eyeX, eyeY, pupilZ,
+    pupilRx, pupilRy, pupilDepth, pupilSegments
+  );
+
+  // ── Highlight (white glint) ──
+  const highlightR = eyeR * 0.28;   // Larger highlight for more life
+  const highlightOffsetX = scleraRx * 0.28;   // Upper-inner quadrant
+  const highlightOffsetY = scleraRy * 0.30;
+  const highlightZ = irisZ + 0.003;
+
+  // Build highlights manually (different position per eye)
+  const hlSegments = 6;
+  const leftHl = createDomeGeometry(
+    -eyeX + highlightOffsetX, eyeY + highlightOffsetY, highlightZ,
+    highlightR, highlightR, 0, hlSegments
+  );
+  const rightHl = createDomeGeometry(
+    eyeX - highlightOffsetX, eyeY + highlightOffsetY, highlightZ,
+    highlightR, highlightR, 0, hlSegments
+  );
+
+  const hlLeftCount = leftHl.positions.length / 3;
+  const highlightGeometry = new THREE.BufferGeometry();
+  highlightGeometry.setAttribute('position', new THREE.BufferAttribute(
+    new Float32Array([...leftHl.positions, ...rightHl.positions]), 3
+  ));
+  highlightGeometry.setIndex(new THREE.BufferAttribute(
+    new Uint32Array([...leftHl.indices, ...rightHl.indices.map(i => i + hlLeftCount)]), 1
+  ));
+  highlightGeometry.computeVertexNormals();
 
   return {
-    eyeDiscGeometry: eyeDiscGeo,
-    highlightGeometry: highlightGeo
+    scleraGeometry,
+    irisGeometry,
+    pupilGeometry,
+    highlightGeometry,
   };
 }
 
 /**
- * Create materials for eyes.
- * Returns { eyeDiscMaterial, highlightMaterial }
+ * Create materials for the multi-layer eye system.
+ * @param {string|number[]} eyeColor - Named color or [r,g,b] array
+ * @returns {Object} { scleraMaterial, irisMaterial, pupilMaterial, highlightMaterial }
  */
-export function createEyeMaterials() {
-  // Matte black material for eye disc
-  const eyeDiscMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0.01, 0.01, 0.02),
-    roughness: 1.0,
+export function createEyeMaterials(eyeColor = 'brown') {
+  // Resolve iris color
+  let irisRgb;
+  if (Array.isArray(eyeColor)) {
+    irisRgb = eyeColor;
+  } else {
+    irisRgb = EYE_COLORS[eyeColor] ?? EYE_COLORS.brown;
+  }
+
+  // White sclera
+  const scleraMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0.95, 0.95, 0.95),
+    roughness: 0.3,
     metalness: 0.0,
-    emissive: new THREE.Color(0.02, 0.02, 0.03),
+    side: THREE.DoubleSide,
+  });
+
+  // Colored iris
+  const irisMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(irisRgb[0], irisRgb[1], irisRgb[2]),
+    roughness: 0.4,
+    metalness: 0.0,
+    emissive: new THREE.Color(irisRgb[0] * 0.15, irisRgb[1] * 0.15, irisRgb[2] * 0.15),
     emissiveIntensity: 0.5,
     side: THREE.DoubleSide,
   });
 
-  // Bright white emissive material for highlight
+  // Black pupil
+  const pupilMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0.02, 0.02, 0.03),
+    roughness: 0.8,
+    metalness: 0.0,
+    emissive: new THREE.Color(0.01, 0.01, 0.02),
+    emissiveIntensity: 0.3,
+    side: THREE.DoubleSide,
+  });
+
+  // Bright white highlight
   const highlightMat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(1.0, 1.0, 1.0),
     roughness: 0.0,
@@ -209,7 +257,9 @@ export function createEyeMaterials() {
   });
 
   return {
-    eyeDiscMaterial: eyeDiscMat,
-    highlightMaterial: highlightMat
+    scleraMaterial: scleraMat,
+    irisMaterial: irisMat,
+    pupilMaterial: pupilMat,
+    highlightMaterial: highlightMat,
   };
 }

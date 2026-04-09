@@ -247,7 +247,7 @@ function buildCap(geometry, headZ, headR, hScale = 1.20, capLevels = null, headR
 // ─── Style Builders (Modular) ───────────────────────────────────────────────
 
 function buildBuzzed(geometry, headZ, headR, headRHoriz = null) {
-  const rings = buildCap(geometry, headZ, headR, 1.15, CAP_LEVELS, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.22, CAP_LEVELS, headRHoriz);
   const hl = rings[0];
 
   // Single row around back for nape coverage
@@ -267,7 +267,7 @@ function buildShort(geometry, headZ, headR, headRHoriz = null) {
     [0.92, 0.18, 0.16],   // crown apex
   ];
 
-  const rings = buildCap(geometry, headZ, headR, 1.20, shortCapLevels, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.28, shortCapLevels, headRHoriz);
   const hl = rings[0];
 
   // Back-half panel (3 rows)
@@ -275,6 +275,17 @@ function buildShort(geometry, headZ, headR, headRHoriz = null) {
     [-headR * 0.16, 0.97, 0.95],
     [-headR * 0.15, 0.93, 0.90],
     [-headR * 0.13, 0.88, 0.85],
+  ], headR);
+
+  // Side panels for lateral volume
+  createPanelRows(geometry, leftVerts(hl), [
+    [-headR * 0.14, 1.02, 0.96],
+    [-headR * 0.12, 0.98, 0.92],
+  ], headR);
+
+  createPanelRows(geometry, rightVerts(hl), [
+    [-headR * 0.14, 1.02, 0.96],
+    [-headR * 0.12, 0.98, 0.92],
   ], headR);
 
   // Fringe clumps (5 clumps across forehead)
@@ -300,7 +311,7 @@ function buildLong(geometry, headZ, headR, headRHoriz = null) {
     [0.94, 0.20, 0.18],
   ];
 
-  const rings = buildCap(geometry, headZ, headR, 1.22, longCapLevels, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.30, longCapLevels, headRHoriz);
   const hl = rings[0];
 
   // Back curtain (6 rows for long hair)
@@ -311,6 +322,19 @@ function buildLong(geometry, headZ, headR, headRHoriz = null) {
     [-headR * 0.26, 0.92, 0.88],
     [-headR * 0.30, 0.90, 0.86],
     [-headR * 0.32, 0.88, 0.84],
+  ], headR);
+
+  // Side panels for lateral volume on long hair
+  createPanelRows(geometry, leftVerts(hl), [
+    [-headR * 0.16, 1.04, 0.97],
+    [-headR * 0.18, 1.02, 0.94],
+    [-headR * 0.20, 1.00, 0.91],
+  ], headR);
+
+  createPanelRows(geometry, rightVerts(hl), [
+    [-headR * 0.16, 1.04, 0.97],
+    [-headR * 0.18, 1.02, 0.94],
+    [-headR * 0.20, 1.00, 0.91],
   ], headR);
 
   // Longer fringe
@@ -336,7 +360,7 @@ function buildSpiky(geometry, headZ, headR, headRHoriz = null) {
     [0.88, 0.30, 0.28],   // small crown
   ];
 
-  const rings = buildCap(geometry, headZ, headR, 1.18, spikyCapLevels, headRHoriz);
+  const rings = buildCap(geometry, headZ, headR, 1.25, spikyCapLevels, headRHoriz);
   const hl = rings[0];
 
   // Back panel

@@ -99,6 +99,16 @@
                 <option value="dark">Dark</option>
               </select>
             </div>
+            <div class="field">
+              <label for="eye_color">Eye Color</label>
+              <select id="eye_color" name="eye_color">
+                <option value="brown" selected>Brown</option>
+                <option value="blue">Blue</option>
+                <option value="green">Green</option>
+                <option value="hazel">Hazel</option>
+                <option value="grey">Grey</option>
+              </select>
+            </div>
             <div class="field-row">
               <div class="field">
                 <label for="hair_style">Hair Style</label>
@@ -544,7 +554,7 @@ function setButtons(disabled) {
 function collectFormData() {
   const data = {};
 
-  ['preset','build','gender','skin_tone','hair_style','hair_color','lod',
+  ['preset','build','gender','skin_tone','eye_color','hair_style','hair_color','lod',
    'clothing_top','clothing_bottom','top_color','bottom_color'].forEach(id => {
     const el = document.getElementById(id);
     if (el) data[id] = el.value;

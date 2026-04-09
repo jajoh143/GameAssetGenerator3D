@@ -57,6 +57,7 @@ function cfgFromBody(data, animations = 'all') {
     skinTone:     data.skin_tone    ?? 'tan',
     hairStyle:    data.hair_style   ?? 'short',
     hairColor:    data.hair_color   ?? 'brown',
+    eyeColor:     data.eye_color    ?? 'brown',
     clothing,
     clothingColor,
     buttons,
