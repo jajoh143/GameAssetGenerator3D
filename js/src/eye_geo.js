@@ -41,15 +41,15 @@ function createEyeDiscGeometry(eyeX, eyeY, eyeZ, rx, ry, segments = 10) {
   const leftCenter = positions.length / 3;
   positions.push(-eyeX, eyeY, eyeZ);
 
-  // Ring vertices for left eye
+  // Ring vertices for left eye — disc in X-Y plane, normal points in +Z (toward viewer)
   const leftRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     leftRing.push(positions.length / 3);
     positions.push(
       -eyeX + rx * Math.cos(angle),
-      eyeY,
-      eyeZ + ry * Math.sin(angle)
+      eyeY + ry * Math.sin(angle),
+      eyeZ
     );
   }
 
@@ -63,22 +63,22 @@ function createEyeDiscGeometry(eyeX, eyeY, eyeZ, rx, ry, segments = 10) {
   const rightCenter = positions.length / 3;
   positions.push(eyeX, eyeY, eyeZ);
 
-  // Ring vertices for right eye
+  // Ring vertices for right eye — same X-Y plane orientation
   const rightRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     rightRing.push(positions.length / 3);
     positions.push(
       eyeX + rx * Math.cos(angle),
-      eyeY,
-      eyeZ + ry * Math.sin(angle)
+      eyeY + ry * Math.sin(angle),
+      eyeZ
     );
   }
 
-  // Triangle fan for right eye (reversed winding for correct normals)
+  // Triangle fan for right eye — same winding as left (both face +Z)
   for (let i = 0; i < segments; i++) {
     const next = (i + 1) % segments;
-    indices.push(rightCenter, rightRing[next], rightRing[i]);
+    indices.push(rightCenter, rightRing[i], rightRing[next]);
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
@@ -97,13 +97,13 @@ function createHighlightGeometry(eyeX, eyeY, eyeZ, highlightR, eyeRy, segments =
   const positions = [];
   const indices = [];
 
-  // Highlight positioned in upper-right corner, forward of eye disc
-  const highlightZ = eyeZ + eyeRy * 0.45;  // High in the eye
-  const highlightYOffset = highlightR * 0.8;  // Well in front
+  // Highlight in X-Y plane, slightly in front of eye disc (+Z), upper-inner quadrant
+  const highlightY = eyeY + eyeRy * 0.45;   // Upper portion of eye (Y = up)
+  const highlightZ = eyeZ + highlightR * 0.05;  // Slightly forward of eye disc
 
   // Left eye highlight
   const leftHlCenter = positions.length / 3;
-  positions.push(-eyeX + eyeX * 0.35, eyeY - highlightYOffset, highlightZ);
+  positions.push(-eyeX + eyeX * 0.35, highlightY, highlightZ);
 
   const leftHlRing = [];
   for (let i = 0; i < segments; i++) {
@@ -111,8 +111,8 @@ function createHighlightGeometry(eyeX, eyeY, eyeZ, highlightR, eyeRy, segments =
     leftHlRing.push(positions.length / 3);
     positions.push(
       -eyeX + eyeX * 0.35 + highlightR * Math.cos(angle),
-      eyeY - highlightYOffset,
-      highlightZ + highlightR * Math.sin(angle)
+      highlightY + highlightR * Math.sin(angle),
+      highlightZ
     );
   }
 
@@ -124,7 +124,7 @@ function createHighlightGeometry(eyeX, eyeY, eyeZ, highlightR, eyeRy, segments =
 
   // Right eye highlight
   const rightHlCenter = positions.length / 3;
-  positions.push(eyeX - eyeX * 0.35, eyeY - highlightYOffset, highlightZ);
+  positions.push(eyeX - eyeX * 0.35, highlightY, highlightZ);
 
   const rightHlRing = [];
   for (let i = 0; i < segments; i++) {
@@ -132,15 +132,15 @@ function createHighlightGeometry(eyeX, eyeY, eyeZ, highlightR, eyeRy, segments =
     rightHlRing.push(positions.length / 3);
     positions.push(
       eyeX - eyeX * 0.35 + highlightR * Math.cos(angle),
-      eyeY - highlightYOffset,
-      highlightZ + highlightR * Math.sin(angle)
+      highlightY + highlightR * Math.sin(angle),
+      highlightZ
     );
   }
 
-  // Triangle fan for right highlight (reversed winding)
+  // Triangle fan for right highlight — same winding as left (both face +Z)
   for (let i = 0; i < segments; i++) {
     const next = (i + 1) % segments;
-    indices.push(rightHlCenter, rightHlRing[next], rightHlRing[i]);
+    indices.push(rightHlCenter, rightHlRing[i], rightHlRing[next]);
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
@@ -162,14 +162,13 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
   // Eye sizing and positioning
-  const eyeR = hrH * 0.18;        // 18% of horizontal head radius
-  const rx = eyeR * 1.25;         // Slightly wider
+  // Coordinate system: Y = up (height), Z = forward (toward viewer), X = left/right
+  const eyeR = hrH * 0.12;        // 12% of horizontal head radius (smaller)
+  const rx = eyeR * 1.25;         // Slightly wider than tall
   const ry = eyeR * 1.05;         // Slightly taller
-  const eyeX = hrH * 0.36;        // Wide lateral separation
-  const eyeZ = headRadius * 0.15; // Above head center (chibi style)
-
-  // Fallback Y positioning if face_y isn't available
-  const eyeY = -(hrH * 0.62);     // Spherical approximation
+  const eyeX = hrH * 0.46;        // Lateral separation (wider apart)
+  const eyeY = headRadius * 5.0;  // Height: in the face region (hair base ≈ headRadius*5.5)
+  const eyeZ = headRadius * 0.22; // Forward: at face surface (head bone Z=1.52, face front Z≈1.74)
 
   // Highlight sizing
   const highlightR = eyeR * 0.18; // Small glint
@@ -196,6 +195,7 @@ export function createEyeMaterials() {
     metalness: 0.0,
     emissive: new THREE.Color(0.02, 0.02, 0.03),
     emissiveIntensity: 0.5,
+    side: THREE.DoubleSide,
   });
 
   // Bright white emissive material for highlight
@@ -205,6 +205,7 @@ export function createEyeMaterials() {
     metalness: 0.0,
     emissive: new THREE.Color(1.0, 1.0, 1.0),
     emissiveIntensity: 2.0,
+    side: THREE.DoubleSide,
   });
 
   return {

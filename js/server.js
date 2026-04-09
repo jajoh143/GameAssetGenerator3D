@@ -40,13 +40,15 @@ async function runJob(jobId, cfgFn, outputPath) {
 }
 
 function cfgFromBody(data, animations = 'all') {
-  const top    = data.clothing_top    ?? 'short_sleeve';
-  const bottom = data.clothing_bottom ?? 'jeans';
+  const top    = data.clothing_top    ?? 'none';
+  const bottom = data.clothing_bottom ?? 'none';
   const clothing = [top, bottom].filter(c => c && c !== 'none');
 
   const clothingColor = {};
   if (data.top_color    && top    !== 'none') clothingColor[top]    = data.top_color;
   if (data.bottom_color && bottom !== 'none') clothingColor[bottom] = data.bottom_color;
+
+  const buttons = data.buttons === 'true' || data.buttons === '1' || data.buttons === true;
 
   return resolveConfig({
     preset:       data.preset       ?? 'average',
@@ -57,6 +59,7 @@ function cfgFromBody(data, animations = 'all') {
     hairColor:    data.hair_color   ?? 'brown',
     clothing,
     clothingColor,
+    buttons,
     animations,
     lod:          data.lod          ?? 'mid',
   });
