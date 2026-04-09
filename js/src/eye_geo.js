@@ -125,19 +125,19 @@ function mergeEyePair(buildFn, eyeX, eyeY, eyeZ, ...args) {
 export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
-  // ── Sizing — larger for cartoony appeal ──
-  const eyeR = hrH * 0.18;          // 18% of horizontal head radius (up from 12%)
-  const scleraRx = eyeR * 1.30;     // Wider than tall for natural shape
-  const scleraRy = eyeR * 1.10;
+  // ── Sizing — moderately larger for cartoony appeal ──
+  const eyeR = hrH * 0.14;          // 14% of horizontal head radius (up from 12%)
+  const scleraRx = eyeR * 1.20;     // Slightly wider than tall
+  const scleraRy = eyeR * 1.0;
 
   // ── Positioning ──
-  const eyeX = hrH * 0.42;          // Lateral separation (slightly closer together)
-  const eyeY = headRadius * 4.85;   // Slightly lower for cartoony appeal
-  const eyeZ = headRadius * 0.38;   // Further forward so eyes sit on face surface
+  const eyeX = hrH * 0.44;          // Lateral separation
+  const eyeY = headRadius * 4.80;   // Lower on face for cartoony appeal
+  const eyeZ = headRadius * 0.28;   // Forward — on face surface
 
   // ── Sclera (white dome) ──
-  const scleraDomeDepth = eyeR * 0.15;  // Slight convexity
-  const scleraSegments = 12;
+  const scleraDomeDepth = eyeR * 0.10;  // Very slight convexity
+  const scleraSegments = 10;
   const scleraGeometry = mergeEyePair(
     createDomeGeometry,
     eyeX, eyeY, eyeZ,
@@ -145,11 +145,11 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   );
 
   // ── Iris (colored ring) ──
-  const irisInnerRx = scleraRx * 0.42;  // Pupil hole
-  const irisInnerRy = scleraRy * 0.42;
-  const irisOuterRx = scleraRx * 0.72;  // Iris outer edge
-  const irisOuterRy = scleraRy * 0.72;
-  const irisZ = eyeZ + scleraDomeDepth * 0.6;  // Sits on top of sclera dome
+  const irisInnerRx = scleraRx * 0.40;  // Pupil hole
+  const irisInnerRy = scleraRy * 0.40;
+  const irisOuterRx = scleraRx * 0.70;  // Iris outer edge
+  const irisOuterRy = scleraRy * 0.70;
+  const irisZ = eyeZ + scleraDomeDepth * 0.5;  // Sits on top of sclera dome
   const irisSegments = 10;
   const irisGeometry = mergeEyePair(
     createRingGeometry,
@@ -170,9 +170,9 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   );
 
   // ── Highlight (white glint) ──
-  const highlightR = eyeR * 0.28;   // Larger highlight for more life
-  const highlightOffsetX = scleraRx * 0.28;   // Upper-inner quadrant
-  const highlightOffsetY = scleraRy * 0.30;
+  const highlightR = eyeR * 0.22;   // Visible but not overpowering
+  const highlightOffsetX = scleraRx * 0.25;   // Upper-inner quadrant
+  const highlightOffsetY = scleraRy * 0.28;
   const highlightZ = irisZ + 0.003;
 
   // Build highlights manually (different position per eye)
