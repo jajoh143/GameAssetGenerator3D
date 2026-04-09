@@ -134,7 +134,7 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   // Y = forward (toward face), Z = up (height on face), X = left/right
   // eyeY=5.0 is proven to place features on the face surface (from original working code)
   const eyeX = hrH * 0.16;          // Lateral — within head width
-  const eyeY = headRadius * 5.0;    // Forward — on face surface (proven value)
+  const eyeY = headRadius * 5.15;   // Forward — face bulges more at mid-face than forehead
   const eyeZ = headRadius * 0.14;   // Height — mid-face (0.22 was forehead in original)
 
   // ── Sclera (white dome) ──

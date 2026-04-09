@@ -35,7 +35,6 @@ export function buildEyebrowGeometry(headRadius, headRadiusHoriz = null) {
   // Match eye positioning from eye_geo.js
   const eyeR = hrH * 0.13;
   const eyeX = hrH * 0.16;
-  const eyeY = headRadius * 5.0;   // Forward — on face surface (proven)
   const eyeZ = headRadius * 0.14;  // Height — mid-face
 
   // Eyebrow sizing
@@ -43,9 +42,9 @@ export function buildEyebrowGeometry(headRadius, headRadiusHoriz = null) {
   const browThickness = eyeR * 0.95 * 0.14;  // ~14% of eye height
   const browGap = eyeR * 0.95 * 0.25;        // Gap above eye
 
-  // Position above eyes (Z = up)
+  // Position above eyes (Z = up) — forehead is flatter so less forward Y
   const browZ = eyeZ + eyeR * 0.95 + browGap;
-  const browY = eyeY + headRadius * 0.01;    // Same forward position as eyes
+  const browY = headRadius * 5.02;           // Forehead level (less forward than mid-face)
 
   // Slight angle: inner edge lower, outer edge higher (neutral expression)
   const innerTilt = -browThickness * 0.15;
@@ -95,7 +94,6 @@ export function buildNoseGeometry(headRadius, headRadiusHoriz = null) {
 
   // Position below eyes, above mouth
   // Coords: Y = forward (face surface), Z = up (height on face)
-  const eyeY = headRadius * 5.0;    // Forward position (face surface)
   const eyeZ = headRadius * 0.14;    // Height position (eye level)
 
   const noseWidth = hrH * 0.04;        // Narrow, subtle wedge
@@ -104,7 +102,7 @@ export function buildNoseGeometry(headRadius, headRadiusHoriz = null) {
 
   const noseTopZ = eyeZ - headRadius * 0.04;   // Bridge starts below eyes (lower Z)
   const noseBotZ = noseTopZ - noseHeight;        // Tip (lowest point)
-  const noseY = eyeY + headRadius * 0.01;        // At face surface (forward)
+  const noseY = headRadius * 5.18;               // Mid-face — more forward than forehead
 
   const positions = [];
   const indices = [];
@@ -161,7 +159,6 @@ export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
   const hrH = headRadiusHoriz !== null ? headRadiusHoriz : headRadius;
 
   // Coords: Y = forward (face surface), Z = up (height on face)
-  const eyeY = headRadius * 5.0;
   const eyeZ = headRadius * 0.14;
   const eyeX = hrH * 0.16;
 
@@ -169,7 +166,7 @@ export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
   const mouthWidth = eyeX * 1.10;           // Slightly wider than eye spacing
   const mouthThickness = headRadius * 0.012; // Thin strip (Z direction)
   const mouthZ = eyeZ - headRadius * 0.06;   // Below nose but still on face
-  const mouthY = eyeY + headRadius * 0.01;   // At face surface (forward)
+  const mouthY = headRadius * 5.12;          // Mid-face — more forward than forehead
 
   // Slight downward curve at corners for neutral expression
   const cornerDrop = mouthThickness * 0.6;
