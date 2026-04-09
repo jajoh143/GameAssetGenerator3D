@@ -131,12 +131,11 @@ export function buildEyeGeometry(headRadius, headRadiusHoriz = null) {
   const scleraRy = eyeR * 0.95;
 
   // ── Positioning ──
-  // Coordinate system: Y = forward (toward face), Z = up (height on face), X = left/right
-  // Head in bone-local space: Z from 0.063 to 0.195, Y from 3.86 to 5.21, X ±0.28
-  // Face surface Y = 5.21 at eye level, so features must be at Y ~5.55+ to sit ON the surface
-  const eyeX = hrH * 0.16;          // Lateral — within head width (head edge ~0.28)
-  const eyeY = headRadius * 5.58;   // Forward — at face surface (face front = 5.21, need slight forward)
-  const eyeZ = headRadius * 0.11;   // Height — slightly below head midpoint (0.129) for cartoony
+  // Y = forward (toward face), Z = up (height on face), X = left/right
+  // eyeY=5.0 is proven to place features on the face surface (from original working code)
+  const eyeX = hrH * 0.16;          // Lateral — within head width
+  const eyeY = headRadius * 5.0;    // Forward — on face surface (proven value)
+  const eyeZ = headRadius * 0.14;   // Height — mid-face (0.22 was forehead in original)
 
   // ── Sclera (white dome) ──
   const scleraDomeDepth = eyeR * 0.10;  // Very slight convexity
