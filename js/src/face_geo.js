@@ -34,7 +34,7 @@ export function buildEyebrowGeometry(headRadius, headRadiusHoriz = null) {
 
   // Match eye positioning from eye_geo.js
   const eyeR = hrH * 0.13;
-  const eyeX = hrH * 0.16;
+  const eyeX = hrH * 0.10;
   const eyeZ = headRadius * 0.14;  // Height — mid-face
 
   // Eyebrow sizing
@@ -160,7 +160,7 @@ export function buildMouthGeometry(headRadius, headRadiusHoriz = null) {
 
   // Coords: Y = forward (face surface), Z = up (height on face)
   const eyeZ = headRadius * 0.14;
-  const eyeX = hrH * 0.16;
+  const eyeX = hrH * 0.10;
 
   // Mouth sizing and position
   const mouthWidth = eyeX * 1.10;           // Slightly wider than eye spacing
