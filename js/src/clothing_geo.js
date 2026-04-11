@@ -56,24 +56,25 @@ export function buildClothingGeometry(bodyData, cfg) {
   const bodyHeight = maxY - minY;
 
   // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
-  const footTop  = minY + bodyHeight * 0.05;
-  const kneeY    = minY + bodyHeight * 0.24;
-  const hipY     = minY + bodyHeight * 0.43;
-  const chestY   = minY + bodyHeight * 0.57;
-  const armY     = minY + bodyHeight * 0.63;
-  const waistGap = bodyHeight * 0.010;
+  const footTop   = minY + bodyHeight * 0.05;
+  const kneeY     = minY + bodyHeight * 0.24;
+  const hipY      = minY + bodyHeight * 0.43;
+  const chestY    = minY + bodyHeight * 0.57;
+  const armY      = minY + bodyHeight * 0.63;  // lower chest / armpit level (used for v_neck)
+  const shoulderY = minY + bodyHeight * 0.73;  // shoulder top — shirts must reach here for arm coverage
+  const waistGap  = bodyHeight * 0.010;
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  const X_SHORT_SLEEVE = maxAbsX * 0.55;
+  const X_SHORT_SLEEVE = maxAbsX * 0.85;  // arm hangs at ~H*0.14 ≈ 80-85% of maxAbsX
 
   const ZONES = {
-    short_sleeve: [hipY + waistGap, armY,   X_SHORT_SLEEVE],
-    polo:         [hipY + waistGap, armY,   X_SHORT_SLEEVE],
-    long_sleeve:  [hipY + waistGap, armY,   Infinity      ],
-    v_neck:       [hipY + waistGap, chestY, X_TORSO       ],
-    jeans:        [footTop,         hipY,   X_LEGS        ],
-    shorts:       [kneeY,           hipY,   X_LEGS        ],
+    short_sleeve: [hipY + waistGap, shoulderY, X_SHORT_SLEEVE],
+    polo:         [hipY + waistGap, shoulderY, X_SHORT_SLEEVE],
+    long_sleeve:  [hipY + waistGap, shoulderY, Infinity      ],
+    v_neck:       [hipY + waistGap, chestY,    X_TORSO       ],
+    jeans:        [footTop,         hipY,       X_LEGS        ],
+    shorts:       [kneeY,           hipY,       X_LEGS        ],
   };
 
   const baseOffset = 0.026;
