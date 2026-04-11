@@ -43,7 +43,7 @@ function computeVertexNormals(positions, indices) {
  * @returns {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }}
  */
 export function buildMouthGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12, tweaks = {}) {
-  const mouthCenterY = headBoneY + headRadius * (tweaks.mouthY ?? -0.10);
+  const mouthCenterY = headBoneY + headRadius * (tweaks.mouthY - 0.7 ?? -0.10);
   const mouthZ       = faceFrontZ + 0.003;          // just in front of face surface
   const halfWidth    = headRadius * 0.28;            // mouth half-width
   const thickness    = headRadius * 0.045;           // strip height
