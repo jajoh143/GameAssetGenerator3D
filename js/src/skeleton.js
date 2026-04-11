@@ -3,7 +3,7 @@
  * Port of generators/humanoid/gltf_pipeline/skeleton.py
  */
 
-import { Skeleton, Bone, Matrix, TransformNode, Vector3 } from '@babylonjs/core';
+import { Skeleton, Bone, Matrix } from '@babylonjs/core';
 
 export const BONE_NAMES = [
   'Hips',                                              // 0  — root
@@ -53,15 +53,13 @@ export function boneWorldPositions(H) {
 
 /**
  * Build a BABYLON.Skeleton with 19 bones at rest positions proportional to H.
- * Each bone gets a linked TransformNode (required by GLTF2Export).
  * @param {number} H - character height in metres
  * @param {BABYLON.Scene} scene - Babylon scene the skeleton belongs to
- * @returns {{ skeleton: BABYLON.Skeleton, boneNodes: Map<string, BABYLON.TransformNode> }}
+ * @returns {BABYLON.Skeleton}
  */
 export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
   const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
-  const boneNodes = new Map();
 
   // Create all bones sequentially so each parent is available when children reference it
   const bones = [];
@@ -80,23 +78,8 @@ export function buildSkeleton(H, scene) {
     }
 
     const localMatrix = Matrix.Translation(lx, ly, lz);
-    const bone = new Bone(name, skeleton, parentBone, localMatrix);
-    bones.push(bone);
-
-    // Create a TransformNode mirroring the bone hierarchy with LOCAL offsets.
-    // - position = local offset from parent (same as lx/ly/lz used for the bone)
-    // - parent   = the parent bone's TransformNode (so GLTF joint transforms are local)
-    // GLTF joint node transforms are always local-to-parent; using world positions
-    // in a flat hierarchy produces completely wrong skin matrices in the viewer.
-    const tn = new TransformNode(name, scene);
-    tn.position = new Vector3(lx, ly, lz);
-    if (parentIdx !== -1) {
-      tn.parent = boneNodes.get(BONE_NAMES[parentIdx]);
-    }
-    tn.computeWorldMatrix(true);
-    bone.linkTransformNode(tn);
-    boneNodes.set(name, tn);
+    bones.push(new Bone(name, skeleton, parentBone, localMatrix));
   }
 
-  return { skeleton, boneNodes };
+  return skeleton;
 }

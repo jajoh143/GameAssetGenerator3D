@@ -5,7 +5,7 @@
 import './node_polyfills.js';
 import {
   NullEngine, Scene, Mesh, VertexData, Skeleton, PBRMaterial, Color3,
-  Animation, AnimationGroup, Vector3, Quaternion, ArcRotateCamera,
+  Animation, AnimationGroup, Vector3, Quaternion,
 } from '@babylonjs/core';
 import { GLTF2Export } from '@babylonjs/serializers';
 import { writeFileSync } from 'fs';
@@ -146,17 +146,13 @@ export async function buildHumanoid(cfg) {
   const engine = new NullEngine();
   const scene  = new Scene(engine);
 
-  // Dummy camera — NullEngine.render() (used before GLB export to sync bone
-  // matrices) requires an active camera even though nothing is drawn.
-  new ArcRotateCamera('_export_cam', 0, 0, 3, Vector3.Zero(), scene);
-
   // 1. Load body mesh data
   const bodyData = await loadCartoonMale(H);
   const { positions, normals, uvs, skinIndices, skinWeights, indices } = bodyData;
   const vCount = positions.length / 3;
 
   // 2. Build skeleton
-  const { skeleton } = buildSkeleton(H, scene);
+  const skeleton = buildSkeleton(H, scene);
 
   // 3. Skin material
   const skinRgba = Array.isArray(cfg.skinTone)
@@ -372,11 +368,6 @@ export async function buildHumanoid(cfg) {
  * @param {string} outputPath
  */
 export async function exportGLB(scene, engine, outputPath) {
-  // Sync TransformNode world matrices → bone absolute transforms before export.
-  // NullEngine.render() updates the scene graph without drawing anything;
-  // the dummy ArcRotateCamera in buildHumanoid satisfies the camera requirement.
-  scene.render();
-
   const result = await GLTF2Export.GLBAsync(scene, 'export', {});
 
   // result is an object { 'export.glb': ArrayBuffer | Blob }
