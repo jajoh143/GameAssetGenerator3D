@@ -208,7 +208,8 @@ export async function buildHumanoid(cfg) {
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
-      const hairMat = makePBR(scene, 'HairMaterial', hairRgba, 0.75, 0.0);
+      const HAIR_ROUGHNESS = { buzzed: 0.82, short: 0.65, long: 0.70, spiky: 0.55 };
+      const hairMat = makePBR(scene, 'HairMaterial', hairRgba, HAIR_ROUGHNESS[hairStyle] ?? 0.70, 0.0);
       hairMat.backFaceCulling = false;
       hairMat.twoSidedLighting = true;
 
@@ -294,7 +295,8 @@ export async function buildHumanoid(cfg) {
     for (const [ctype, geo] of Object.entries(clothingGeos)) {
       const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
       const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
-      const mat = makePBR(scene, `ClothingMat_${ctype}`, rgba, 0.65, 0.0);
+      const CLOTH_ROUGHNESS = { polo: 0.58, short_sleeve: 0.62, long_sleeve: 0.60, v_neck: 0.68, jeans: 0.80, shorts: 0.75 };
+      const mat = makePBR(scene, `ClothingMat_${ctype}`, rgba, CLOTH_ROUGHNESS[ctype] ?? 0.65, 0.0);
       mat.backFaceCulling = false;
       mat.twoSidedLighting = true;
 

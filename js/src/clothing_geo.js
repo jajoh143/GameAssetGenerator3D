@@ -79,6 +79,10 @@ export function buildClothingGeometry(bodyData, cfg) {
   };
 
   const baseOffset = 0.026;
+  // Small tolerance so triangles whose centroid sits just outside a zone boundary
+  // (e.g. armhole edge triangles) are still included, preventing visible gaps.
+  const yTol = bodyHeight * 0.018;
+  const xTol = maxAbsX   * 0.04;
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
@@ -103,10 +107,10 @@ export function buildClothingGeometry(bodyData, cfg) {
       }));
 
       const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY < yLo || centY > yHi) continue;
+      if (centY < yLo - yTol || centY > yHi + yTol) continue;
 
       const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
-      if (Math.abs(centX) > xCap) continue;
+      if (Math.abs(centX) > xCap + xTol) continue;
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
