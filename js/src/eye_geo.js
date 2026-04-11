@@ -76,22 +76,23 @@ function createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, segments = 10) {
 /**
  * Small glint discs in the XY plane, slightly forward of the eye disc.
  */
-function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segments = 6) {
+function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, eyeRx, segments = 6) {
   const hlHeightY = eyeHeightY + eyeRy * 0.45;  // upper portion of eye
   const hlZ       = eyeZ + 0.002;               // slightly forward of eye disc
+  const offsetX   = eyeRx * 0.30;               // inward offset within the eye disc
 
   const positions = [];
   const indices = [];
 
   // Left highlight
   const leftHlCenter = positions.length / 3;
-  positions.push(-eyeX + eyeX * 0.35, hlHeightY, hlZ);
+  positions.push(-eyeX + offsetX, hlHeightY, hlZ);
   const leftHlRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     leftHlRing.push(positions.length / 3);
     positions.push(
-      -eyeX + eyeX * 0.35 + highlightR * Math.cos(angle),
+      -eyeX + offsetX + highlightR * Math.cos(angle),
       hlHeightY + highlightR * Math.sin(angle),
       hlZ
     );
@@ -102,13 +103,13 @@ function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segm
 
   // Right highlight
   const rightHlCenter = positions.length / 3;
-  positions.push(eyeX - eyeX * 0.35, hlHeightY, hlZ);
+  positions.push(eyeX - offsetX, hlHeightY, hlZ);
   const rightHlRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     rightHlRing.push(positions.length / 3);
     positions.push(
-      eyeX - eyeX * 0.35 + highlightR * Math.cos(angle),
+      eyeX - offsetX + highlightR * Math.cos(angle),
       hlHeightY + highlightR * Math.sin(angle),
       hlZ
     );
@@ -141,7 +142,7 @@ export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12
 
   return {
     eyeDiscGeometry:   createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, 10),
-    highlightGeometry: createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, ry, 6),
+    highlightGeometry: createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, ry, rx, 6),
   };
 }
 
