@@ -156,7 +156,7 @@ function buildCap(geom, headZ, headR, hScale = 1.20, capLevels = null, headRHori
 
 function buildBuzzed(geom, headZ, headR) {
   const rings = buildCap(geom, headZ, headR, 1.15);
-  createPanelRows(geom, backHalfVerts(rings[0]), [[-headR * 0.18, 1.0, 1.0]]);
+  createPanelRows(geom, backHalfVerts(rings[0]), [[-headR * 0.12, 0.97, 1.0]]);
 }
 
 function buildShort(geom, headZ, headR, headRHoriz = null) {
@@ -165,7 +165,7 @@ function buildShort(geom, headZ, headR, headRHoriz = null) {
     [0.00, 0.97, 0.90], [0.45, 0.86, 0.79], [0.78, 0.55, 0.50], [0.92, 0.18, 0.16],
   ], headRHoriz);
   createPanelRows(geom, backHalfVerts(rings[0]), [
-    [-headR * 0.16, 0.97, 0.95], [-headR * 0.15, 0.93, 0.90], [-headR * 0.13, 0.88, 0.85],
+    [-headR * 0.14, 0.97, 1.0], [-headR * 0.12, 0.95, 1.0],
   ]);
   const hlZ = rings[0][0].z;
   const frY = -(hrH * 0.90 * 1.06) - 0.003;
@@ -182,8 +182,8 @@ function buildLong(geom, headZ, headR, headRHoriz = null) {
     [-0.10, 0.99, 0.92], [0.35, 0.87, 0.80], [0.72, 0.58, 0.52], [0.94, 0.20, 0.18],
   ], headRHoriz);
   createPanelRows(geom, backHalfVerts(rings[0]), [
-    [-headR * 0.14, 0.98, 0.96], [-headR * 0.18, 0.96, 0.93], [-headR * 0.22, 0.94, 0.90],
-    [-headR * 0.26, 0.92, 0.88], [-headR * 0.30, 0.90, 0.86], [-headR * 0.32, 0.88, 0.84],
+    [-headR * 0.14, 0.98, 1.0], [-headR * 0.16, 0.97, 1.0],
+    [-headR * 0.20, 0.96, 1.0], [-headR * 0.18, 0.95, 1.0],
   ]);
   const hlZ = rings[0][0].z;
   const frY = -(hrH * 0.92 * 1.06) - 0.005;
@@ -200,7 +200,7 @@ function buildSpiky(geom, headZ, headR, headRHoriz = null) {
     [0.20, 0.98, 0.98], [0.48, 0.86, 0.79], [0.72, 0.60, 0.55], [0.88, 0.30, 0.28],
   ], headRHoriz);
   createPanelRows(geom, backHalfVerts(rings[0]), [
-    [-headR * 0.15, 0.96, 0.94], [-headR * 0.14, 0.92, 0.90],
+    [-headR * 0.10, 0.95, 1.0], [-headR * 0.08, 0.93, 1.0],
   ]);
   createFringeClumps(geom, headR, headZ + headR * 0.88, 0, [
     [-0.50, -0.15, 0.00, 0.00, 0.40, 0.08], [-0.25, -0.10, 0.10, 0.05, 0.45, 0.09],

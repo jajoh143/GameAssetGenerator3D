@@ -3,7 +3,7 @@
  * Port of generators/humanoid/gltf_pipeline/skeleton.py
  */
 
-import { Skeleton, Bone, Matrix } from '@babylonjs/core';
+import { Skeleton, Bone, Matrix, TransformNode, Vector3 } from '@babylonjs/core';
 
 export const BONE_NAMES = [
   'Hips',                                              // 0  — root
@@ -53,19 +53,15 @@ export function boneWorldPositions(H) {
 
 /**
  * Build a BABYLON.Skeleton with 19 bones at rest positions proportional to H.
+ * Each bone gets a linked TransformNode (required by GLTF2Export).
  * @param {number} H - character height in metres
  * @param {BABYLON.Scene} scene - Babylon scene the skeleton belongs to
- * @returns {BABYLON.Skeleton}
- */
-/**
- * Build a BABYLON.Skeleton with 19 bones at rest positions proportional to H.
- * @param {number} H - character height in metres
- * @param {BABYLON.Scene} scene - Babylon scene the skeleton belongs to
- * @returns {BABYLON.Skeleton}
+ * @returns {{ skeleton: BABYLON.Skeleton, boneNodes: Map<string, BABYLON.TransformNode> }}
  */
 export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
   const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
+  const boneNodes = new Map();
 
   // Create all bones sequentially so each parent is available when children reference it
   const bones = [];
@@ -84,8 +80,18 @@ export function buildSkeleton(H, scene) {
     }
 
     const localMatrix = Matrix.Translation(lx, ly, lz);
-    bones.push(new Bone(name, skeleton, parentBone, localMatrix));
+    const bone = new Bone(name, skeleton, parentBone, localMatrix);
+    bones.push(bone);
+
+    // Create a TransformNode at the bone's world position and link it.
+    // computeWorldMatrix(true) must be called before linkTransformNode so the
+    // node's matrix is valid (NullEngine has no render loop to do it automatically).
+    const tn = new TransformNode(name, scene);
+    tn.position = new Vector3(wx, wy, wz);
+    tn.computeWorldMatrix(true);
+    bone.linkTransformNode(tn);
+    boneNodes.set(name, tn);
   }
 
-  return skeleton;
+  return { skeleton, boneNodes };
 }

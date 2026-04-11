@@ -152,7 +152,7 @@ export async function buildHumanoid(cfg) {
   const vCount = positions.length / 3;
 
   // 2. Build skeleton
-  const skeleton = buildSkeleton(H, scene);
+  const { skeleton } = buildSkeleton(H, scene);
 
   // 3. Skin material
   const skinRgba = Array.isArray(cfg.skinTone)
@@ -368,6 +368,10 @@ export async function buildHumanoid(cfg) {
  * @param {string} outputPath
  */
 export async function exportGLB(scene, engine, outputPath) {
+  // One render pass syncs TransformNode world matrices → bone matrices before export.
+  // NullEngine.render() runs the scene graph update without drawing anything.
+  scene.render();
+
   const result = await GLTF2Export.GLBAsync(scene, 'export', {});
 
   // result is an object { 'export.glb': ArrayBuffer | Blob }
