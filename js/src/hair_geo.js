@@ -12,10 +12,10 @@ class Vec3 {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const CAP_LEVELS = [
-  [0.00, 0.97, 0.90],
-  [0.50, 0.84, 0.77],
-  [0.86, 0.52, 0.48],
-  [0.97, 0.14, 0.13],
+  [0.00, 0.88, 0.90, 1.05],
+  [0.50, 0.80, 0.77, 0.90],
+  [0.86, 0.50, 0.48, 0.54],
+  [0.97, 0.13, 0.13, 0.14],
 ];
 
 const CAP_RING_N = 12;
@@ -49,11 +49,16 @@ function computeVertexNormals(positions, indices) {
 
 // ─── Geometry accumulator helpers ────────────────────────────────────────────
 
-function createRing(cx, cy, cz, rx, ry, n = CAP_RING_N) {
+function createRing(cx, cy, cz, rx, ry, n = CAP_RING_N, ryBack = null) {
+  const ryB = ryBack !== null ? ryBack : ry;
   const verts = [];
   for (let i = 0; i < n; i++) {
     const a = (2 * Math.PI * i) / n;
-    verts.push(new Vec3(cx + rx * Math.sin(a), cy - ry * Math.cos(a), cz));
+    const cosA = Math.cos(a);
+    // Blend front depth (cosA=+1) into back depth (cosA=-1) smoothly.
+    // At the sides (cosA=0) the effective radius is the average of both.
+    const ryEff = ry * (1 + cosA) / 2 + ryB * (1 - cosA) / 2;
+    verts.push(new Vec3(cx + rx * Math.sin(a), cy - ryEff * cosA, cz));
   }
   return verts;
 }
@@ -144,8 +149,14 @@ function createPanelRows(geom, topVerts, rowsSpec) {
 function buildCap(geom, headZ, headR, hScale = 1.20, capLevels = null, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
   const levels = capLevels !== null ? capLevels : CAP_LEVELS;
-  const rings = levels.map(([zOff, rxM, ryM]) =>
-    createRing(0, 0, headZ + headR * zOff, hrH * rxM * hScale, hrH * ryM * hScale, CAP_RING_N)
+  const rings = levels.map(([zOff, rxM, ryM, ryBackM]) =>
+    createRing(
+      0, 0, headZ + headR * zOff,
+      hrH * rxM * hScale,
+      hrH * ryM * hScale,
+      CAP_RING_N,
+      ryBackM != null ? hrH * ryBackM * hScale : null,
+    )
   );
   for (let i = 0; i < rings.length - 1; i++) bridgeRings(geom, rings[i], rings[i+1]);
   closeRing(geom, rings[rings.length - 1], true);
@@ -162,7 +173,8 @@ function buildBuzzed(geom, headZ, headR) {
 function buildShort(geom, headZ, headR, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
   const rings = buildCap(geom, headZ, headR, 1.20, [
-    [0.00, 0.97, 0.90], [0.45, 0.86, 0.79], [0.78, 0.55, 0.50], [0.92, 0.18, 0.16],
+    [0.00, 0.88, 0.90, 1.05], [0.45, 0.82, 0.79, 0.92],
+    [0.78, 0.52, 0.50, 0.56], [0.92, 0.17, 0.16, 0.17],
   ], headRHoriz);
   createPanelRows(geom, backHalfVerts(rings[0]), [
     [-headR * 0.14, 0.97, 1.0], [-headR * 0.12, 0.95, 1.0],
@@ -170,16 +182,21 @@ function buildShort(geom, headZ, headR, headRHoriz = null) {
   const hlZ = rings[0][0].z;
   const frY = -(hrH * 0.90 * 1.06) - 0.003;
   createFringeClumps(geom, headR, hlZ, frY, [
-    [-0.46, -0.05, 0.04, 0.04, 0.12, 0.13], [-0.22, 0.00, 0.05, 0.04, 0.13, 0.13],
-    [0.00, 0.00, 0.05, 0.04, 0.14, 0.15],   [0.22, 0.00, 0.05, 0.04, 0.13, 0.13],
-    [0.46, 0.05, 0.04, 0.04, 0.12, 0.13],
+    [-0.52, -0.06, 0.03, 0.03, 0.11, 0.10],
+    [-0.36, -0.03, 0.04, 0.04, 0.12, 0.11],
+    [-0.18,  0.00, 0.05, 0.04, 0.13, 0.12],
+    [ 0.00,  0.00, 0.05, 0.04, 0.14, 0.13],
+    [ 0.18,  0.00, 0.05, 0.04, 0.13, 0.12],
+    [ 0.36,  0.03, 0.04, 0.04, 0.12, 0.11],
+    [ 0.52,  0.06, 0.03, 0.03, 0.11, 0.10],
   ], hrH);
 }
 
 function buildLong(geom, headZ, headR, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
   const rings = buildCap(geom, headZ, headR, 1.22, [
-    [-0.10, 0.99, 0.92], [0.35, 0.87, 0.80], [0.72, 0.58, 0.52], [0.94, 0.20, 0.18],
+    [-0.10, 0.90, 0.92, 1.08], [0.35, 0.83, 0.80, 0.94],
+    [ 0.72, 0.55, 0.52, 0.58], [0.94, 0.18, 0.18, 0.19],
   ], headRHoriz);
   createPanelRows(geom, backHalfVerts(rings[0]), [
     [-headR * 0.14, 0.98, 1.0], [-headR * 0.16, 0.97, 1.0],
@@ -188,16 +205,21 @@ function buildLong(geom, headZ, headR, headRHoriz = null) {
   const hlZ = rings[0][0].z;
   const frY = -(hrH * 0.92 * 1.06) - 0.005;
   createFringeClumps(geom, headR, hlZ, frY, [
-    [-0.50, -0.08, 0.06, 0.08, 0.20, 0.14], [-0.25, -0.02, 0.08, 0.08, 0.22, 0.14],
-    [0.00, 0.00, 0.08, 0.08, 0.24, 0.16],   [0.25, 0.02, 0.08, 0.08, 0.22, 0.14],
-    [0.50, 0.08, 0.06, 0.08, 0.20, 0.14],
+    [-0.54, -0.10, 0.05, 0.07, 0.19, 0.12],
+    [-0.37, -0.05, 0.07, 0.08, 0.21, 0.13],
+    [-0.18, -0.01, 0.08, 0.08, 0.22, 0.14],
+    [ 0.00,  0.00, 0.08, 0.08, 0.23, 0.15],
+    [ 0.18,  0.01, 0.08, 0.08, 0.22, 0.14],
+    [ 0.37,  0.05, 0.07, 0.08, 0.21, 0.13],
+    [ 0.54,  0.10, 0.05, 0.07, 0.19, 0.12],
   ], hrH);
 }
 
 function buildSpiky(geom, headZ, headR, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
   const rings = buildCap(geom, headZ, headR, 1.18, [
-    [0.20, 0.98, 0.98], [0.48, 0.86, 0.79], [0.72, 0.60, 0.55], [0.88, 0.30, 0.28],
+    [0.20, 0.90, 0.98, 1.06], [0.48, 0.82, 0.79, 0.88],
+    [0.72, 0.56, 0.55, 0.60], [0.88, 0.28, 0.28, 0.30],
   ], headRHoriz);
   createPanelRows(geom, backHalfVerts(rings[0]), [
     [-headR * 0.10, 0.95, 1.0], [-headR * 0.08, 0.93, 1.0],
