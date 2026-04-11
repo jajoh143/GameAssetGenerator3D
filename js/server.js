@@ -48,7 +48,9 @@ function cfgFromBody(data, animations = 'all') {
   if (data.top_color    && top    !== 'none') clothingColor[top]    = data.top_color;
   if (data.bottom_color && bottom !== 'none') clothingColor[bottom] = data.bottom_color;
 
-  const buttons = data.buttons === 'true' || data.buttons === '1' || data.buttons === true;
+  const buttons   = data.buttons === 'true' || data.buttons === '1' || data.buttons === true;
+  const belt      = data.belt    === 'true' || data.belt    === '1' || data.belt    === true;
+  const beltColor = data.belt_color ?? 'brown';
 
   const cfg = resolveConfig({
     preset:       data.preset       ?? 'average',
@@ -63,6 +65,9 @@ function cfgFromBody(data, animations = 'all') {
     animations,
     lod:          data.lod          ?? 'mid',
   });
+
+  cfg.belt      = belt;
+  cfg.beltColor = beltColor;
 
   const ft = (val, def) => { const n = parseFloat(val); return isNaN(n) ? def : n; };
   cfg.faceTweaks = {

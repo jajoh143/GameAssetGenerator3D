@@ -79,10 +79,6 @@ export function buildClothingGeometry(bodyData, cfg) {
   };
 
   const baseOffset = 0.026;
-  // Small tolerance so triangles whose centroid sits just outside a zone boundary
-  // (e.g. armhole edge triangles) are still included, preventing visible gaps.
-  const yTol = bodyHeight * 0.018;
-  const xTol = maxAbsX   * 0.04;
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
@@ -107,10 +103,10 @@ export function buildClothingGeometry(bodyData, cfg) {
       }));
 
       const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY < yLo - yTol || centY > yHi + yTol) continue;
+      if (centY < yLo || centY > yHi) continue;
 
       const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
-      if (Math.abs(centX) > xCap + xTol) continue;
+      if (Math.abs(centX) > xCap) continue;
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
@@ -242,6 +238,123 @@ export function buildButtonGeometry(bodyData, yLo, yHi, numButtons = 4) {
       const next = (i + 1) % segs;
       indices.push(center, center + 1 + i, center + 1 + next);
     }
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
+ * Procedural hem band at the shirt-waist boundary — covers the ragged bottom
+ * edge that results from centroid-based face selection.
+ *
+ * @param {{ positions: Float32Array }} bodyData
+ * @param {number} hipY   - Y level of the hip/waistline
+ * @param {number} bodyHeight
+ * @param {number} baseOffset
+ * @returns {{ positions, normals, indices }|null}
+ */
+export function buildHemGeometry(bodyData, hipY, bodyHeight, baseOffset) {
+  const bPos = bodyData.positions;
+  const vCount = bPos.length / 3;
+  const yWindow = bodyHeight * 0.04;
+  const xLimit  = bodyHeight * 0.22;   // exclude arm vertices
+
+  let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3 + 1];
+    const ax = Math.abs(bPos[i*3]);
+    if (Math.abs(y - hipY) < yWindow && ax < xLimit) {
+      const z = bPos[i*3 + 2];
+      if (z > maxZ) maxZ = z;
+      if (z < minZ) minZ = z;
+      if (ax > maxAbsX) maxAbsX = ax;
+    }
+  }
+  if (maxZ === -Infinity) return null;
+
+  const hemH    = bodyHeight * 0.028;
+  const hemOff  = baseOffset * 1.2;
+  const radiusX = maxAbsX + hemOff;
+  const radiusZ = (maxZ - minZ) / 2 + hemOff;
+  const centerZ = (maxZ + minZ) / 2;
+  const segments = 20;
+
+  const positions = [];
+  const indices   = [];
+
+  for (let i = 0; i < segments; i++) {
+    const a = (2 * Math.PI * i) / segments;
+    const x = radiusX * Math.cos(a);
+    const z = centerZ + radiusZ * Math.sin(a);
+    positions.push(x, hipY - hemH * 0.15, z);   // bottom ring — just below waist
+    positions.push(x, hipY + hemH * 0.85, z);   // top ring — covers shirt hem
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    const b0 = i * 2,    b1 = next * 2;
+    const t0 = b0 + 1,   t1 = b1 + 1;
+    indices.push(b0, t0, b1, b1, t0, t1);
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
+ * Procedural belt — a slightly thicker, wider ring sitting above the waistline.
+ *
+ * @param {{ positions: Float32Array }} bodyData
+ * @param {number} hipY
+ * @param {number} bodyHeight
+ * @param {number} baseOffset
+ * @returns {{ positions, normals, indices }|null}
+ */
+export function buildBeltGeometry(bodyData, hipY, bodyHeight, baseOffset) {
+  const bPos = bodyData.positions;
+  const vCount = bPos.length / 3;
+  const yWindow = bodyHeight * 0.04;
+  const xLimit  = bodyHeight * 0.22;
+
+  let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3 + 1];
+    const ax = Math.abs(bPos[i*3]);
+    if (Math.abs(y - hipY) < yWindow && ax < xLimit) {
+      const z = bPos[i*3 + 2];
+      if (z > maxZ) maxZ = z;
+      if (z < minZ) minZ = z;
+      if (ax > maxAbsX) maxAbsX = ax;
+    }
+  }
+  if (maxZ === -Infinity) return null;
+
+  const beltH   = bodyHeight * 0.045;
+  const beltOff = baseOffset * 1.8;   // wider than hem so it sits proud
+  const radiusX = maxAbsX + beltOff;
+  const radiusZ = (maxZ - minZ) / 2 + beltOff;
+  const centerZ = (maxZ + minZ) / 2;
+  const segments = 20;
+
+  const positions = [];
+  const indices   = [];
+
+  for (let i = 0; i < segments; i++) {
+    const a = (2 * Math.PI * i) / segments;
+    const x = radiusX * Math.cos(a);
+    const z = centerZ + radiusZ * Math.sin(a);
+    positions.push(x, hipY + beltH * 0.05, z);   // bottom ring — just at waist
+    positions.push(x, hipY + beltH * 1.05, z);   // top ring
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    const b0 = i * 2,    b1 = next * 2;
+    const t0 = b0 + 1,   t1 = b1 + 1;
+    indices.push(b0, t0, b1, b1, t0, t1);
   }
 
   const pos = new Float32Array(positions);
