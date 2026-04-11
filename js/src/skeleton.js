@@ -83,11 +83,16 @@ export function buildSkeleton(H, scene) {
     const bone = new Bone(name, skeleton, parentBone, localMatrix);
     bones.push(bone);
 
-    // Create a TransformNode at the bone's world position and link it.
-    // computeWorldMatrix(true) must be called before linkTransformNode so the
-    // node's matrix is valid (NullEngine has no render loop to do it automatically).
+    // Create a TransformNode mirroring the bone hierarchy with LOCAL offsets.
+    // - position = local offset from parent (same as lx/ly/lz used for the bone)
+    // - parent   = the parent bone's TransformNode (so GLTF joint transforms are local)
+    // GLTF joint node transforms are always local-to-parent; using world positions
+    // in a flat hierarchy produces completely wrong skin matrices in the viewer.
     const tn = new TransformNode(name, scene);
-    tn.position = new Vector3(wx, wy, wz);
+    tn.position = new Vector3(lx, ly, lz);
+    if (parentIdx !== -1) {
+      tn.parent = boneNodes.get(BONE_NAMES[parentIdx]);
+    }
     tn.computeWorldMatrix(true);
     bone.linkTransformNode(tn);
     boneNodes.set(name, tn);
