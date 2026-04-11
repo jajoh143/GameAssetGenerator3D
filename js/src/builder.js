@@ -68,16 +68,16 @@ function makePBR(scene, name, colorRgba, roughness = 0.5, metallic = 0.0) {
 /**
  * Build Babylon AnimationGroups from the plain clip data returned by buildAnimations().
  */
-function buildAnimationGroups(clips, skeleton, scene) {
+function buildAnimationGroups(clips, skeleton, boneNodes, scene) {
   const groups = [];
 
   for (const clip of clips) {
     const group = new AnimationGroup(clip.name, scene);
 
-    // Rotation tracks
+    // Rotation tracks — target the linked TransformNode so GLTF export works
     for (const [boneName, { times, values }] of clip.rotByBone) {
-      const bone = skeleton.bones.find(b => b.name === boneName);
-      if (!bone) continue;
+      const target = boneNodes.get(boneName);
+      if (!target) continue;
 
       const anim = new Animation(
         `${clip.name}_${boneName}_rot`,
@@ -100,13 +100,13 @@ function buildAnimationGroups(clips, skeleton, scene) {
         });
       }
       anim.setKeys(keys);
-      group.addTargetedAnimation(anim, bone);
+      group.addTargetedAnimation(anim, target);
     }
 
     // Translation tracks
     for (const [boneName, { times, values }] of clip.transByBone) {
-      const bone = skeleton.bones.find(b => b.name === boneName);
-      if (!bone) continue;
+      const target = boneNodes.get(boneName);
+      if (!target) continue;
 
       const anim = new Animation(
         `${clip.name}_${boneName}_pos`,
@@ -124,7 +124,7 @@ function buildAnimationGroups(clips, skeleton, scene) {
         });
       }
       anim.setKeys(keys);
-      group.addTargetedAnimation(anim, bone);
+      group.addTargetedAnimation(anim, target);
     }
 
     groups.push(group);
@@ -151,8 +151,8 @@ export async function buildHumanoid(cfg) {
   const { positions, normals, uvs, skinIndices, skinWeights, indices } = bodyData;
   const vCount = positions.length / 3;
 
-  // 2. Build skeleton
-  const skeleton = buildSkeleton(H, scene);
+  // 2. Build skeleton (returns skeleton + per-bone TransformNodes for GLTF export)
+  const { skeleton, boneNodes } = buildSkeleton(H, scene);
 
   // 3. Skin material
   const skinRgba = Array.isArray(cfg.skinTone)
@@ -210,6 +210,7 @@ export async function buildHumanoid(cfg) {
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
       const hairMat = makePBR(scene, 'HairMaterial', hairRgba, 0.75, 0.0);
       hairMat.backFaceCulling = false;
+      hairMat.twoSidedLighting = true;
 
       const hairMesh = new Mesh('Hair', scene);
       hairMesh.material = hairMat;
@@ -249,6 +250,7 @@ export async function buildHumanoid(cfg) {
     eyeMat.roughness      = eyeMatParams.eyeDiscMaterial.roughness;
     eyeMat.metallic       = eyeMatParams.eyeDiscMaterial.metallic;
     eyeMat.backFaceCulling = false;
+    eyeMat.twoSidedLighting = true;
     eyeDiscMesh.material  = eyeMat;
     applyRawGeoToMesh(eyeDiscMesh, eyeGeos.eyeDiscGeometry);
 
@@ -259,6 +261,7 @@ export async function buildHumanoid(cfg) {
     hlMat.metallic        = eyeMatParams.highlightMaterial.metallic;
     hlMat.emissiveColor   = new Color3(...eyeMatParams.highlightMaterial.emissiveColor);
     hlMat.backFaceCulling = false;
+    hlMat.twoSidedLighting = true;
     highlightMesh.material = hlMat;
     applyRawGeoToMesh(highlightMesh, eyeGeos.highlightGeometry);
 
@@ -274,6 +277,7 @@ export async function buildHumanoid(cfg) {
     mouthMat.roughness      = mouthParams.roughness;
     mouthMat.metallic       = mouthParams.metallic;
     mouthMat.backFaceCulling = false;
+    mouthMat.twoSidedLighting = true;
     const mouthMesh = new Mesh('Mouth', scene);
     mouthMesh.material = mouthMat;
     applyRawGeoToMesh(mouthMesh, mouthGeo);
@@ -292,6 +296,7 @@ export async function buildHumanoid(cfg) {
       const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
       const mat = makePBR(scene, `ClothingMat_${ctype}`, rgba, 0.65, 0.0);
       mat.backFaceCulling = false;
+      mat.twoSidedLighting = true;
 
       const mesh = new Mesh(`Clothing_${ctype}`, scene);
       mesh.material = mat;
@@ -326,6 +331,7 @@ export async function buildHumanoid(cfg) {
         ];
         const collarMat = makePBR(scene, 'CollarMat', lighterRgba, 0.55, 0.0);
         collarMat.backFaceCulling = false;
+        collarMat.twoSidedLighting = true;
         const collarMesh = new Mesh('Clothing_polo_collar', scene);
         collarMesh.material = collarMat;
         applyRawGeoToMesh(collarMesh, collarGeo);
@@ -350,7 +356,7 @@ export async function buildHumanoid(cfg) {
 
   // 9. Animations
   const clips = buildAnimations(cfg);
-  buildAnimationGroups(clips, skeleton, scene);
+  buildAnimationGroups(clips, skeleton, boneNodes, scene);
 
   return { scene, engine };
 }
