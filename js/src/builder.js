@@ -220,7 +220,7 @@ export async function buildHumanoid(cfg) {
       // handedness fix which would flip the sign of rotation.x (inverting the cap).
       const hp = hairGeo.positions;
       const hn = hairGeo.normals;
-      const earY = headBoneY + headRadius * 0.05;
+      const earY = headBoneY + headRadius * (cfg.faceTweaks?.hairY ?? 0.05);
       for (let i = 0; i < hp.length / 3; i++) {
         const hx = hp[i*3], hy = hp[i*3+1], hz = hp[i*3+2];
         hp[i*3]   = hx;
@@ -239,7 +239,7 @@ export async function buildHumanoid(cfg) {
 
   // 6. Eyes — geometry is in absolute world space (Y-up); no rotation needed.
   {
-    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ);
+    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ, cfg.faceTweaks ?? {});
     const eyeMatParams = createEyeMaterials();
 
     const eyeDiscMesh = new Mesh('Eyes', scene);
@@ -292,11 +292,12 @@ export async function buildHumanoid(cfg) {
     const _bodyH = _maxY - _minY;
     const _armY  = _minY + _bodyH * 0.63;
     const _hipY  = _minY + _bodyH * 0.43;
+    const _neckY = _minY + _bodyH * 0.78;
 
     const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
 
     if (clothingList.includes('polo')) {
-      const collarGeo = buildCollarGeometry(bodyData, _armY, _bodyH, 0.020);
+      const collarGeo = buildCollarGeometry(bodyData, _neckY, _bodyH, 0.020);
       if (collarGeo) {
         const topColorName = (cfg.clothingColor ?? {})['polo'] ?? 'grey';
         const topRgba = CLOTHING_COLORS[topColorName] ?? CLOTHING_COLORS.grey;

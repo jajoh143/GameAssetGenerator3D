@@ -28,7 +28,17 @@
 
     <!-- Left: options sidebar -->
     <div id="sidebar">
+
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="basic">Basic</button>
+        <button class="tab-btn" data-tab="details">Details</button>
+      </div>
+
       <div id="form-scroll">
+
+      <!-- Basic tab panel -->
+      <div id="tab-basic" class="tab-panel active">
 
         <!-- Character section -->
         <div class="section">
@@ -241,6 +251,71 @@
             </div>
           </div>
         </div>
+
+      </div><!-- /tab-basic -->
+
+      <!-- Details tab panel -->
+      <div id="tab-details" class="tab-panel">
+
+        <!-- Facial Features section -->
+        <div class="section">
+          <div class="section-header">Facial Features</div>
+          <div class="section-body">
+
+            <div class="slider-row">
+              <div class="slider-row-header">
+                <label for="face_hair_y">Hair Height</label>
+                <span class="slider-value" id="face_hair_y_val">0.05</span>
+              </div>
+              <input type="range" id="face_hair_y" name="face_hair_y"
+                     min="-0.10" max="0.40" step="0.01" value="0.05"
+                     oninput="document.getElementById('face_hair_y_val').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-row-header">
+                <label for="face_eye_height">Eye Height</label>
+                <span class="slider-value" id="face_eye_height_val">0.20</span>
+              </div>
+              <input type="range" id="face_eye_height" name="face_eye_height"
+                     min="0.00" max="0.60" step="0.01" value="0.20"
+                     oninput="document.getElementById('face_eye_height_val').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-row-header">
+                <label for="face_eye_spread">Eye Spread</label>
+                <span class="slider-value" id="face_eye_spread_val">0.45</span>
+              </div>
+              <input type="range" id="face_eye_spread" name="face_eye_spread"
+                     min="0.10" max="0.80" step="0.01" value="0.45"
+                     oninput="document.getElementById('face_eye_spread_val').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-row-header">
+                <label for="face_eye_rx">Eye Width</label>
+                <span class="slider-value" id="face_eye_rx_val">0.10</span>
+              </div>
+              <input type="range" id="face_eye_rx" name="face_eye_rx"
+                     min="0.02" max="0.22" step="0.01" value="0.10"
+                     oninput="document.getElementById('face_eye_rx_val').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-row-header">
+                <label for="face_eye_ry">Eye Vert. Size</label>
+                <span class="slider-value" id="face_eye_ry_val">0.08</span>
+              </div>
+              <input type="range" id="face_eye_ry" name="face_eye_ry"
+                     min="0.02" max="0.18" step="0.01" value="0.08"
+                     oninput="document.getElementById('face_eye_ry_val').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+          </div>
+        </div>
+
+      </div><!-- /tab-details -->
 
       </div><!-- /form-scroll -->
 
@@ -490,6 +565,11 @@ function collectFormData() {
     if (el) data[id] = el.value;
   });
 
+  ['face_hair_y','face_eye_height','face_eye_spread','face_eye_rx','face_eye_ry'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) data[id] = parseFloat(el.value);
+  });
+
   data.animations = Array.from(
     document.querySelectorAll('input[name="animations"]:checked')
   ).map(cb => cb.value);
@@ -678,6 +758,18 @@ const bottomSel        = document.getElementById('clothing_bottom');
 const bottomColorField = document.getElementById('bottom-color-field');
 bottomSel.addEventListener('change', () => {
   bottomColorField.style.display = (bottomSel.value === 'none') ? 'none' : '';
+});
+
+// ── Sidebar tab switching ────────────────────────────────────────────────────
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + target).classList.add('active');
+  });
 });
 </script>
 </body>

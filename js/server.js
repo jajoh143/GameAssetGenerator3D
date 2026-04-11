@@ -50,7 +50,7 @@ function cfgFromBody(data, animations = 'all') {
 
   const buttons = data.buttons === 'true' || data.buttons === '1' || data.buttons === true;
 
-  return resolveConfig({
+  const cfg = resolveConfig({
     preset:       data.preset       ?? 'average',
     build:        data.build        ?? 'average',
     gender:       data.gender       ?? 'neutral',
@@ -63,6 +63,17 @@ function cfgFromBody(data, animations = 'all') {
     animations,
     lod:          data.lod          ?? 'mid',
   });
+
+  const ft = (val, def) => { const n = parseFloat(val); return isNaN(n) ? def : n; };
+  cfg.faceTweaks = {
+    hairY:     ft(data.face_hair_y,     0.05),
+    eyeHeight: ft(data.face_eye_height, 0.20),
+    eyeSpread: ft(data.face_eye_spread, 0.45),
+    eyeRx:     ft(data.face_eye_rx,     0.10),
+    eyeRy:     ft(data.face_eye_ry,     0.08),
+  };
+
+  return cfg;
 }
 
 app.post('/preview', (req, res) => {

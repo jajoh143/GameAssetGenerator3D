@@ -65,7 +65,7 @@ export function buildClothingGeometry(bodyData, cfg) {
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  const X_SHORT_SLEEVE = maxAbsX * 0.34;
+  const X_SHORT_SLEEVE = maxAbsX * 0.55;
 
   const ZONES = {
     short_sleeve: [hipY + waistGap, armY,   X_SHORT_SLEEVE],
@@ -76,7 +76,7 @@ export function buildClothingGeometry(bodyData, cfg) {
     shorts:       [kneeY,           hipY,   X_LEGS        ],
   };
 
-  const baseOffset = 0.020;
+  const baseOffset = 0.026;
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
@@ -147,7 +147,7 @@ export function buildCollarGeometry(bodyData, armY, bodyHeight, baseOffset) {
   const bPos = bodyData.positions;
   const vCount = bPos.length / 3;
   const yWindow  = bodyHeight * 0.04;
-  const neckXCap = bodyHeight * 0.05;
+  const neckXCap = bodyHeight * 0.08;
 
   let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
   for (let i = 0; i < vCount; i++) {
