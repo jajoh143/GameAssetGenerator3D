@@ -3,7 +3,7 @@
  * Port of generators/humanoid/gltf_pipeline/skeleton.py
  */
 
-import { Skeleton, Bone, Matrix, TransformNode } from '@babylonjs/core';
+import { Skeleton, Bone, Matrix } from '@babylonjs/core';
 
 export const BONE_NAMES = [
   'Hips',                                              // 0  — root
@@ -59,28 +59,22 @@ export function boneWorldPositions(H) {
  */
 /**
  * Build a BABYLON.Skeleton with 19 bones at rest positions proportional to H.
- * Each bone is linked to a TransformNode so the GLTF exporter can resolve the
- * bone's local transform and export animation tracks correctly.
- *
  * @param {number} H - character height in metres
- * @param {BABYLON.Scene} scene
- * @returns {{ skeleton: BABYLON.Skeleton, boneNodes: Map<string, BABYLON.TransformNode> }}
+ * @param {BABYLON.Scene} scene - Babylon scene the skeleton belongs to
+ * @returns {BABYLON.Skeleton}
  */
 export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
-  const skeleton  = new Skeleton('Skeleton', 'Skeleton', scene);
+  const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
 
+  // Create all bones sequentially so each parent is available when children reference it
   const bones = [];
-  const nodes = [];                // parallel array: TransformNode per bone
-  const boneNodes = new Map();     // boneName → TransformNode
-
   for (let i = 0; i < BONE_NAMES.length; i++) {
-    const name      = BONE_NAMES[i];
+    const name = BONE_NAMES[i];
     const parentIdx = BONE_PARENTS[i];
     const parentBone = parentIdx === -1 ? null : bones[parentIdx];
     const [wx, wy, wz] = worldPos[i];
 
-    // Local offset from parent (or world pos for root)
     let lx, ly, lz;
     if (parentIdx === -1) {
       lx = wx; ly = wy; lz = wz;
@@ -89,20 +83,9 @@ export function buildSkeleton(H, scene) {
       lx = wx - px; ly = wy - py; lz = wz - pz;
     }
 
-    // Bone with rest-pose matrix
     const localMatrix = Matrix.Translation(lx, ly, lz);
-    const bone = new Bone(name, skeleton, parentBone, localMatrix);
-    bones.push(bone);
-
-    // TransformNode linked to this bone — required for GLTF export
-    const tn = new TransformNode(name, scene);
-    if (parentIdx !== -1) tn.parent = nodes[parentIdx];
-    tn.position.set(lx, ly, lz);
-    bone.linkTransformNode(tn);
-
-    nodes.push(tn);
-    boneNodes.set(name, tn);
+    bones.push(new Bone(name, skeleton, parentBone, localMatrix));
   }
 
-  return { skeleton, boneNodes };
+  return skeleton;
 }

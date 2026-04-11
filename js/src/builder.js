@@ -68,16 +68,16 @@ function makePBR(scene, name, colorRgba, roughness = 0.5, metallic = 0.0) {
 /**
  * Build Babylon AnimationGroups from the plain clip data returned by buildAnimations().
  */
-function buildAnimationGroups(clips, skeleton, boneNodes, scene) {
+function buildAnimationGroups(clips, skeleton, scene) {
   const groups = [];
 
   for (const clip of clips) {
     const group = new AnimationGroup(clip.name, scene);
 
-    // Rotation tracks — target the linked TransformNode so GLTF export works
+    // Rotation tracks
     for (const [boneName, { times, values }] of clip.rotByBone) {
-      const target = boneNodes.get(boneName);
-      if (!target) continue;
+      const bone = skeleton.bones.find(b => b.name === boneName);
+      if (!bone) continue;
 
       const anim = new Animation(
         `${clip.name}_${boneName}_rot`,
@@ -100,13 +100,13 @@ function buildAnimationGroups(clips, skeleton, boneNodes, scene) {
         });
       }
       anim.setKeys(keys);
-      group.addTargetedAnimation(anim, target);
+      group.addTargetedAnimation(anim, bone);
     }
 
     // Translation tracks
     for (const [boneName, { times, values }] of clip.transByBone) {
-      const target = boneNodes.get(boneName);
-      if (!target) continue;
+      const bone = skeleton.bones.find(b => b.name === boneName);
+      if (!bone) continue;
 
       const anim = new Animation(
         `${clip.name}_${boneName}_pos`,
@@ -124,7 +124,7 @@ function buildAnimationGroups(clips, skeleton, boneNodes, scene) {
         });
       }
       anim.setKeys(keys);
-      group.addTargetedAnimation(anim, target);
+      group.addTargetedAnimation(anim, bone);
     }
 
     groups.push(group);
@@ -151,8 +151,8 @@ export async function buildHumanoid(cfg) {
   const { positions, normals, uvs, skinIndices, skinWeights, indices } = bodyData;
   const vCount = positions.length / 3;
 
-  // 2. Build skeleton (returns skeleton + per-bone TransformNodes for GLTF export)
-  const { skeleton, boneNodes } = buildSkeleton(H, scene);
+  // 2. Build skeleton
+  const skeleton = buildSkeleton(H, scene);
 
   // 3. Skin material
   const skinRgba = Array.isArray(cfg.skinTone)
@@ -356,7 +356,7 @@ export async function buildHumanoid(cfg) {
 
   // 9. Animations
   const clips = buildAnimations(cfg);
-  buildAnimationGroups(clips, skeleton, boneNodes, scene);
+  buildAnimationGroups(clips, skeleton, scene);
 
   return { scene, engine };
 }
