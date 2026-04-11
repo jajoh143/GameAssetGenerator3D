@@ -220,7 +220,7 @@ export async function buildHumanoid(cfg) {
       // handedness fix which would flip the sign of rotation.x (inverting the cap).
       const hp = hairGeo.positions;
       const hn = hairGeo.normals;
-      const earY = headBoneY + headRadius * 0.05;
+      const earY = headBoneY + headRadius * 0.5;
       for (let i = 0; i < hp.length / 3; i++) {
         const hx = hp[i*3], hy = hp[i*3+1], hz = hp[i*3+2];
         hp[i*3]   = hx;
