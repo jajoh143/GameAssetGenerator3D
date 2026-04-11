@@ -268,7 +268,7 @@
                 <span class="slider-value" id="face_hair_y_val">0.05</span>
               </div>
               <input type="range" id="face_hair_y" name="face_hair_y"
-                     min="-0.10" max="0.40" step="0.01" value="0.05"
+                     min="-0.10" max="0.40" step="0.05" value="0.05"
                      oninput="document.getElementById('face_hair_y_val').textContent = parseFloat(this.value).toFixed(2)">
             </div>
 
@@ -278,7 +278,7 @@
                 <span class="slider-value" id="face_eye_height_val">0.20</span>
               </div>
               <input type="range" id="face_eye_height" name="face_eye_height"
-                     min="0.00" max="0.60" step="0.01" value="0.20"
+                     min="0.00" max="0.60" step="0.05" value="0.20"
                      oninput="document.getElementById('face_eye_height_val').textContent = parseFloat(this.value).toFixed(2)">
             </div>
 
@@ -288,7 +288,7 @@
                 <span class="slider-value" id="face_eye_spread_val">0.45</span>
               </div>
               <input type="range" id="face_eye_spread" name="face_eye_spread"
-                     min="0.10" max="0.80" step="0.01" value="0.45"
+                     min="0.10" max="0.80" step="0.05" value="0.45"
                      oninput="document.getElementById('face_eye_spread_val').textContent = parseFloat(this.value).toFixed(2)">
             </div>
 
@@ -298,7 +298,7 @@
                 <span class="slider-value" id="face_eye_rx_val">0.10</span>
               </div>
               <input type="range" id="face_eye_rx" name="face_eye_rx"
-                     min="0.02" max="0.22" step="0.01" value="0.10"
+                     min="0.02" max="0.22" step="0.02" value="0.10"
                      oninput="document.getElementById('face_eye_rx_val').textContent = parseFloat(this.value).toFixed(2)">
             </div>
 
@@ -308,8 +308,18 @@
                 <span class="slider-value" id="face_eye_ry_val">0.08</span>
               </div>
               <input type="range" id="face_eye_ry" name="face_eye_ry"
-                     min="0.02" max="0.18" step="0.01" value="0.08"
+                     min="0.02" max="0.18" step="0.02" value="0.08"
                      oninput="document.getElementById('face_eye_ry_val').textContent = parseFloat(this.value).toFixed(2)">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-row-header">
+                <label for="face_mouth_y">Mouth Height</label>
+                <span class="slider-value" id="face_mouth_y_val">-0.10</span>
+              </div>
+              <input type="range" id="face_mouth_y" name="face_mouth_y"
+                     min="-0.50" max="0.20" step="0.05" value="-0.10"
+                     oninput="document.getElementById('face_mouth_y_val').textContent = parseFloat(this.value).toFixed(2)">
             </div>
 
           </div>
@@ -565,7 +575,7 @@ function collectFormData() {
     if (el) data[id] = el.value;
   });
 
-  ['face_hair_y','face_eye_height','face_eye_spread','face_eye_rx','face_eye_ry'].forEach(id => {
+  ['face_hair_y','face_eye_height','face_eye_spread','face_eye_rx','face_eye_ry','face_mouth_y'].forEach(id => {
     const el = document.getElementById(id);
     if (el) data[id] = parseFloat(el.value);
   });

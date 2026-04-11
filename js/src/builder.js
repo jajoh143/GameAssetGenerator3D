@@ -13,6 +13,7 @@ import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
 import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
+import { buildMouthGeometry, createMouthMaterial } from './mouth_geo.js';
 import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
@@ -264,7 +265,24 @@ export async function buildHumanoid(cfg) {
     console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.20).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
   }
 
-  // 7. Clothing
+  // 7. Mouth
+  {
+    const mouthGeo    = buildMouthGeometry(headRadius, headBoneY, faceFrontZ, cfg.faceTweaks ?? {});
+    const mouthParams = createMouthMaterial();
+    const mouthMat    = new PBRMaterial('MouthMaterial', scene);
+    mouthMat.albedoColor    = new Color3(...mouthParams.albedoColor);
+    mouthMat.roughness      = mouthParams.roughness;
+    mouthMat.metallic       = mouthParams.metallic;
+    mouthMat.backFaceCulling = false;
+    const mouthMesh = new Mesh('Mouth', scene);
+    mouthMesh.material = mouthMat;
+    applyRawGeoToMesh(mouthMesh, mouthGeo);
+
+    const mouthY = cfg.faceTweaks?.mouthY ?? -0.10;
+    console.log(`[Mouth] Placed at world Y=${(headBoneY + headRadius * mouthY).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
+  }
+
+  // 8. Clothing
   if (cfg.clothing && cfg.clothing.length > 0) {
     const clothingColors = cfg.clothingColor ?? {};
     const clothingGeos = buildClothingGeometry(bodyData, cfg);
@@ -330,7 +348,7 @@ export async function buildHumanoid(cfg) {
     }
   }
 
-  // 8. Animations
+  // 9. Animations
   const clips = buildAnimations(cfg);
   buildAnimationGroups(clips, skeleton, scene);
 

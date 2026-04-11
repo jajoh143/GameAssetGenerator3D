@@ -71,6 +71,7 @@ function cfgFromBody(data, animations = 'all') {
     eyeSpread: ft(data.face_eye_spread, 0.45),
     eyeRx:     ft(data.face_eye_rx,     0.10),
     eyeRy:     ft(data.face_eye_ry,     0.08),
+    mouthY:    ft(data.face_mouth_y,   -0.10),
   };
 
   return cfg;
