@@ -147,8 +147,8 @@ export async function buildHumanoid(cfg) {
       // Hair positioning and rotation
       hairMesh.rotation.x = -Math.PI / 2;
 
-      // Position at top of head
-      hairMesh.position.set(0, headRadius * 5.5, headRadius * 0.05);
+      // Position at top of head (original proven position)
+      hairMesh.position.set(0, headRadius * 5.5, -headRadius * 0.6);
 
       // Add to head bone so it moves with animations
       headBone.add(hairMesh);
