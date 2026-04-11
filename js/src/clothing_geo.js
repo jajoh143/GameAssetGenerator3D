@@ -56,21 +56,22 @@ export function buildClothingGeometry(bodyData, cfg) {
   const bodyHeight = maxY - minY;
 
   // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
-  const footTop   = minY + bodyHeight * 0.05;
-  const kneeY     = minY + bodyHeight * 0.24;
-  const hipY      = minY + bodyHeight * 0.43;
-  const chestY    = minY + bodyHeight * 0.57;
-  const armY      = minY + bodyHeight * 0.63;  // lower chest / armpit level (used for v_neck)
-  const shoulderY = minY + bodyHeight * 0.73;  // shoulder top — shirts must reach here for arm coverage
-  const waistGap  = bodyHeight * 0.010;
+  const footTop    = minY + bodyHeight * 0.05;
+  const kneeY      = minY + bodyHeight * 0.24;
+  const hipY       = minY + bodyHeight * 0.43;
+  const chestY     = minY + bodyHeight * 0.57;
+  const armY       = minY + bodyHeight * 0.63;  // armpit level (used for v_neck)
+  const shirtTopY  = minY + bodyHeight * 0.70;  // top of short-sleeve zone — stays below neck junction
+  const shoulderY  = minY + bodyHeight * 0.73;  // shoulder top — long sleeves must reach here
+  const waistGap   = bodyHeight * 0.010;
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  const X_SHORT_SLEEVE = maxAbsX * 0.85;  // arm hangs at ~H*0.14 ≈ 80-85% of maxAbsX
+  const X_SHORT_SLEEVE = maxAbsX * 0.75;  // wider than torso to include arm stub, narrower than full arm span
 
   const ZONES = {
-    short_sleeve: [hipY + waistGap, shoulderY, X_SHORT_SLEEVE],
-    polo:         [hipY + waistGap, shoulderY, X_SHORT_SLEEVE],
+    short_sleeve: [hipY + waistGap, shirtTopY, X_SHORT_SLEEVE],
+    polo:         [hipY + waistGap, shirtTopY, X_SHORT_SLEEVE],
     long_sleeve:  [hipY + waistGap, shoulderY, Infinity      ],
     v_neck:       [hipY + waistGap, chestY,    X_TORSO       ],
     jeans:        [footTop,         hipY,       X_LEGS        ],
@@ -101,8 +102,8 @@ export function buildClothingGeometry(bodyData, cfg) {
         i,
       }));
 
-      const anyInZone = vs.some(v => v.y >= yLo && v.y <= yHi);
-      if (!anyInZone) continue;
+      const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
+      if (centY < yLo || centY > yHi) continue;
 
       const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
       if (Math.abs(centX) > xCap) continue;
