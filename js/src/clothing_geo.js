@@ -55,48 +55,32 @@ export function buildClothingGeometry(bodyData, cfg) {
   }
   const bodyHeight = maxY - minY;
 
-  // Compute torso half-width by scanning well below shoulder height.
-  // For a T-pose mesh, arm vertices appear at ~65%+ of body height.
-  // Scanning 50-63% captures chest/torso only, giving an accurate width
-  // to base short-sleeve coverage on (not the full arm span).
-  let torsoHalfW = 0;
-  for (let i = 0; i < vCount; i++) {
-    const y  = bPos[i*3+1];
-    const ax = Math.abs(bPos[i*3]);
-    if (y >= minY + bodyHeight * 0.50 && y <= minY + bodyHeight * 0.63) {
-      if (ax > torsoHalfW) torsoHalfW = ax;
-    }
-  }
-  if (torsoHalfW === 0) torsoHalfW = maxAbsX * 0.22;  // fallback for unusual meshes
-
   // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
   const footTop    = minY + bodyHeight * 0.05;
   const kneeY      = minY + bodyHeight * 0.24;
   const hipY       = minY + bodyHeight * 0.43;
   const chestY     = minY + bodyHeight * 0.57;
   const armY       = minY + bodyHeight * 0.63;  // armpit level (used for v_neck)
-  const shirtTopY  = minY + bodyHeight * 0.70;  // top of short-sleeve zone — stays below neck junction
-  const shoulderY  = minY + bodyHeight * 0.73;  // shoulder top — long sleeves must reach here
-  const waistGap   = bodyHeight * 0.010;
+  const shirtTopY  = minY + bodyHeight * 0.70;  // top of short-sleeve zone
+  const shoulderY  = minY + bodyHeight * 0.73;  // shoulder top — long sleeves reach here
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  // Short sleeve: torso half-width × 1.6 extends just past the shoulder cap.
-  // Using torsoHalfW (scanned below T-pose arm height) avoids maxAbsX which
-  // equals the full arm span and would cover the entire arm.
-  const X_SHORT_SLEEVE = torsoHalfW * 1.6;
+  // Short sleeve: proportional to body height so it's immune to arm-pose ambiguity.
+  // bodyHeight * 0.17 ≈ shoulder-width/2 + a short sleeve cap (~6-7 cm past shoulder
+  // for a 1.5 m character). Does NOT depend on maxAbsX (= full arm span in T-pose).
+  const X_SHORT_SLEEVE = bodyHeight * 0.17;
 
   const ZONES = {
-    short_sleeve: [hipY + waistGap, shirtTopY, X_SHORT_SLEEVE],
-    polo:         [hipY + waistGap, shirtTopY, X_SHORT_SLEEVE],
-    long_sleeve:  [hipY + waistGap, shoulderY, Infinity      ],
-    v_neck:       [hipY + waistGap, chestY,    X_TORSO       ],
-    jeans:        [footTop,         hipY,       X_LEGS        ],
-    shorts:       [kneeY,           hipY,       X_LEGS        ],
+    short_sleeve: [hipY, shirtTopY, X_SHORT_SLEEVE],
+    polo:         [hipY, shirtTopY, X_SHORT_SLEEVE],
+    long_sleeve:  [hipY, shoulderY, Infinity      ],
+    v_neck:       [hipY, chestY,    X_TORSO       ],
+    jeans:        [footTop, hipY,   X_LEGS        ],
+    shorts:       [kneeY,   hipY,   X_LEGS        ],
   };
 
   const baseOffset = 0.026;
-  console.log(`[Clothing] torsoHalfW=${torsoHalfW.toFixed(3)} maxAbsX=${maxAbsX.toFixed(3)} X_SHORT_SLEEVE=${X_SHORT_SLEEVE.toFixed(3)}`);
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
@@ -280,8 +264,8 @@ export function buildButtonGeometry(bodyData, yLo, yHi, numButtons = 4) {
 export function buildHemGeometry(bodyData, hipY, bodyHeight, baseOffset) {
   const bPos = bodyData.positions;
   const vCount = bPos.length / 3;
-  const yWindow = bodyHeight * 0.04;
-  const xLimit  = bodyHeight * 0.22;   // exclude arm vertices
+  const yWindow = bodyHeight * 0.05;
+  const xLimit  = bodyHeight * 0.28;   // torso at hip level, excludes arms
 
   let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
   for (let i = 0; i < vCount; i++) {
@@ -296,7 +280,7 @@ export function buildHemGeometry(bodyData, hipY, bodyHeight, baseOffset) {
   }
   if (maxZ === -Infinity) return null;
 
-  const hemH    = bodyHeight * 0.028;
+  const hemH    = bodyHeight * 0.050;  // taller so it bridges any gap between shirt and jeans
   const hemOff  = baseOffset * 1.2;
   const radiusX = maxAbsX + hemOff;
   const radiusZ = (maxZ - minZ) / 2 + hemOff;
@@ -310,8 +294,8 @@ export function buildHemGeometry(bodyData, hipY, bodyHeight, baseOffset) {
     const a = (2 * Math.PI * i) / segments;
     const x = radiusX * Math.cos(a);
     const z = centerZ + radiusZ * Math.sin(a);
-    positions.push(x, hipY - hemH * 0.15, z);   // bottom ring — just below waist
-    positions.push(x, hipY + hemH * 0.85, z);   // top ring — covers shirt hem
+    positions.push(x, hipY - hemH * 0.35, z);   // bottom ring — extends below jeans top
+    positions.push(x, hipY + hemH * 0.65, z);   // top ring — overlaps shirt hem
   }
 
   for (let i = 0; i < segments; i++) {
