@@ -55,6 +55,20 @@ export function buildClothingGeometry(bodyData, cfg) {
   }
   const bodyHeight = maxY - minY;
 
+  // Compute torso half-width by scanning well below shoulder height.
+  // For a T-pose mesh, arm vertices appear at ~65%+ of body height.
+  // Scanning 50-63% captures chest/torso only, giving an accurate width
+  // to base short-sleeve coverage on (not the full arm span).
+  let torsoHalfW = 0;
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3+1];
+    const ax = Math.abs(bPos[i*3]);
+    if (y >= minY + bodyHeight * 0.50 && y <= minY + bodyHeight * 0.63) {
+      if (ax > torsoHalfW) torsoHalfW = ax;
+    }
+  }
+  if (torsoHalfW === 0) torsoHalfW = maxAbsX * 0.22;  // fallback for unusual meshes
+
   // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
   const footTop    = minY + bodyHeight * 0.05;
   const kneeY      = minY + bodyHeight * 0.24;
@@ -67,7 +81,10 @@ export function buildClothingGeometry(bodyData, cfg) {
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  const X_SHORT_SLEEVE = maxAbsX * 0.75;  // wider than torso to include arm stub, narrower than full arm span
+  // Short sleeve: torso half-width × 1.6 extends just past the shoulder cap.
+  // Using torsoHalfW (scanned below T-pose arm height) avoids maxAbsX which
+  // equals the full arm span and would cover the entire arm.
+  const X_SHORT_SLEEVE = torsoHalfW * 1.6;
 
   const ZONES = {
     short_sleeve: [hipY + waistGap, shirtTopY, X_SHORT_SLEEVE],
@@ -79,6 +96,7 @@ export function buildClothingGeometry(bodyData, cfg) {
   };
 
   const baseOffset = 0.026;
+  console.log(`[Clothing] torsoHalfW=${torsoHalfW.toFixed(3)} maxAbsX=${maxAbsX.toFixed(3)} X_SHORT_SLEEVE=${X_SHORT_SLEEVE.toFixed(3)}`);
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
@@ -102,8 +120,12 @@ export function buildClothingGeometry(bodyData, cfg) {
         i,
       }));
 
+      // Lower bound: ALL vertices must be above yLo so no triangle dips below
+      // the hem line, giving a clean bottom edge without jagged diagonals.
+      if (Math.min(vs[0].y, vs[1].y, vs[2].y) < yLo) continue;
+      // Upper bound: centroid check prevents bleeding into head/neck/arm area.
       const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY < yLo || centY > yHi) continue;
+      if (centY > yHi) continue;
 
       const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
       if (Math.abs(centX) > xCap) continue;
