@@ -64,7 +64,7 @@ function buildVertexShell(bPos, bNorm, bIdx, vCount, triCount,
       if (b === 0 || (b >= 13 && b <= 18)) legWt += w;
     }
     if (boneMode === 'excludeArm') return armWt < 0.50;
-    if (boneMode === 'includeLegs') return legWt >= 0.20;
+    if (boneMode === 'includeLegs') return legWt > 0;
     return true;
   }
 
@@ -315,8 +315,46 @@ export function buildClothingGeometry(bodyData, cfg) {
         bSkinIdx, bSkinWts, 'includeLegs'
       );
       if (!geo) { console.warn(`[Clothing] No verts for '${ctype}'`); continue; }
-      result[ctype] = geo;
-      console.log(`[Clothing] Built vertex-shell legs '${ctype}': ${geo.positions.length/3} verts`);
+
+      // Leg cuffs — scan each leg at yLo (ankle) and extend a cylinder down to the feet,
+      // covering the ragged shell bottom edge and filling the ankle-to-ground gap.
+      const buildLegCuff = (xSign) => {
+        const yWin = bodyHeight * 0.06;
+        let mxX = -Infinity, mnX = Infinity, mxZ = -Infinity, mnZ = Infinity, nf = 0;
+        for (let i = 0; i < vCount; i++) {
+          const vx = bPos[i*3], vy = bPos[i*3+1], vz = bPos[i*3+2];
+          if (Math.abs(vy - yLo) > yWin) continue;
+          if (xSign > 0 && vx < bodyHeight * 0.01) continue;   // right leg: skip center
+          if (xSign < 0 && vx > -bodyHeight * 0.01) continue;  // left leg: skip center
+          if (vx > mxX) mxX = vx; if (vx < mnX) mnX = vx;
+          if (vz > mxZ) mxZ = vz; if (vz < mnZ) mnZ = vz;
+          nf++;
+        }
+        if (nf < 3) return null;
+        const depth = yLo - minY;
+        if (depth < 0.005) return null;
+        const cx = (mxX + mnX) / 2, rx = (mxX - mnX) / 2 + baseOffset * 2;
+        const cz = (mxZ + mnZ) / 2, rz = (mxZ - mnZ) / 2 + baseOffset * 2;
+        const SEGS = 14;
+        const pos = [], idx = [];
+        for (let si = 0; si < SEGS; si++) {
+          const a = (2 * Math.PI * si) / SEGS;
+          pos.push(cx + rx * Math.cos(a), minY, cz + rz * Math.sin(a));  // bottom ring at ground
+          pos.push(cx + rx * Math.cos(a), yLo,  cz + rz * Math.sin(a));  // top ring at pants hem
+        }
+        for (let si = 0; si < SEGS; si++) {
+          const next = (si + 1) % SEGS;
+          const b0 = si*2, b1 = next*2, t0 = b0+1, t1 = b1+1;
+          idx.push(b0, t0, b1, b1, t0, t1);
+        }
+        const p = new Float32Array(pos), ix = new Uint32Array(idx);
+        return { positions: p, normals: computeVertexNormals(p, ix), indices: ix };
+      };
+
+      const rCuff = buildLegCuff(+1);
+      const lCuff = buildLegCuff(-1);
+      result[ctype] = mergeTubes(geo, mergeTubes(rCuff, lCuff));
+      console.log(`[Clothing] Built vertex-shell legs '${ctype}': ${result[ctype].positions.length/3} verts`);
 
     } else if (ctype === 'long_sleeve') {
       // Single shell covering torso + arms — no bone filter needed for full coverage
@@ -341,7 +379,7 @@ export function buildClothingGeometry(bodyData, cfg) {
       console.log(`[Clothing] Built vertex-shell shirt '${ctype}': ${geo.positions.length/3} verts`);
 
     } else {
-      // short_sleeve / polo: torso shell + short sleeve tubes at shoulder seam
+      // short_sleeve / polo: torso shell + short sleeve tubes + shoulder seam bands
       const torso = buildVertexShell(
         bPos, bNorm, bIdx, vCount, triCount,
         yLo - SHELL_MARGIN, yHi + SHELL_MARGIN, baseOffset,
@@ -355,14 +393,53 @@ export function buildClothingGeometry(bodyData, cfg) {
       const sleeveYMin   = bodyHeight * 0.54;
       const sleeveYMax   = bodyHeight * 0.69;
       const maxArmR      = bodyHeight * 0.058;
+
+      // Armhole band — a ring at the shoulder seam that bridges the shirt shell's open
+      // edge to the sleeve tube's inner ring, hiding any gap between the two pieces.
+      const buildArmholeBand = (xSign) => {
+        const xWin = bodyHeight * 0.04;
+        let mxY = -Infinity, mnY_ = Infinity, mxZ = -Infinity, mnZ = Infinity, nf = 0;
+        for (let i = 0; i < vCount; i++) {
+          const vx = bPos[i*3], vy = bPos[i*3+1], vz = bPos[i*3+2];
+          if (vx * xSign <= 0) continue;                                       // correct side only
+          if (Math.abs(Math.abs(vx) - sleeveXStart) > xWin) continue;         // near shoulder seam X
+          if (vy < sleeveYMin - bodyHeight * 0.05 || vy > sleeveYMax) continue; // shoulder Y range
+          if (vy > mxY) mxY = vy; if (vy < mnY_) mnY_ = vy;
+          if (vz > mxZ) mxZ = vz; if (vz < mnZ) mnZ = vz;
+          nf++;
+        }
+        if (nf < 3) return null;
+        const cy = (mxY + mnY_) / 2, ry = (mxY - mnY_) / 2 + baseOffset * 1.5;
+        const cz = (mxZ + mnZ)  / 2, rz = (mxZ - mnZ)  / 2 + baseOffset * 1.5;
+        const bW = bodyHeight * 0.022;                // band width along X (spans the gap)
+        const xA = sleeveXStart * xSign - bW * xSign; // inward edge (overlaps shirt shell)
+        const xB = sleeveXStart * xSign + bW * xSign; // outward edge (overlaps sleeve tube)
+        const SEGS = 16;
+        const pos = [], idx = [];
+        for (let si = 0; si < SEGS; si++) {
+          const a = (2 * Math.PI * si) / SEGS;
+          const y = cy + ry * Math.sin(a), z = cz + rz * Math.cos(a);
+          pos.push(xA, y, z, xB, y, z);
+        }
+        for (let si = 0; si < SEGS; si++) {
+          const next = (si + 1) % SEGS;
+          const b0 = si*2, b1 = next*2, t0 = b0+1, t1 = b1+1;
+          idx.push(b0, t0, b1, b1, t0, t1);
+        }
+        const p = new Float32Array(pos), ix = new Uint32Array(idx);
+        return { positions: p, normals: computeVertexNormals(p, ix), indices: ix };
+      };
+
       const rSleeve = buildProceduralSleeve(bPos, vCount, sleeveXStart, sleeveXEnd, +1,
                         sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
       const lSleeve = buildProceduralSleeve(bPos, vCount, sleeveXStart, sleeveXEnd, -1,
                         sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
-      const geo = mergeTubes(torso, mergeTubes(rSleeve, lSleeve));
+      const rBand = buildArmholeBand(+1);
+      const lBand = buildArmholeBand(-1);
+      const geo = mergeTubes(torso, mergeTubes(rSleeve, mergeTubes(lSleeve, mergeTubes(rBand, lBand))));
       if (!geo) { console.warn(`[Clothing] Empty merged geo for '${ctype}'`); continue; }
       result[ctype] = geo;
-      console.log(`[Clothing] Built vertex-shell shirt+sleeves '${ctype}': ${geo.positions.length/3} verts`);
+      console.log(`[Clothing] Built vertex-shell shirt+sleeves '${ctype}': ${result[ctype].positions.length/3} verts`);
     }
   }
 
