@@ -314,6 +314,24 @@ function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign,
     prevBase = currBase;
   }
 
+  // Close the outer sleeve end with a disc cap.
+  // Without this the tube is open and looks hollow from the side.
+  {
+    const lr = rings[rings.length - 1];
+    const capIdx = positions.length / 3;
+    positions.push(lr.x, lr.cy, lr.cz);
+    for (let si = 0; si < SEGS; si++) {
+      const next = (si + 1) % SEGS;
+      // xSign>0: right arm cap faces +X → wind (cap, next, si) for outward normal
+      // xSign<0: left arm cap faces −X → wind (cap, si, next)
+      if (xSign > 0) {
+        indices.push(capIdx, prevBase + next, prevBase + si);
+      } else {
+        indices.push(capIdx, prevBase + si, prevBase + next);
+      }
+    }
+  }
+
   const pos = new Float32Array(positions);
   const idx = new Uint32Array(indices);
   return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
@@ -345,7 +363,7 @@ export function buildClothingGeometry(bodyData, cfg) {
   const bodyHeight = maxY - minY;
 
   // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
-  const footTop    = minY + bodyHeight * 0.05;
+  const footTop    = minY + bodyHeight * 0.09;  // ankle hem — was 0.05 (too low, hid shoes)
   const kneeY      = minY + bodyHeight * 0.24;
   const hipY       = minY + bodyHeight * 0.43;
   const chestY     = minY + bodyHeight * 0.57;
@@ -369,7 +387,7 @@ export function buildClothingGeometry(bodyData, cfg) {
     shorts:       [kneeY,   hipY,      X_LEGS,         null                ],
   };
 
-  const baseOffset = 0.026;
+  const baseOffset = 0.016;  // tight fit matching reference (was 0.026 — too baggy)
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
