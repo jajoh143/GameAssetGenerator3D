@@ -47,26 +47,39 @@ function computeVertexNormals(positions, indices) {
  * @param {number}       offset   - gap above body surface
  * @returns {{ positions, normals, indices }|null}
  */
-function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
+function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset,
+                            skinIdx = null, skinWts = null) {
   const N_RINGS     = 14;
   const SEGS        = 24;
   const ySpan       = yHi - yLo;
-  // 0.08 * ySpan gives ±1 full ring-spacing of overlap → every ring finds vertices.
-  // 0.05 was too tight: sparse Y levels gave inconsistent cz, producing jagged Z profile.
   const yWin        = ySpan * 0.08;
-  // Taper: full xCap up to TAPER_START, smoothstep down to xCapTop by TAPER_END,
-  // then hold xCapTop for the neckline so the top rings form a clean uniform oval.
   const TAPER_START = 0.72;
   const TAPER_END   = 0.92;
 
+  // Exclude arm/shoulder-bone vertices from torso scan.
+  // Near shirtTopY the arm mesh overlaps the torso in Y; without this filter those
+  // vertices inflate mxX and shift cz, making the shoulder rings too wide/misaligned.
+  // Arm/shoulder bones in our remapped scheme: 5-8 (left), 9-12 (right).
+  // A vertex is "arm" if any arm-bone slot carries ≥ 0.20 weight.
+  function isTorsoVert(i) {
+    if (!skinIdx || !skinWts) return true;
+    for (let j = 0; j < 4; j++) {
+      const b = skinIdx[i * 4 + j];
+      const w = skinWts[i * 4 + j];
+      if (w >= 0.20 && ((b >= 5 && b <= 8) || (b >= 9 && b <= 12))) return false;
+    }
+    return true;
+  }
+
   function scanAt(y, cap) {
     let mxZ = -Infinity, mnZ = Infinity, mxX = 0;
-    let sumZ = 0, nZ = 0;  // for centroid cz — more stable than (max+min)/2
+    let sumZ = 0, nZ = 0;
     for (let i = 0; i < vCount; i++) {
       const vy = bPos[i*3 + 1];
       if (Math.abs(vy - y) > yWin) continue;
       const vx = Math.abs(bPos[i*3]);
       if (vx > cap) continue;
+      if (!isTorsoVert(i)) continue;   // exclude arm mesh from torso rings
       const vz = bPos[i*3 + 2];
       if (vz > mxZ) mxZ = vz;
       if (vz < mnZ) mnZ = vz;
@@ -74,8 +87,6 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
       sumZ += vz; nZ++;
     }
     if (nZ === 0) return null;
-    // cz = centroid: resistant to single-vertex outliers pushing the ring off-centre.
-    // rz = half bounding-box depth + offset: keeps the ring outside the body surface.
     const cz = sumZ / nZ;
     return { rx: mxX + offset, rz: (mxZ - mnZ) / 2 + offset, cz };
   }
@@ -363,9 +374,9 @@ export function buildClothingGeometry(bodyData, cfg) {
   const bodyHeight = maxY - minY;
 
   // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
-  const footTop    = minY + bodyHeight * 0.09;  // ankle hem — was 0.05 (too low, hid shoes)
+  const footTop    = minY + bodyHeight * 0.05;  // just above shoe line
   const kneeY      = minY + bodyHeight * 0.24;
-  const hipY       = minY + bodyHeight * 0.43;
+  const hipY       = minY + bodyHeight * 0.45;  // natural waist (was 0.43 — too low/hip-level)
   const chestY     = minY + bodyHeight * 0.57;
   const armY       = minY + bodyHeight * 0.63;  // armpit level (used for v_neck)
   const shirtTopY  = minY + bodyHeight * 0.70;  // top of short-sleeve zone
@@ -411,7 +422,7 @@ export function buildClothingGeometry(bodyData, cfg) {
       // yMin raised (+0.04→0.03 below shirtTop) to stop the scan picking up torso mesh
       // at the shoulder junction; yMax raised (+0.08) to reach the arm above shoulder.
       // Skin-weight filter keeps only arm/forearm verts; maxArmR caps any stray blobs.
-      const torso = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
+      const torso = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset, bSkinIdx, bSkinWts);
       const sleeveXEnd = xCap + bodyHeight * 0.06;
       const sleeveYMin = yHi - bodyHeight * 0.03;  // was 0.08 — too low, captured torso
       const sleeveYMax = yHi + bodyHeight * 0.08;  // was 0.02 — too low for arm above shoulder
@@ -427,7 +438,7 @@ export function buildClothingGeometry(bodyData, cfg) {
 
     } else if (isFinite(xCap) && xCapTop !== null) {
       // v_neck: torso tube only, no sleeve branches
-      const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
+      const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset, bSkinIdx, bSkinWts);
       if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
       result[ctype] = geo;
       console.log(`[Clothing] Built procedural shirt '${ctype}': ${geo.positions.length / 3} verts`);
