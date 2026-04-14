@@ -47,24 +47,27 @@ function computeVertexNormals(positions, indices) {
  * @param {number}             offset     outward gap in metres
  * @param {Uint16Array|null}   skinIdx    skin bone indices, stride 4
  * @param {Float32Array|null}  skinWts    skin bone weights, stride 4
- * @param {string}             boneMode   'excludeArm' | 'includeLegs' | 'none'
+ * @param {string}             boneMode   'excludeArm' | 'excludeTorso' | 'none'
  * @returns {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }|null}
  */
 function buildVertexShell(bPos, bNorm, bIdx, vCount, triCount,
                           yLo, yHi, offset,
                           skinIdx, skinWts, boneMode) {
 
-  // Bone filter: arm bones 5-8 (left), 9-12 (right); leg/hip bones 0, 13-18
+  // Bone filter
+  // 'excludeArm':    include unless arm-bone total (5-12) >= 0.50  → shirt torso
+  // 'excludeTorso':  include unless spine/chest total (1-4)  >= 0.50  → pants (mirrors excludeArm)
+  // 'none':          include all                                        → long_sleeve
   function passFilter(i) {
     if (boneMode === 'none' || !skinIdx || !skinWts) return true;
-    let armWt = 0, legWt = 0;
+    let armWt = 0, torsoWt = 0;
     for (let j = 0; j < 4; j++) {
       const b = skinIdx[i*4+j], w = skinWts[i*4+j];
-      if (b >= 5 && b <= 12) armWt += w;
-      if (b === 0 || (b >= 13 && b <= 18)) legWt += w;
+      if (b >= 5 && b <= 12) armWt  += w;   // arm bones
+      if (b >= 1 && b <= 4)  torsoWt += w;  // Spine(1), Chest(2), Neck(3), Head(4)
     }
-    if (boneMode === 'excludeArm') return armWt < 0.50;
-    if (boneMode === 'includeLegs') return legWt > 0;
+    if (boneMode === 'excludeArm')    return armWt   < 0.50;
+    if (boneMode === 'excludeTorso')  return torsoWt < 0.50;
     return true;
   }
 
@@ -315,7 +318,7 @@ export function buildClothingGeometry(bodyData, cfg) {
       const geo = buildVertexShell(
         bPos, bNorm, bIdx, vCount, triCount,
         yLo - SHELL_MARGIN, yHi + SHELL_MARGIN, baseOffset,
-        bSkinIdx, bSkinWts, 'includeLegs'
+        bSkinIdx, bSkinWts, 'excludeTorso'
       );
       if (!geo) { console.warn(`[Clothing] No verts for '${ctype}'`); continue; }
 
