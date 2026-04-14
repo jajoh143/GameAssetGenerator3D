@@ -119,8 +119,9 @@ export function buildClothingGeometry(bodyData, cfg) {
           const nx = bNorm ? bNorm[v.i*3]   : 0;
           const ny = bNorm ? bNorm[v.i*3+1] : 0;
           const nz = bNorm ? bNorm[v.i*3+2] : 0;
-          // Clamp Y so no vertex dips below the hem line (sleeve X is already clean).
-          const cy = Math.max(v.y, yLo);
+          // Clamp Y within zone bounds — snaps low vertices to hem, high vertices to
+          // neckline, so no flaps poke out at either edge.
+          const cy = Math.min(Math.max(v.y, yLo), yHi);
           verts.push(v.x + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
           vertMap.set(v.i, verts.length / 3 - 1);
         }
