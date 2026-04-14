@@ -104,27 +104,24 @@ export function buildClothingGeometry(bodyData, cfg) {
         i,
       }));
 
-      // All boundaries use centroid — includes more edge triangles than min-vertex.
-      // Out-of-bounds vertices are clamped to the boundary when building geometry
-      // (below), so no jagged edges stick out past the zone limits.
+      // Y boundary: centroid filter so edge triangles spanning the waist are included,
+      // then clamp any vertex that dips below yLo so the hem line stays clean.
       const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
       if (centY < yLo || centY > yHi) continue;
 
-      const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
-      if (Math.abs(centX) > xCap) continue;
+      // X boundary: strict min-vertex filter — exclude the whole triangle if ANY
+      // vertex exceeds xCap.  This gives a natural sleeve edge defined by actual
+      // mesh geometry rather than a flat clamped wall.
+      if (isFinite(xCap) && vs.some(v => Math.abs(v.x) > xCap)) continue;
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
           const nx = bNorm ? bNorm[v.i*3]   : 0;
           const ny = bNorm ? bNorm[v.i*3+1] : 0;
           const nz = bNorm ? bNorm[v.i*3+2] : 0;
-          // Clamp each vertex to zone boundaries so stray vertices don't
-          // poke out past the hem line or past the sleeve cap.
+          // Clamp Y so no vertex dips below the hem line (sleeve X is already clean).
           const cy = Math.max(v.y, yLo);
-          const cx = isFinite(xCap)
-            ? Math.sign(v.x) * Math.min(Math.abs(v.x), xCap)
-            : v.x;
-          verts.push(cx + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
+          verts.push(v.x + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
           vertMap.set(v.i, verts.length / 3 - 1);
         }
         return vertMap.get(v.i);
