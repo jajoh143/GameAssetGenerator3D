@@ -104,14 +104,16 @@ export function buildClothingGeometry(bodyData, cfg) {
         i,
       }));
 
-      // Y boundary: centroid filter so edge triangles spanning the waist are included,
-      // then clamp any vertex that dips below yLo so the hem line stays clean.
-      const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY < yLo || centY > yHi) continue;
+      // Y top: strict — skip if ANY vertex is above yHi.  Same logic as sleeve X:
+      // clamping creates flat panels; strict exclusion gives a clean natural cut.
+      if (vs.some(v => v.y > yHi)) continue;
 
-      // X boundary: strict min-vertex filter — exclude the whole triangle if ANY
-      // vertex exceeds xCap.  This gives a natural sleeve edge defined by actual
-      // mesh geometry rather than a flat clamped wall.
+      // Y bottom: centroid so waist triangles that straddle hipY are included,
+      // then clamp low vertices up so no flap dangles below the hem.
+      const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
+      if (centY < yLo) continue;
+
+      // X boundary: strict — skip if ANY vertex exceeds xCap (clean sleeve edge).
       if (isFinite(xCap) && vs.some(v => Math.abs(v.x) > xCap)) continue;
 
       const newIdxs = vs.map(v => {
@@ -119,9 +121,8 @@ export function buildClothingGeometry(bodyData, cfg) {
           const nx = bNorm ? bNorm[v.i*3]   : 0;
           const ny = bNorm ? bNorm[v.i*3+1] : 0;
           const nz = bNorm ? bNorm[v.i*3+2] : 0;
-          // Clamp Y within zone bounds — snaps low vertices to hem, high vertices to
-          // neckline, so no flaps poke out at either edge.
-          const cy = Math.min(Math.max(v.y, yLo), yHi);
+          // Only clamp the bottom — no vertex can be above yHi (already excluded above).
+          const cy = Math.max(v.y, yLo);
           verts.push(v.x + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
           vertMap.set(v.i, verts.length / 3 - 1);
         }
