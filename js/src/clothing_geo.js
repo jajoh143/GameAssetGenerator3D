@@ -51,16 +51,17 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
   const N_RINGS     = 14;
   const SEGS        = 24;
   const ySpan       = yHi - yLo;
-  const yWin        = ySpan * 0.05;  // tighter — 0.08 over-sampled shoulder into chest
+  // 0.08 * ySpan gives ±1 full ring-spacing of overlap → every ring finds vertices.
+  // 0.05 was too tight: sparse Y levels gave inconsistent cz, producing jagged Z profile.
+  const yWin        = ySpan * 0.08;
   // Taper: full xCap up to TAPER_START, smoothstep down to xCapTop by TAPER_END,
   // then hold xCapTop for the neckline so the top rings form a clean uniform oval.
-  // Keep full width for 72% of shirt height (shirt body + armhole area), then
-  // transition quickly to neck width, leaving top 8% flat.
   const TAPER_START = 0.72;
   const TAPER_END   = 0.92;
 
   function scanAt(y, cap) {
-    let mxZ = -Infinity, mnZ = Infinity, mxX = 0, found = false;
+    let mxZ = -Infinity, mnZ = Infinity, mxX = 0;
+    let sumZ = 0, nZ = 0;  // for centroid cz — more stable than (max+min)/2
     for (let i = 0; i < vCount; i++) {
       const vy = bPos[i*3 + 1];
       if (Math.abs(vy - y) > yWin) continue;
@@ -70,10 +71,13 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
       if (vz > mxZ) mxZ = vz;
       if (vz < mnZ) mnZ = vz;
       if (vx > mxX) mxX = vx;
-      found = true;
+      sumZ += vz; nZ++;
     }
-    if (!found) return null;
-    return { rx: mxX + offset, rz: (mxZ - mnZ) / 2 + offset, cz: (mxZ + mnZ) / 2 };
+    if (nZ === 0) return null;
+    // cz = centroid: resistant to single-vertex outliers pushing the ring off-centre.
+    // rz = half bounding-box depth + offset: keeps the ring outside the body surface.
+    const cz = sumZ / nZ;
+    return { rx: mxX + offset, rz: (mxZ - mnZ) / 2 + offset, cz };
   }
 
   const rings = [];
@@ -237,16 +241,19 @@ function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign,
   // Arm / forearm bone indices in our remapped scheme (0-18):
   //   LeftShoulder=5, LeftArm=6, LeftForeArm=7
   //   RightShoulder=9, RightArm=10, RightForeArm=11
-  // Accept either side's arm/forearm — xSign already constrains which X side.
+  // xSign already constrains which X side, so we accept both left & right arm bones.
+  //
+  // Use weight-threshold (>= 0.20) rather than dominant-bone: shoulder-junction
+  // vertices are often split 50/50 between Chest and LeftArm, so dominant-bone
+  // check would exclude them and leave the inner sleeve ring empty.
   function isArmVert(i) {
     if (!skinIdx || !skinWts) return true;
-    let maxWt = -1, dom = 0;
     for (let j = 0; j < 4; j++) {
+      const b = skinIdx[i * 4 + j];
       const w = skinWts[i * 4 + j];
-      if (w > maxWt) { maxWt = w; dom = skinIdx[i * 4 + j]; }
+      if (w >= 0.20 && ((b >= 5 && b <= 7) || (b >= 9 && b <= 11))) return true;
     }
-    // Accept shoulder(5/9), arm(6/10), or forearm(7/11)
-    return (dom >= 5 && dom <= 7) || (dom >= 9 && dom <= 11);
+    return false;
   }
 
   function scanAt(xAbs) {
