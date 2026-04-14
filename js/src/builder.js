@@ -14,7 +14,7 @@ import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
 import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
 import { buildMouthGeometry, createMouthMaterial } from './mouth_geo.js';
-import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry, buildHemGeometry, buildBeltGeometry } from './clothing_geo.js';
+import { buildClothingGeometry, buildCollarGeometry, buildCrewNeckGeometry, buildButtonGeometry, buildHemGeometry, buildBeltGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
@@ -338,6 +338,27 @@ export async function buildHumanoid(cfg) {
         collarMesh.material = collarMat;
         applyRawGeoToMesh(collarMesh, collarGeo);
         console.log('[Clothing] Added polo collar');
+      }
+    }
+
+    // Crew neck band — seals the open neckline for non-polo shirt types
+    const CREW_NECK_TYPES = ['short_sleeve', 'long_sleeve', 'v_neck'];
+    const crewNeckType = clothingList.find(c => CREW_NECK_TYPES.includes(c));
+    if (crewNeckType) {
+      // Place band just above the shirt top (shirtTopY = 70% body height)
+      const crewNeckY = _minY + _bodyH * 0.71;
+      const crewNeckGeo = buildCrewNeckGeometry(bodyData, crewNeckY, _bodyH, 0.020);
+      if (crewNeckGeo) {
+        const colorName = (cfg.clothingColor ?? {})[crewNeckType] ?? CLOTHING_DEFAULT_COLORS[crewNeckType] ?? 'grey';
+        const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
+        const CREW_ROUGHNESS = { short_sleeve: 0.62, long_sleeve: 0.60, v_neck: 0.68 };
+        const crewMat = makePBR(scene, 'CrewNeckMat', rgba, CREW_ROUGHNESS[crewNeckType] ?? 0.62, 0.0);
+        crewMat.backFaceCulling = false;
+        crewMat.twoSidedLighting = true;
+        const crewMesh = new Mesh(`Clothing_${crewNeckType}_crewneck`, scene);
+        crewMesh.material = crewMat;
+        applyRawGeoToMesh(crewMesh, crewNeckGeo);
+        console.log(`[Clothing] Added crew neck for ${crewNeckType}`);
       }
     }
 

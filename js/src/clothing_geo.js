@@ -203,6 +203,67 @@ export function buildCollarGeometry(bodyData, armY, bodyHeight, baseOffset) {
 }
 
 /**
+ * Thin crew-neck band for short-sleeve and long-sleeve shirts.
+ * Seals the open top edge of the shirt so no skin shows through the neckline.
+ *
+ * @param {{ positions: Float32Array }} bodyData
+ * @param {number} neckY   - Y centre of the band (≈ top of shirt zone)
+ * @param {number} bodyHeight
+ * @param {number} baseOffset
+ * @returns {{ positions, normals, indices }|null}
+ */
+export function buildCrewNeckGeometry(bodyData, neckY, bodyHeight, baseOffset) {
+  const bPos   = bodyData.positions;
+  const vCount = bPos.length / 3;
+  // Scan at neckY level; xCap slightly inside X_SHORT_SLEEVE so we capture the
+  // neck/shoulder junction but not arm geometry.
+  const yWindow = bodyHeight * 0.04;
+  const xCap    = bodyHeight * 0.15;
+
+  let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3+1];
+    const ax = Math.abs(bPos[i*3]);
+    if (Math.abs(y - neckY) < yWindow && ax < xCap) {
+      const z = bPos[i*3+2];
+      if (z > maxZ) maxZ = z;
+      if (z < minZ) minZ = z;
+      if (ax > maxAbsX) maxAbsX = ax;
+    }
+  }
+  if (maxZ === -Infinity) return null;
+
+  const bandH   = bodyHeight * 0.022;   // thin — just seals the edge
+  const bandOff = baseOffset * 1.4;
+  const radiusX = maxAbsX + bandOff;
+  const radiusZ = (maxZ - minZ) / 2 + bandOff;
+  const centerZ = (maxZ + minZ) / 2;
+  const segments = 16;
+
+  const positions = [];
+  const indices   = [];
+
+  for (let i = 0; i < segments; i++) {
+    const angle = (2 * Math.PI * i) / segments;
+    const x = radiusX * Math.cos(angle);
+    const z = centerZ + radiusZ * Math.sin(angle);
+    positions.push(x, neckY - bandH * 0.5, z);
+    positions.push(x, neckY + bandH * 0.5, z);
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    const b0 = i * 2,   b1 = next * 2;
+    const t0 = b0 + 1,  t1 = b1 + 1;
+    indices.push(b0, t0, b1, b1, t0, t1);
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
  * Place small flat disc buttons along the center-front of the shirt zone.
  *
  * @param {{ positions: Float32Array }} bodyData
