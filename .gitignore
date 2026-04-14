@@ -2,6 +2,7 @@
 assets/*.glb
 assets/*.gltf
 assets/*.fbx
+assets/previews/
 assets/*.obj
 assets/*.blend
 assets/*.blend1
