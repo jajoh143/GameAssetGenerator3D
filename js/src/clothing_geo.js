@@ -287,12 +287,15 @@ export function buildClothingGeometry(bodyData, cfg) {
   const X_NECK         = bodyHeight * 0.12;   // neckline ≈ 71% of shoulder width (target 60-80%)
 
   // Y zone boundaries for each clothing type (vertex shell only needs yLo/yHi)
+  // Jeans top extends to 0.52*bH (above hipY=0.45) so the "all-3-in-zone" test
+  // captures hip/crotch triangles whose vertices straddle the old hipY boundary.
+  const jeansTopY = minY + bodyHeight * 0.52;
   const ZONES = {
     short_sleeve: [hipY,    shirtTopY],
     polo:         [hipY,    shirtTopY],
     long_sleeve:  [hipY,    shoulderY],
     v_neck:       [hipY,    chestY   ],
-    jeans:        [footTop, hipY     ],
+    jeans:        [footTop, jeansTopY],
     shorts:       [kneeY,   hipY     ],
   };
 
@@ -396,6 +399,8 @@ export function buildClothingGeometry(bodyData, cfg) {
 
       // Armhole band — a ring at the shoulder seam that bridges the shirt shell's open
       // edge to the sleeve tube's inner ring, hiding any gap between the two pieces.
+      // Only arm-bone-weighted vertices are scanned so the ring fits the ARM, not the
+      // wider torso shoulder.
       const buildArmholeBand = (xSign) => {
         const xWin = bodyHeight * 0.04;
         let mxY = -Infinity, mnY_ = Infinity, mxZ = -Infinity, mnZ = Infinity, nf = 0;
@@ -404,6 +409,15 @@ export function buildClothingGeometry(bodyData, cfg) {
           if (vx * xSign <= 0) continue;                                       // correct side only
           if (Math.abs(Math.abs(vx) - sleeveXStart) > xWin) continue;         // near shoulder seam X
           if (vy < sleeveYMin - bodyHeight * 0.05 || vy > sleeveYMax) continue; // shoulder Y range
+          // Only include arm-bone vertices so the ring radius matches the arm, not the torso
+          if (bSkinIdx && bSkinWts) {
+            let armWt = 0;
+            for (let j = 0; j < 4; j++) {
+              const b = bSkinIdx[i*4+j], w = bSkinWts[i*4+j];
+              if (b >= 5 && b <= 12) armWt += w;
+            }
+            if (armWt < 0.20) continue;
+          }
           if (vy > mxY) mxY = vy; if (vy < mnY_) mnY_ = vy;
           if (vz > mxZ) mxZ = vz; if (vz < mnZ) mnZ = vz;
           nf++;
