@@ -33,180 +33,79 @@ function computeVertexNormals(positions, indices) {
 }
 
 /**
- * Build a smooth tube by scanning the body's cross-section at multiple Y levels
- * and connecting fitted elliptical rings.  Floats `offset` metres above the body.
- * This avoids all face-extrusion artefacts (jagged edges, protruding flaps) because
- * we own every vertex — nothing is inherited from body triangles.
+ * Build a clothing shell by offsetting body mesh vertices along their surface normals.
+ * Only includes triangles where ALL 3 vertices pass the zone + bone filter tests.
+ * This gives a shell that perfectly conforms to the body at every point.
  *
- * @param {Float32Array} bPos   - body positions (stride 3)
- * @param {number}       vCount
- * @param {number}       yLo      - bottom of the tube
- * @param {number}       yHi      - top of the tube
- * @param {number}       xCap     - max |x| at the bottom of the tube
- * @param {number}       xCapTop  - max |x| at the top (narrower = armhole curve + neckline taper)
- * @param {number}       offset   - gap above body surface
- * @returns {{ positions, normals, indices }|null}
+ * @param {Float32Array}       bPos       body positions, stride 3
+ * @param {Float32Array}       bNorm      body normals, stride 3 (unit, from glTF)
+ * @param {Uint32Array}        bIdx       body triangle index buffer
+ * @param {number}             vCount     bPos.length / 3
+ * @param {number}             triCount   bIdx.length / 3
+ * @param {number}             yLo        zone bottom (world Y)
+ * @param {number}             yHi        zone top (world Y)
+ * @param {number}             offset     outward gap in metres
+ * @param {Uint16Array|null}   skinIdx    skin bone indices, stride 4
+ * @param {Float32Array|null}  skinWts    skin bone weights, stride 4
+ * @param {string}             boneMode   'excludeArm' | 'includeLegs' | 'none'
+ * @returns {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }|null}
  */
-function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset,
-                            skinIdx = null, skinWts = null) {
-  const N_RINGS     = 14;
-  const SEGS        = 24;
-  const ySpan       = yHi - yLo;
-  const yWin        = ySpan * 0.08;
-  const TAPER_START = 0.72;
-  const TAPER_END   = 0.92;
+function buildVertexShell(bPos, bNorm, bIdx, vCount, triCount,
+                          yLo, yHi, offset,
+                          skinIdx, skinWts, boneMode) {
 
-  // Exclude arm/shoulder-bone vertices from torso scan.
-  // Near shirtTopY the arm mesh overlaps the torso in Y; without this filter those
-  // vertices inflate mxX and shift cz, making the shoulder rings too wide/misaligned.
-  // Arm/shoulder bones in our remapped scheme: 5-8 (left), 9-12 (right).
-  // A vertex is "arm" if any arm-bone slot carries ≥ 0.20 weight.
-  function isTorsoVert(i) {
-    if (!skinIdx || !skinWts) return true;
+  // Bone filter: arm bones 5-8 (left), 9-12 (right); leg/hip bones 0, 13-18
+  function passFilter(i) {
+    if (boneMode === 'none' || !skinIdx || !skinWts) return true;
+    let armWt = 0, legWt = 0;
     for (let j = 0; j < 4; j++) {
-      const b = skinIdx[i * 4 + j];
-      const w = skinWts[i * 4 + j];
-      if (w >= 0.20 && ((b >= 5 && b <= 8) || (b >= 9 && b <= 12))) return false;
+      const b = skinIdx[i*4+j], w = skinWts[i*4+j];
+      if (b >= 5 && b <= 12) armWt += w;
+      if (b === 0 || (b >= 13 && b <= 18)) legWt += w;
     }
+    if (boneMode === 'excludeArm') return armWt < 0.50;
+    if (boneMode === 'includeLegs') return legWt >= 0.20;
     return true;
   }
 
-  function scanAt(y, cap) {
-    let mxZ = -Infinity, mnZ = Infinity, mxX = 0;
-    let sumZ = 0, nZ = 0;
-    for (let i = 0; i < vCount; i++) {
-      const vy = bPos[i*3 + 1];
-      if (Math.abs(vy - y) > yWin) continue;
-      const vx = Math.abs(bPos[i*3]);
-      if (vx > cap) continue;
-      if (!isTorsoVert(i)) continue;   // exclude arm mesh from torso rings
-      const vz = bPos[i*3 + 2];
-      if (vz > mxZ) mxZ = vz;
-      if (vz < mnZ) mnZ = vz;
-      if (vx > mxX) mxX = vx;
-      sumZ += vz; nZ++;
-    }
-    if (nZ === 0) return null;
-    const cz = sumZ / nZ;
-    return { rx: mxX + offset, rz: (mxZ - mnZ) / 2 + offset, cz };
+  // Mark which body vertices are in the clothing zone
+  const inZone = new Uint8Array(vCount);
+  for (let i = 0; i < vCount; i++) {
+    const y = bPos[i*3+1];
+    if (y >= yLo && y <= yHi && passFilter(i)) inZone[i] = 1;
   }
 
-  const rings = [];
-  for (let ri = 0; ri <= N_RINGS; ri++) {
-    const t = ri / N_RINGS;
-    const y = yLo + ySpan * t;
-    // Smoothstep taper: full xCap below TAPER_START, curve to xCapTop by TAPER_END,
-    // then hold xCapTop flat for the neckline.
-    const raw    = Math.min(1, Math.max(0, (t - TAPER_START) / (TAPER_END - TAPER_START)));
-    const smooth = raw * raw * (3 - 2 * raw);
-    const cap    = xCap * (1 - smooth) + xCapTop * smooth;
-    const s = scanAt(y, cap);
-    if (s) rings.push({ y, ...s });
-  }
-  if (rings.length < 2) return null;
+  // Include triangles where ALL 3 verts are in-zone; offset each along its body normal
+  const vertMap  = new Int32Array(vCount).fill(-1);
+  const newVerts = [];
+  const faces    = [];
 
-  const positions = [];
-  const indices   = [];
+  for (let t = 0; t < triCount; t++) {
+    const ia = bIdx[t*3], ib = bIdx[t*3+1], ic = bIdx[t*3+2];
+    if (!inZone[ia] || !inZone[ib] || !inZone[ic]) continue;
 
-  function addRing({ y, rx, rz, cz }) {
-    const base = positions.length / 3;
-    for (let si = 0; si < SEGS; si++) {
-      const a = (2 * Math.PI * si) / SEGS;
-      positions.push(rx * Math.cos(a), y, cz + rz * Math.sin(a));
-    }
-    return base;
-  }
-
-  let prevBase = addRing(rings[0]);
-  for (let ri = 1; ri < rings.length; ri++) {
-    const currBase = addRing(rings[ri]);
-    for (let si = 0; si < SEGS; si++) {
-      const next = (si + 1) % SEGS;
-      indices.push(
-        prevBase + si,   currBase + si,   prevBase + next,
-        prevBase + next, currBase + si,   currBase + next,
+    for (const i of [ia, ib, ic]) {
+      if (vertMap[i] !== -1) continue;
+      const nx = bNorm ? bNorm[i*3]   : 0;
+      const ny = bNorm ? bNorm[i*3+1] : 0;
+      const nz = bNorm ? bNorm[i*3+2] : 0;
+      newVerts.push(
+        bPos[i*3]   + nx * offset,
+        bPos[i*3+1] + ny * offset,
+        bPos[i*3+2] + nz * offset,
       );
+      vertMap[i] = newVerts.length / 3 - 1;
     }
-    prevBase = currBase;
+    faces.push(vertMap[ia], vertMap[ib], vertMap[ic]);
   }
 
-  const pos = new Float32Array(positions);
-  const idx = new Uint32Array(indices);
+  if (newVerts.length === 0) return null;
+  const pos = new Float32Array(newVerts);
+  const idx = new Uint32Array(faces);
   return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
 }
 
-/**
- * Build one leg tube by scanning one lateral half of the body (xSign=+1 right, -1 left).
- * The ring centre tracks the actual leg X position at each height level.
- */
-function buildProceduralLeg(bPos, vCount, yLo, yHi, xSign, xCap, offset) {
-  const N_RINGS = 10;
-  const SEGS    = 20;
-  const ySpan   = yHi - yLo;
-  const yWin    = ySpan * 0.09;
-
-  function scanAt(y) {
-    let mxX = -Infinity, mnX = Infinity, mxZ = -Infinity, mnZ = Infinity, found = false;
-    for (let i = 0; i < vCount; i++) {
-      const vy = bPos[i*3+1];
-      if (Math.abs(vy - y) > yWin) continue;
-      const vx = bPos[i*3];
-      if (vx * xSign <= 0 || Math.abs(vx) > xCap) continue;
-      const vz = bPos[i*3+2];
-      if (vx > mxX) mxX = vx;
-      if (vx < mnX) mnX = vx;
-      if (vz > mxZ) mxZ = vz;
-      if (vz < mnZ) mnZ = vz;
-      found = true;
-    }
-    if (!found) return null;
-    return {
-      cx: (mxX + mnX) / 2,
-      rx: (mxX - mnX) / 2 + offset,
-      rz: (mxZ - mnZ) / 2 + offset,
-      cz: (mxZ + mnZ) / 2,
-    };
-  }
-
-  const rings = [];
-  for (let ri = 0; ri <= N_RINGS; ri++) {
-    const y = yLo + ySpan * (ri / N_RINGS);
-    const s = scanAt(y);
-    if (s) rings.push({ y, ...s });
-  }
-  if (rings.length < 2) return null;
-
-  const positions = [];
-  const indices   = [];
-
-  function addRing({ y, cx, rx, rz, cz }) {
-    const base = positions.length / 3;
-    for (let si = 0; si < SEGS; si++) {
-      const a = (2 * Math.PI * si) / SEGS;
-      positions.push(cx + rx * Math.cos(a), y, cz + rz * Math.sin(a));
-    }
-    return base;
-  }
-
-  let prevBase = addRing(rings[0]);
-  for (let ri = 1; ri < rings.length; ri++) {
-    const currBase = addRing(rings[ri]);
-    for (let si = 0; si < SEGS; si++) {
-      const next = (si + 1) % SEGS;
-      indices.push(
-        prevBase + si,   currBase + si,   prevBase + next,
-        prevBase + next, currBase + si,   currBase + next,
-      );
-    }
-    prevBase = currBase;
-  }
-
-  const pos = new Float32Array(positions);
-  const idx = new Uint32Array(indices);
-  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
-}
-
-/** Merge two geometry objects into one (used to combine left + right legs). */
+/** Merge two geometry objects into one. */
 function mergeTubes(a, b) {
   if (!a) return b;
   if (!b) return a;
@@ -387,84 +286,83 @@ export function buildClothingGeometry(bodyData, cfg) {
   const X_SHORT_SLEEVE = bodyHeight * 0.19;  // shoulder/sleeve cap width
   const X_NECK         = bodyHeight * 0.12;   // neckline ≈ 71% of shoulder width (target 60-80%)
 
-  // [yLo, yHi, xCap (bottom), xCapTop (top)]
-  // Shirt tubes taper from xCap at the waist to xCapTop at the neckline.
+  // Y zone boundaries for each clothing type (vertex shell only needs yLo/yHi)
   const ZONES = {
-    short_sleeve: [hipY,    shirtTopY, X_SHORT_SLEEVE, X_NECK              ],
-    polo:         [hipY,    shirtTopY, X_SHORT_SLEEVE, X_NECK              ],
-    long_sleeve:  [hipY,    shoulderY, Infinity,       null                ],
-    v_neck:       [hipY,    chestY,    X_TORSO,        X_NECK * 0.85       ],
-    jeans:        [footTop, hipY,      X_LEGS,         null                ],
-    shorts:       [kneeY,   hipY,      X_LEGS,         null                ],
+    short_sleeve: [hipY,    shirtTopY],
+    polo:         [hipY,    shirtTopY],
+    long_sleeve:  [hipY,    shoulderY],
+    v_neck:       [hipY,    chestY   ],
+    jeans:        [footTop, hipY     ],
+    shorts:       [kneeY,   hipY     ],
   };
 
-  const baseOffset = 0.016;  // tight fit matching reference (was 0.026 — too baggy)
-  const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
-  const result = {};
+  const baseOffset    = 0.016;  // tight fit matching reference
+  const SHELL_MARGIN  = bodyHeight * 0.015;  // ~2.6 cm — captures boundary triangles
+  const clothingList  = Array.isArray(cfg.clothing) ? cfg.clothing : [];
+  const result        = {};
 
   for (const ctype of clothingList) {
     if (ctype === 'none') continue;
     const zone = ZONES[ctype];
     if (!zone) continue;
-    const [yLo, yHi, xCap, xCapTop] = zone;
+    const [yLo, yHi] = zone;
 
     if (ctype === 'jeans' || ctype === 'shorts') {
-      // Two leg tubes — one for each leg, merged into a single geometry
-      const right = buildProceduralLeg(bPos, vCount, yLo, yHi, +1, xCap, baseOffset);
-      const left  = buildProceduralLeg(bPos, vCount, yLo, yHi, -1, xCap, baseOffset);
-      const geo   = mergeTubes(right, left);
-      if (!geo) { console.warn(`[Clothing] Leg tube empty for '${ctype}'`); continue; }
+      // Single vertex shell — both legs + hip bridge in one pass (no crotch gap)
+      const geo = buildVertexShell(
+        bPos, bNorm, bIdx, vCount, triCount,
+        yLo - SHELL_MARGIN, yHi + SHELL_MARGIN, baseOffset,
+        bSkinIdx, bSkinWts, 'includeLegs'
+      );
+      if (!geo) { console.warn(`[Clothing] No verts for '${ctype}'`); continue; }
       result[ctype] = geo;
-      console.log(`[Clothing] Built procedural legs '${ctype}': ${geo.positions.length / 3} verts`);
+      console.log(`[Clothing] Built vertex-shell legs '${ctype}': ${geo.positions.length/3} verts`);
 
-    } else if (ctype === 'short_sleeve' || ctype === 'polo') {
-      // Torso tube + two separate sleeve tubes branching at the shoulder seam.
-      // yMin raised (+0.04→0.03 below shirtTop) to stop the scan picking up torso mesh
-      // at the shoulder junction; yMax raised (+0.08) to reach the arm above shoulder.
-      // Skin-weight filter keeps only arm/forearm verts; maxArmR caps any stray blobs.
-      const torso = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset, bSkinIdx, bSkinWts);
-      const sleeveXEnd = xCap + bodyHeight * 0.06;
-      const sleeveYMin = yHi - bodyHeight * 0.03;  // was 0.08 — too low, captured torso
-      const sleeveYMax = yHi + bodyHeight * 0.08;  // was 0.02 — too low for arm above shoulder
-      const maxArmR    = bodyHeight * 0.058;        // ~10cm at 1.75m height, sane arm radius
-      const rSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, +1,
-                        sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
-      const lSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, -1,
-                        sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
-      const geo = mergeTubes(torso, mergeTubes(rSleeve, lSleeve));
-      if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
+    } else if (ctype === 'long_sleeve') {
+      // Single shell covering torso + arms — no bone filter needed for full coverage
+      const geo = buildVertexShell(
+        bPos, bNorm, bIdx, vCount, triCount,
+        yLo - SHELL_MARGIN, yHi + SHELL_MARGIN, baseOffset,
+        bSkinIdx, bSkinWts, 'none'
+      );
+      if (!geo) { console.warn(`[Clothing] No verts for '${ctype}'`); continue; }
       result[ctype] = geo;
-      console.log(`[Clothing] Built shirt+sleeves '${ctype}': ${geo.positions.length / 3} verts`);
+      console.log(`[Clothing] Built vertex-shell long sleeve '${ctype}': ${geo.positions.length/3} verts`);
 
-    } else if (isFinite(xCap) && xCapTop !== null) {
-      // v_neck: torso tube only, no sleeve branches
-      const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset, bSkinIdx, bSkinWts);
-      if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
+    } else if (ctype === 'v_neck') {
+      // Torso shell only — arm exclusion gives clean armhole opening
+      const geo = buildVertexShell(
+        bPos, bNorm, bIdx, vCount, triCount,
+        yLo - SHELL_MARGIN, yHi + SHELL_MARGIN, baseOffset,
+        bSkinIdx, bSkinWts, 'excludeArm'
+      );
+      if (!geo) { console.warn(`[Clothing] No verts for '${ctype}'`); continue; }
       result[ctype] = geo;
-      console.log(`[Clothing] Built procedural shirt '${ctype}': ${geo.positions.length / 3} verts`);
+      console.log(`[Clothing] Built vertex-shell shirt '${ctype}': ${geo.positions.length/3} verts`);
 
     } else {
-      // Face-extrusion for long_sleeve (Infinity xCap — arm coverage needs full mesh)
-      const verts = [], faces = [], vertMap = new Map();
-      for (let t = 0; t < triCount; t++) {
-        const ia = bIdx[t*3], ib = bIdx[t*3+1], ic = bIdx[t*3+2];
-        const vs = [ia, ib, ic].map(i => ({ x: bPos[i*3], y: bPos[i*3+1], z: bPos[i*3+2], i }));
-        const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-        if (centY < yLo || centY > yHi) continue;
-        const newIdxs = vs.map(v => {
-          if (!vertMap.has(v.i)) {
-            const nx = bNorm ? bNorm[v.i*3] : 0, ny = bNorm ? bNorm[v.i*3+1] : 0, nz = bNorm ? bNorm[v.i*3+2] : 0;
-            verts.push(v.x + nx * baseOffset, Math.max(v.y, yLo) + ny * baseOffset, v.z + nz * baseOffset);
-            vertMap.set(v.i, verts.length / 3 - 1);
-          }
-          return vertMap.get(v.i);
-        });
-        faces.push(...newIdxs);
-      }
-      if (verts.length === 0) { console.warn(`[Clothing] No faces for '${ctype}'`); continue; }
-      const pos = new Float32Array(verts), idx = new Uint32Array(faces);
-      result[ctype] = { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
-      console.log(`[Clothing] Built face-extruded '${ctype}': ${verts.length / 3} verts`);
+      // short_sleeve / polo: torso shell + short sleeve tubes at shoulder seam
+      const torso = buildVertexShell(
+        bPos, bNorm, bIdx, vCount, triCount,
+        yLo - SHELL_MARGIN, yHi + SHELL_MARGIN, baseOffset,
+        bSkinIdx, bSkinWts, 'excludeArm'
+      );
+      if (!torso) { console.warn(`[Clothing] No torso verts for '${ctype}'`); continue; }
+      // Shoulder seam (sleeve start) is at |x|~0.08*bH; short sleeve end ~0.19*bH
+      const sleeveXStart = bodyHeight * 0.08;
+      const sleeveXEnd   = bodyHeight * 0.19;
+      // Arm verts sit in Y=[0.577, 0.661]*bH — scan that range (relative to minY=0)
+      const sleeveYMin   = bodyHeight * 0.54;
+      const sleeveYMax   = bodyHeight * 0.69;
+      const maxArmR      = bodyHeight * 0.058;
+      const rSleeve = buildProceduralSleeve(bPos, vCount, sleeveXStart, sleeveXEnd, +1,
+                        sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
+      const lSleeve = buildProceduralSleeve(bPos, vCount, sleeveXStart, sleeveXEnd, -1,
+                        sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
+      const geo = mergeTubes(torso, mergeTubes(rSleeve, lSleeve));
+      if (!geo) { console.warn(`[Clothing] Empty merged geo for '${ctype}'`); continue; }
+      result[ctype] = geo;
+      console.log(`[Clothing] Built vertex-shell shirt+sleeves '${ctype}': ${geo.positions.length/3} verts`);
     }
   }
 
