@@ -48,11 +48,14 @@ function computeVertexNormals(positions, indices) {
  * @returns {{ positions, normals, indices }|null}
  */
 function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
-  const N_RINGS    = 14;
-  const SEGS       = 24;
-  const ySpan      = yHi - yLo;
-  const yWin       = ySpan * 0.08;
-  const TAPER_START = 0.50;  // start curving in at 50% of shirt height
+  const N_RINGS     = 14;
+  const SEGS        = 24;
+  const ySpan       = yHi - yLo;
+  const yWin        = ySpan * 0.08;
+  // Taper: full xCap up to TAPER_START, smoothstep down to xCapTop by TAPER_END,
+  // then hold xCapTop for the neckline so the top rings form a clean uniform oval.
+  const TAPER_START = 0.60;
+  const TAPER_END   = 0.90;
 
   function scanAt(y, cap) {
     let mxZ = -Infinity, mnZ = Infinity, mxX = 0, found = false;
@@ -75,8 +78,9 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
   for (let ri = 0; ri <= N_RINGS; ri++) {
     const t = ri / N_RINGS;
     const y = yLo + ySpan * t;
-    // Smoothstep taper: full xCap at bottom, narrows to xCapTop at top
-    const raw    = Math.max(0, (t - TAPER_START) / (1 - TAPER_START));
+    // Smoothstep taper: full xCap below TAPER_START, curve to xCapTop by TAPER_END,
+    // then hold xCapTop flat for the neckline.
+    const raw    = Math.min(1, Math.max(0, (t - TAPER_START) / (TAPER_END - TAPER_START)));
     const smooth = raw * raw * (3 - 2 * raw);
     const cap    = xCap * (1 - smooth) + xCapTop * smooth;
     const s = scanAt(y, cap);
@@ -235,8 +239,8 @@ export function buildClothingGeometry(bodyData, cfg) {
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  const X_SHORT_SLEEVE = bodyHeight * 0.17;
-  const X_NECK         = bodyHeight * 0.08;   // neckline width — top of shirt tubes
+  const X_SHORT_SLEEVE = bodyHeight * 0.19;  // shoulder/sleeve cap width
+  const X_NECK         = bodyHeight * 0.12;   // neckline ≈ 71% of shoulder width (target 60-80%)
 
   // [yLo, yHi, xCap (bottom), xCapTop (top)]
   // Shirt tubes taper from xCap at the waist to xCapTop at the neckline.
