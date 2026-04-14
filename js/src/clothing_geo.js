@@ -104,29 +104,13 @@ export function buildClothingGeometry(bodyData, cfg) {
         i,
       }));
 
-      // Y top: strict — skip if ANY vertex is above yHi.
-      if (vs.some(v => v.y > yHi)) continue;
-
-      // Y bottom: centroid so waist triangles that straddle hipY are included,
-      // then clamp low vertices up so no flap dangles below the hem.
+      // Y: centroid filter on both bounds — includes edge triangles at waist and
+      // shoulder without letting stray vertices poke out.
       const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY < yLo) continue;
+      if (centY < yLo || centY > yHi) continue;
 
       // X boundary: strict — skip if ANY vertex exceeds xCap (clean sleeve edge).
       if (isFinite(xCap) && vs.some(v => Math.abs(v.x) > xCap)) continue;
-
-      // Skip upward-facing triangles (shoulder cap / top-of-neck faces).
-      // These extrude into horizontal panels rather than wrapping around the body.
-      // Compute face normal Y component; skip if it dominates (|ny| > 0.6).
-      {
-        const ax = vs[1].x - vs[0].x, ay = vs[1].y - vs[0].y, az = vs[1].z - vs[0].z;
-        const bx = vs[2].x - vs[0].x, by = vs[2].y - vs[0].y, bz = vs[2].z - vs[0].z;
-        const fny = az * bx - ax * bz;  // Y component of cross product
-        const fnx = ay * bz - az * by;
-        const fnz = ax * by - ay * bx;
-        const fnLen = Math.sqrt(fnx*fnx + fny*fny + fnz*fnz) || 1;
-        if (Math.abs(fny / fnLen) > 0.6) continue;
-      }
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
