@@ -33,7 +33,83 @@ function computeVertexNormals(positions, indices) {
 }
 
 /**
- * Build clothing geometry by extruding body mesh faces outward.
+ * Build a smooth tube by scanning the body's cross-section at multiple Y levels
+ * and connecting fitted elliptical rings.  Floats `offset` metres above the body.
+ * This avoids all face-extrusion artefacts (jagged edges, protruding flaps) because
+ * we own every vertex — nothing is inherited from body triangles.
+ *
+ * @param {Float32Array} bPos   - body positions (stride 3)
+ * @param {number}       vCount
+ * @param {number}       yLo    - bottom of the tube
+ * @param {number}       yHi    - top of the tube
+ * @param {number}       xCap   - max |x| to include when scanning (shoulder/torso width)
+ * @param {number}       offset - gap above body surface
+ * @returns {{ positions, normals, indices }|null}
+ */
+function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, offset) {
+  const N_RINGS = 12;
+  const SEGS    = 24;
+  const ySpan   = yHi - yLo;
+  const yWin    = ySpan * 0.08;   // scan window at each level
+
+  function scanAt(y) {
+    let mxZ = -Infinity, mnZ = Infinity, mxX = 0, found = false;
+    for (let i = 0; i < vCount; i++) {
+      const vy = bPos[i*3 + 1];
+      if (Math.abs(vy - y) > yWin) continue;
+      const vx = Math.abs(bPos[i*3]);
+      if (vx > xCap) continue;
+      const vz = bPos[i*3 + 2];
+      if (vz > mxZ) mxZ = vz;
+      if (vz < mnZ) mnZ = vz;
+      if (vx > mxX) mxX = vx;
+      found = true;
+    }
+    if (!found) return null;
+    return { rx: mxX + offset, rz: (mxZ - mnZ) / 2 + offset, cz: (mxZ + mnZ) / 2 };
+  }
+
+  const rings = [];
+  for (let ri = 0; ri <= N_RINGS; ri++) {
+    const y = yLo + ySpan * (ri / N_RINGS);
+    const s = scanAt(y);
+    if (s) rings.push({ y, ...s });
+  }
+  if (rings.length < 2) return null;
+
+  const positions = [];
+  const indices   = [];
+
+  function addRing({ y, rx, rz, cz }) {
+    const base = positions.length / 3;
+    for (let si = 0; si < SEGS; si++) {
+      const a = (2 * Math.PI * si) / SEGS;
+      positions.push(rx * Math.cos(a), y, cz + rz * Math.sin(a));
+    }
+    return base;
+  }
+
+  let prevBase = addRing(rings[0]);
+  for (let ri = 1; ri < rings.length; ri++) {
+    const currBase = addRing(rings[ri]);
+    for (let si = 0; si < SEGS; si++) {
+      const next = (si + 1) % SEGS;
+      indices.push(
+        prevBase + si,   currBase + si,   prevBase + next,
+        prevBase + next, currBase + si,   currBase + next,
+      );
+    }
+    prevBase = currBase;
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
+ * Build clothing geometry by extruding body mesh faces outward (pants/shorts),
+ * or by building a procedural tube from body cross-sections (shirts).
  *
  * @param {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }} bodyData
  * @param {Object} cfg - character config with .clothing array
@@ -84,59 +160,65 @@ export function buildClothingGeometry(bodyData, cfg) {
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
+  // Shirt types use a procedural tube built from body cross-section scans.
+  // No face-extrusion means no jagged edges, flaps, or neck rectangles.
+  const PROCEDURAL_SHIRTS = new Set(['short_sleeve', 'polo', 'v_neck']);
+
   for (const ctype of clothingList) {
     if (ctype === 'none') continue;
     const zone = ZONES[ctype];
     if (!zone) continue;
     const [yLo, yHi, xCap] = zone;
 
-    const verts = [];
-    const faces = [];
-    const vertMap = new Map();
+    if (PROCEDURAL_SHIRTS.has(ctype)) {
+      const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, baseOffset);
+      if (!geo) {
+        console.warn(`[Clothing] Procedural tube empty for '${ctype}'`);
+        continue;
+      }
+      result[ctype] = geo;
+      console.log(`[Clothing] Built procedural '${ctype}': ${geo.positions.length / 3} verts`);
+    } else {
+      // Face-extrusion for pants and long_sleeve (arm coverage still needs full mesh)
+      const verts = [];
+      const faces = [];
+      const vertMap = new Map();
 
-    for (let t = 0; t < triCount; t++) {
-      const ia = bIdx[t*3], ib = bIdx[t*3+1], ic = bIdx[t*3+2];
+      for (let t = 0; t < triCount; t++) {
+        const ia = bIdx[t*3], ib = bIdx[t*3+1], ic = bIdx[t*3+2];
 
-      const vs = [ia, ib, ic].map(i => ({
-        x: bPos[i*3],
-        y: bPos[i*3+1],
-        z: bPos[i*3+2],
-        i,
-      }));
+        const vs = [ia, ib, ic].map(i => ({
+          x: bPos[i*3], y: bPos[i*3+1], z: bPos[i*3+2], i,
+        }));
 
-      // Y: centroid filter on both bounds — includes edge triangles at waist and
-      // shoulder without letting stray vertices poke out.
-      const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY < yLo || centY > yHi) continue;
+        const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
+        if (centY < yLo || centY > yHi) continue;
+        if (isFinite(xCap) && vs.some(v => Math.abs(v.x) > xCap)) continue;
 
-      // X boundary: strict — skip if ANY vertex exceeds xCap (clean sleeve edge).
-      if (isFinite(xCap) && vs.some(v => Math.abs(v.x) > xCap)) continue;
+        const newIdxs = vs.map(v => {
+          if (!vertMap.has(v.i)) {
+            const nx = bNorm ? bNorm[v.i*3]   : 0;
+            const ny = bNorm ? bNorm[v.i*3+1] : 0;
+            const nz = bNorm ? bNorm[v.i*3+2] : 0;
+            const cy = Math.max(v.y, yLo);
+            verts.push(v.x + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
+            vertMap.set(v.i, verts.length / 3 - 1);
+          }
+          return vertMap.get(v.i);
+        });
+        faces.push(...newIdxs);
+      }
 
-      const newIdxs = vs.map(v => {
-        if (!vertMap.has(v.i)) {
-          const nx = bNorm ? bNorm[v.i*3]   : 0;
-          const ny = bNorm ? bNorm[v.i*3+1] : 0;
-          const nz = bNorm ? bNorm[v.i*3+2] : 0;
-          // Only clamp the bottom — no vertex can be above yHi (already excluded above).
-          const cy = Math.max(v.y, yLo);
-          verts.push(v.x + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
-          vertMap.set(v.i, verts.length / 3 - 1);
-        }
-        return vertMap.get(v.i);
-      });
-      faces.push(...newIdxs);
+      if (verts.length === 0) {
+        console.warn(`[Clothing] No faces found for '${ctype}' (yLo=${yLo.toFixed(3)}, yHi=${yHi.toFixed(3)}, xCap=${isFinite(xCap) ? xCap.toFixed(3) : 'Inf'})`);
+        continue;
+      }
+
+      const pos = new Float32Array(verts);
+      const idx = new Uint32Array(faces);
+      result[ctype] = { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+      console.log(`[Clothing] Built face-extruded '${ctype}': ${verts.length / 3} verts`);
     }
-
-    if (verts.length === 0) {
-      console.warn(`[Clothing] No faces found for '${ctype}' (yLo=${yLo.toFixed(3)}, yHi=${yHi.toFixed(3)}, xCap=${isFinite(xCap) ? xCap.toFixed(3) : 'Inf'})`);
-      continue;
-    }
-
-    const pos = new Float32Array(verts);
-    const idx = new Uint32Array(faces);
-    result[ctype] = { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
-
-    console.log(`[Clothing] Built '${ctype}': ${verts.length / 3} verts, ${faces.length / 3} faces`);
   }
 
   return result;
