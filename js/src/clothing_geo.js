@@ -104,12 +104,11 @@ export function buildClothingGeometry(bodyData, cfg) {
         i,
       }));
 
-      // Lower bound: ALL vertices must be above yLo so no triangle dips below
-      // the hem line, giving a clean bottom edge without jagged diagonals.
-      if (Math.min(vs[0].y, vs[1].y, vs[2].y) < yLo) continue;
-      // Upper bound: centroid check prevents bleeding into head/neck/arm area.
+      // All boundaries use centroid — includes more edge triangles than min-vertex.
+      // Out-of-bounds vertices are clamped to the boundary when building geometry
+      // (below), so no jagged edges stick out past the zone limits.
       const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
-      if (centY > yHi) continue;
+      if (centY < yLo || centY > yHi) continue;
 
       const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
       if (Math.abs(centX) > xCap) continue;
@@ -119,7 +118,13 @@ export function buildClothingGeometry(bodyData, cfg) {
           const nx = bNorm ? bNorm[v.i*3]   : 0;
           const ny = bNorm ? bNorm[v.i*3+1] : 0;
           const nz = bNorm ? bNorm[v.i*3+2] : 0;
-          verts.push(v.x + nx * baseOffset, v.y + ny * baseOffset, v.z + nz * baseOffset);
+          // Clamp each vertex to zone boundaries so stray vertices don't
+          // poke out past the hem line or past the sleeve cap.
+          const cy = Math.max(v.y, yLo);
+          const cx = isFinite(xCap)
+            ? Math.sign(v.x) * Math.min(Math.abs(v.x), xCap)
+            : v.x;
+          verts.push(cx + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
           vertMap.set(v.i, verts.length / 3 - 1);
         }
         return vertMap.get(v.i);
