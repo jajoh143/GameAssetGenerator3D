@@ -40,25 +40,27 @@ function computeVertexNormals(positions, indices) {
  *
  * @param {Float32Array} bPos   - body positions (stride 3)
  * @param {number}       vCount
- * @param {number}       yLo    - bottom of the tube
- * @param {number}       yHi    - top of the tube
- * @param {number}       xCap   - max |x| to include when scanning (shoulder/torso width)
- * @param {number}       offset - gap above body surface
+ * @param {number}       yLo      - bottom of the tube
+ * @param {number}       yHi      - top of the tube
+ * @param {number}       xCap     - max |x| at the bottom of the tube
+ * @param {number}       xCapTop  - max |x| at the top (narrower = armhole curve + neckline taper)
+ * @param {number}       offset   - gap above body surface
  * @returns {{ positions, normals, indices }|null}
  */
-function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, offset) {
-  const N_RINGS = 12;
-  const SEGS    = 24;
-  const ySpan   = yHi - yLo;
-  const yWin    = ySpan * 0.08;   // scan window at each level
+function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
+  const N_RINGS    = 14;
+  const SEGS       = 24;
+  const ySpan      = yHi - yLo;
+  const yWin       = ySpan * 0.08;
+  const TAPER_START = 0.50;  // start curving in at 50% of shirt height
 
-  function scanAt(y) {
+  function scanAt(y, cap) {
     let mxZ = -Infinity, mnZ = Infinity, mxX = 0, found = false;
     for (let i = 0; i < vCount; i++) {
       const vy = bPos[i*3 + 1];
       if (Math.abs(vy - y) > yWin) continue;
       const vx = Math.abs(bPos[i*3]);
-      if (vx > xCap) continue;
+      if (vx > cap) continue;
       const vz = bPos[i*3 + 2];
       if (vz > mxZ) mxZ = vz;
       if (vz < mnZ) mnZ = vz;
@@ -71,8 +73,13 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, offset) {
 
   const rings = [];
   for (let ri = 0; ri <= N_RINGS; ri++) {
-    const y = yLo + ySpan * (ri / N_RINGS);
-    const s = scanAt(y);
+    const t = ri / N_RINGS;
+    const y = yLo + ySpan * t;
+    // Smoothstep taper: full xCap at bottom, narrows to xCapTop at top
+    const raw    = Math.max(0, (t - TAPER_START) / (1 - TAPER_START));
+    const smooth = raw * raw * (3 - 2 * raw);
+    const cap    = xCap * (1 - smooth) + xCapTop * smooth;
+    const s = scanAt(y, cap);
     if (s) rings.push({ y, ...s });
   }
   if (rings.length < 2) return null;
@@ -105,6 +112,92 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, offset) {
   const pos = new Float32Array(positions);
   const idx = new Uint32Array(indices);
   return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
+ * Build one leg tube by scanning one lateral half of the body (xSign=+1 right, -1 left).
+ * The ring centre tracks the actual leg X position at each height level.
+ */
+function buildProceduralLeg(bPos, vCount, yLo, yHi, xSign, xCap, offset) {
+  const N_RINGS = 10;
+  const SEGS    = 20;
+  const ySpan   = yHi - yLo;
+  const yWin    = ySpan * 0.09;
+
+  function scanAt(y) {
+    let mxX = -Infinity, mnX = Infinity, mxZ = -Infinity, mnZ = Infinity, found = false;
+    for (let i = 0; i < vCount; i++) {
+      const vy = bPos[i*3+1];
+      if (Math.abs(vy - y) > yWin) continue;
+      const vx = bPos[i*3];
+      if (vx * xSign <= 0 || Math.abs(vx) > xCap) continue;
+      const vz = bPos[i*3+2];
+      if (vx > mxX) mxX = vx;
+      if (vx < mnX) mnX = vx;
+      if (vz > mxZ) mxZ = vz;
+      if (vz < mnZ) mnZ = vz;
+      found = true;
+    }
+    if (!found) return null;
+    return {
+      cx: (mxX + mnX) / 2,
+      rx: (mxX - mnX) / 2 + offset,
+      rz: (mxZ - mnZ) / 2 + offset,
+      cz: (mxZ + mnZ) / 2,
+    };
+  }
+
+  const rings = [];
+  for (let ri = 0; ri <= N_RINGS; ri++) {
+    const y = yLo + ySpan * (ri / N_RINGS);
+    const s = scanAt(y);
+    if (s) rings.push({ y, ...s });
+  }
+  if (rings.length < 2) return null;
+
+  const positions = [];
+  const indices   = [];
+
+  function addRing({ y, cx, rx, rz, cz }) {
+    const base = positions.length / 3;
+    for (let si = 0; si < SEGS; si++) {
+      const a = (2 * Math.PI * si) / SEGS;
+      positions.push(cx + rx * Math.cos(a), y, cz + rz * Math.sin(a));
+    }
+    return base;
+  }
+
+  let prevBase = addRing(rings[0]);
+  for (let ri = 1; ri < rings.length; ri++) {
+    const currBase = addRing(rings[ri]);
+    for (let si = 0; si < SEGS; si++) {
+      const next = (si + 1) % SEGS;
+      indices.push(
+        prevBase + si,   currBase + si,   prevBase + next,
+        prevBase + next, currBase + si,   currBase + next,
+      );
+    }
+    prevBase = currBase;
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/** Merge two geometry objects into one (used to combine left + right legs). */
+function mergeTubes(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const offsetB    = a.positions.length / 3;
+  const positions  = new Float32Array(a.positions.length + b.positions.length);
+  const normals    = new Float32Array(a.normals.length   + b.normals.length);
+  const indices    = new Uint32Array(a.indices.length   + b.indices.length);
+  positions.set(a.positions); positions.set(b.positions, a.positions.length);
+  normals.set(a.normals);     normals.set(b.normals,     a.normals.length);
+  indices.set(a.indices);
+  for (let i = 0; i < b.indices.length; i++) indices[a.indices.length + i] = b.indices[i] + offsetB;
+  return { positions, normals, indices };
 }
 
 /**
@@ -142,80 +235,66 @@ export function buildClothingGeometry(bodyData, cfg) {
 
   const X_TORSO        = maxAbsX * 0.20;
   const X_LEGS         = maxAbsX * 0.28;
-  // Short sleeve: proportional to body height so it's immune to arm-pose ambiguity.
-  // bodyHeight * 0.17 ≈ shoulder-width/2 + a short sleeve cap (~6-7 cm past shoulder
-  // for a 1.5 m character). Does NOT depend on maxAbsX (= full arm span in T-pose).
   const X_SHORT_SLEEVE = bodyHeight * 0.17;
+  const X_NECK         = bodyHeight * 0.08;   // neckline width — top of shirt tubes
 
+  // [yLo, yHi, xCap (bottom), xCapTop (top)]
+  // Shirt tubes taper from xCap at the waist to xCapTop at the neckline.
   const ZONES = {
-    short_sleeve: [hipY, shirtTopY, X_SHORT_SLEEVE],
-    polo:         [hipY, shirtTopY, X_SHORT_SLEEVE],
-    long_sleeve:  [hipY, shoulderY, Infinity      ],
-    v_neck:       [hipY, chestY,    X_TORSO       ],
-    jeans:        [footTop, hipY,   X_LEGS        ],
-    shorts:       [kneeY,   hipY,   X_LEGS        ],
+    short_sleeve: [hipY,    shirtTopY, X_SHORT_SLEEVE, X_NECK              ],
+    polo:         [hipY,    shirtTopY, X_SHORT_SLEEVE, X_NECK              ],
+    long_sleeve:  [hipY,    shoulderY, Infinity,       null                ],
+    v_neck:       [hipY,    chestY,    X_TORSO,        X_NECK * 0.85       ],
+    jeans:        [footTop, hipY,      X_LEGS,         null                ],
+    shorts:       [kneeY,   hipY,      X_LEGS,         null                ],
   };
 
   const baseOffset = 0.026;
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
-  // Shirt types use a procedural tube built from body cross-section scans.
-  // No face-extrusion means no jagged edges, flaps, or neck rectangles.
-  const PROCEDURAL_SHIRTS = new Set(['short_sleeve', 'polo', 'v_neck']);
-
   for (const ctype of clothingList) {
     if (ctype === 'none') continue;
     const zone = ZONES[ctype];
     if (!zone) continue;
-    const [yLo, yHi, xCap] = zone;
+    const [yLo, yHi, xCap, xCapTop] = zone;
 
-    if (PROCEDURAL_SHIRTS.has(ctype)) {
-      const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, baseOffset);
-      if (!geo) {
-        console.warn(`[Clothing] Procedural tube empty for '${ctype}'`);
-        continue;
-      }
+    if (ctype === 'jeans' || ctype === 'shorts') {
+      // Two leg tubes — one for each leg, merged into a single geometry
+      const right = buildProceduralLeg(bPos, vCount, yLo, yHi, +1, xCap, baseOffset);
+      const left  = buildProceduralLeg(bPos, vCount, yLo, yHi, -1, xCap, baseOffset);
+      const geo   = mergeTubes(right, left);
+      if (!geo) { console.warn(`[Clothing] Leg tube empty for '${ctype}'`); continue; }
       result[ctype] = geo;
-      console.log(`[Clothing] Built procedural '${ctype}': ${geo.positions.length / 3} verts`);
-    } else {
-      // Face-extrusion for pants and long_sleeve (arm coverage still needs full mesh)
-      const verts = [];
-      const faces = [];
-      const vertMap = new Map();
+      console.log(`[Clothing] Built procedural legs '${ctype}': ${geo.positions.length / 3} verts`);
 
+    } else if (isFinite(xCap) && xCapTop !== null) {
+      // Tapered shirt tube (short_sleeve, polo, v_neck)
+      const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
+      if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
+      result[ctype] = geo;
+      console.log(`[Clothing] Built procedural shirt '${ctype}': ${geo.positions.length / 3} verts`);
+
+    } else {
+      // Face-extrusion for long_sleeve (Infinity xCap — arm coverage needs full mesh)
+      const verts = [], faces = [], vertMap = new Map();
       for (let t = 0; t < triCount; t++) {
         const ia = bIdx[t*3], ib = bIdx[t*3+1], ic = bIdx[t*3+2];
-
-        const vs = [ia, ib, ic].map(i => ({
-          x: bPos[i*3], y: bPos[i*3+1], z: bPos[i*3+2], i,
-        }));
-
+        const vs = [ia, ib, ic].map(i => ({ x: bPos[i*3], y: bPos[i*3+1], z: bPos[i*3+2], i }));
         const centY = (vs[0].y + vs[1].y + vs[2].y) / 3;
         if (centY < yLo || centY > yHi) continue;
-        if (isFinite(xCap) && vs.some(v => Math.abs(v.x) > xCap)) continue;
-
         const newIdxs = vs.map(v => {
           if (!vertMap.has(v.i)) {
-            const nx = bNorm ? bNorm[v.i*3]   : 0;
-            const ny = bNorm ? bNorm[v.i*3+1] : 0;
-            const nz = bNorm ? bNorm[v.i*3+2] : 0;
-            const cy = Math.max(v.y, yLo);
-            verts.push(v.x + nx * baseOffset, cy + ny * baseOffset, v.z + nz * baseOffset);
+            const nx = bNorm ? bNorm[v.i*3] : 0, ny = bNorm ? bNorm[v.i*3+1] : 0, nz = bNorm ? bNorm[v.i*3+2] : 0;
+            verts.push(v.x + nx * baseOffset, Math.max(v.y, yLo) + ny * baseOffset, v.z + nz * baseOffset);
             vertMap.set(v.i, verts.length / 3 - 1);
           }
           return vertMap.get(v.i);
         });
         faces.push(...newIdxs);
       }
-
-      if (verts.length === 0) {
-        console.warn(`[Clothing] No faces found for '${ctype}' (yLo=${yLo.toFixed(3)}, yHi=${yHi.toFixed(3)}, xCap=${isFinite(xCap) ? xCap.toFixed(3) : 'Inf'})`);
-        continue;
-      }
-
-      const pos = new Float32Array(verts);
-      const idx = new Uint32Array(faces);
+      if (verts.length === 0) { console.warn(`[Clothing] No faces for '${ctype}'`); continue; }
+      const pos = new Float32Array(verts), idx = new Uint32Array(faces);
       result[ctype] = { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
       console.log(`[Clothing] Built face-extruded '${ctype}': ${verts.length / 3} verts`);
     }
