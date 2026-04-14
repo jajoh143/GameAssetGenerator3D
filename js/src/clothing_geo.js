@@ -51,7 +51,7 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
   const N_RINGS     = 14;
   const SEGS        = 24;
   const ySpan       = yHi - yLo;
-  const yWin        = ySpan * 0.08;
+  const yWin        = ySpan * 0.05;  // tighter — 0.08 over-sampled shoulder into chest
   // Taper: full xCap up to TAPER_START, smoothstep down to xCapTop by TAPER_END,
   // then hold xCapTop for the neckline so the top rings form a clean uniform oval.
   // Keep full width for 72% of shirt height (shirt body + armhole area), then
@@ -210,29 +210,55 @@ function mergeTubes(a, b) {
  * Build one short sleeve tube — a horizontal cylinder running along the X axis.
  * Rings are in the Y-Z plane; the tube extends from the shoulder seam outward.
  *
- * @param {Float32Array} bPos    body positions (stride 3)
- * @param {number}       vCount
- * @param {number}       xStart  inner X (shoulder seam), absolute value
- * @param {number}       xEnd    outer X (sleeve hem), absolute value
- * @param {number}       xSign   +1 = right, -1 = left
- * @param {number}       yMin    lower Y bound for arm scan
- * @param {number}       yMax    upper Y bound for arm scan
- * @param {number}       offset  gap above body surface
+ * Uses skin-weight data to restrict each cross-section scan to arm/forearm vertices
+ * only, preventing torso mesh from inflating the shoulder-seam ring.
+ *
+ * @param {Float32Array}  bPos      body positions (stride 3)
+ * @param {number}        vCount
+ * @param {number}        xStart    inner X (shoulder seam), absolute value
+ * @param {number}        xEnd      outer X (sleeve hem), absolute value
+ * @param {number}        xSign     +1 = right, -1 = left
+ * @param {number}        yMin      lower Y bound for arm scan
+ * @param {number}        yMax      upper Y bound for arm scan
+ * @param {number}        offset    gap above body surface
+ * @param {number}        maxArmR   max ring radius (cap against torso contamination)
+ * @param {Uint16Array|null} skinIdx body skin bone indices (stride 4), or null
+ * @param {Float32Array|null} skinWts body skin weights (stride 4), or null
  */
-function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign, yMin, yMax, offset) {
-  const N_RINGS = 6;
+function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign,
+                               yMin, yMax, offset,
+                               maxArmR = Infinity,
+                               skinIdx = null, skinWts = null) {
+  const N_RINGS = 7;
   const SEGS    = 16;
   const xSpan   = xEnd - xStart;
-  const xWin    = xSpan * 0.35;  // generous scan window at each X slice
+  const xWin    = xSpan * 0.18;  // tight window — was 0.35, heavy overlap caused blobs
+
+  // Arm / forearm bone indices in our remapped scheme (0-18):
+  //   LeftShoulder=5, LeftArm=6, LeftForeArm=7
+  //   RightShoulder=9, RightArm=10, RightForeArm=11
+  // Accept either side's arm/forearm — xSign already constrains which X side.
+  function isArmVert(i) {
+    if (!skinIdx || !skinWts) return true;
+    let maxWt = -1, dom = 0;
+    for (let j = 0; j < 4; j++) {
+      const w = skinWts[i * 4 + j];
+      if (w > maxWt) { maxWt = w; dom = skinIdx[i * 4 + j]; }
+    }
+    // Accept shoulder(5/9), arm(6/10), or forearm(7/11)
+    return (dom >= 5 && dom <= 7) || (dom >= 9 && dom <= 11);
+  }
 
   function scanAt(xAbs) {
     let mxY = -Infinity, mnY = Infinity, mxZ = -Infinity, mnZ = Infinity, found = false;
     for (let i = 0; i < vCount; i++) {
-      const vxAbs = Math.abs(bPos[i*3]);
+      const vxRaw = bPos[i*3];
+      const vxAbs = Math.abs(vxRaw);
       if (Math.abs(vxAbs - xAbs) > xWin) continue;
-      if ((bPos[i*3] >= 0 ? +1 : -1) !== xSign) continue;
+      if ((vxRaw >= 0 ? +1 : -1) !== xSign) continue;
       const vy = bPos[i*3+1];
       if (vy < yMin || vy > yMax) continue;
+      if (!isArmVert(i)) continue;  // skin-weight gate
       const vz = bPos[i*3+2];
       if (vy > mxY) mxY = vy;
       if (vy < mnY) mnY = vy;
@@ -241,12 +267,10 @@ function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign, yMin, yMax, of
       found = true;
     }
     if (!found) return null;
-    return {
-      cy: (mxY + mnY) / 2,
-      ry: (mxY - mnY) / 2 + offset,
-      rz: (mxZ - mnZ) / 2 + offset,
-      cz: (mxZ + mnZ) / 2,
-    };
+    // Cap radii so a sparse/noisy scan near the shoulder seam can't produce blobs
+    const ry = Math.min((mxY - mnY) / 2 + offset, maxArmR);
+    const rz = Math.min((mxZ - mnZ) / 2 + offset, maxArmR);
+    return { cy: (mxY + mnY) / 2, ry, rz, cz: (mxZ + mnZ) / 2 };
   }
 
   const rings = [];
@@ -297,7 +321,8 @@ function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign, yMin, yMax, of
  * @returns {Object} map of clothing type name → { positions, normals, indices }
  */
 export function buildClothingGeometry(bodyData, cfg) {
-  const { positions: bPos, normals: bNorm, indices: bIdx } = bodyData;
+  const { positions: bPos, normals: bNorm, indices: bIdx,
+          skinIndices: bSkinIdx, skinWeights: bSkinWts } = bodyData;
   const vCount = bPos.length / 3;
   const triCount = bIdx.length / 3;
 
@@ -357,14 +382,19 @@ export function buildClothingGeometry(bodyData, cfg) {
       console.log(`[Clothing] Built procedural legs '${ctype}': ${geo.positions.length / 3} verts`);
 
     } else if (ctype === 'short_sleeve' || ctype === 'polo') {
-      // Torso tube + two separate sleeve tubes branching at the shoulder seam
+      // Torso tube + two separate sleeve tubes branching at the shoulder seam.
+      // yMin raised (+0.04→0.03 below shirtTop) to stop the scan picking up torso mesh
+      // at the shoulder junction; yMax raised (+0.08) to reach the arm above shoulder.
+      // Skin-weight filter keeps only arm/forearm verts; maxArmR caps any stray blobs.
       const torso = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
-      // Sleeve: shoulder seam → ~1/4 of upper arm (research: 1/3–1/2, but cartoon is compact)
       const sleeveXEnd = xCap + bodyHeight * 0.06;
-      const sleeveYMin = yHi - bodyHeight * 0.08;
-      const sleeveYMax = yHi + bodyHeight * 0.02;
-      const rSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, +1, sleeveYMin, sleeveYMax, baseOffset);
-      const lSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, -1, sleeveYMin, sleeveYMax, baseOffset);
+      const sleeveYMin = yHi - bodyHeight * 0.03;  // was 0.08 — too low, captured torso
+      const sleeveYMax = yHi + bodyHeight * 0.08;  // was 0.02 — too low for arm above shoulder
+      const maxArmR    = bodyHeight * 0.058;        // ~10cm at 1.75m height, sane arm radius
+      const rSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, +1,
+                        sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
+      const lSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, -1,
+                        sleeveYMin, sleeveYMax, baseOffset, maxArmR, bSkinIdx, bSkinWts);
       const geo = mergeTubes(torso, mergeTubes(rSleeve, lSleeve));
       if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
       result[ctype] = geo;
