@@ -359,8 +359,8 @@ export function buildClothingGeometry(bodyData, cfg) {
     } else if (ctype === 'short_sleeve' || ctype === 'polo') {
       // Torso tube + two separate sleeve tubes branching at the shoulder seam
       const torso = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
-      // Sleeve: shoulder seam → ~1/3 of upper arm; arm Y spans ±margin around shirt top
-      const sleeveXEnd = xCap + bodyHeight * 0.11;
+      // Sleeve: shoulder seam → ~1/4 of upper arm (research: 1/3–1/2, but cartoon is compact)
+      const sleeveXEnd = xCap + bodyHeight * 0.06;
       const sleeveYMin = yHi - bodyHeight * 0.08;
       const sleeveYMax = yHi + bodyHeight * 0.02;
       const rSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, +1, sleeveYMin, sleeveYMax, baseOffset);
