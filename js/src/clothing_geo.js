@@ -54,8 +54,10 @@ function buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, offset) {
   const yWin        = ySpan * 0.08;
   // Taper: full xCap up to TAPER_START, smoothstep down to xCapTop by TAPER_END,
   // then hold xCapTop for the neckline so the top rings form a clean uniform oval.
-  const TAPER_START = 0.60;
-  const TAPER_END   = 0.90;
+  // Keep full width for 72% of shirt height (shirt body + armhole area), then
+  // transition quickly to neck width, leaving top 8% flat.
+  const TAPER_START = 0.72;
+  const TAPER_END   = 0.92;
 
   function scanAt(y, cap) {
     let mxZ = -Infinity, mnZ = Infinity, mxX = 0, found = false;
@@ -205,6 +207,88 @@ function mergeTubes(a, b) {
 }
 
 /**
+ * Build one short sleeve tube — a horizontal cylinder running along the X axis.
+ * Rings are in the Y-Z plane; the tube extends from the shoulder seam outward.
+ *
+ * @param {Float32Array} bPos    body positions (stride 3)
+ * @param {number}       vCount
+ * @param {number}       xStart  inner X (shoulder seam), absolute value
+ * @param {number}       xEnd    outer X (sleeve hem), absolute value
+ * @param {number}       xSign   +1 = right, -1 = left
+ * @param {number}       yMin    lower Y bound for arm scan
+ * @param {number}       yMax    upper Y bound for arm scan
+ * @param {number}       offset  gap above body surface
+ */
+function buildProceduralSleeve(bPos, vCount, xStart, xEnd, xSign, yMin, yMax, offset) {
+  const N_RINGS = 6;
+  const SEGS    = 16;
+  const xSpan   = xEnd - xStart;
+  const xWin    = xSpan * 0.35;  // generous scan window at each X slice
+
+  function scanAt(xAbs) {
+    let mxY = -Infinity, mnY = Infinity, mxZ = -Infinity, mnZ = Infinity, found = false;
+    for (let i = 0; i < vCount; i++) {
+      const vxAbs = Math.abs(bPos[i*3]);
+      if (Math.abs(vxAbs - xAbs) > xWin) continue;
+      if ((bPos[i*3] >= 0 ? +1 : -1) !== xSign) continue;
+      const vy = bPos[i*3+1];
+      if (vy < yMin || vy > yMax) continue;
+      const vz = bPos[i*3+2];
+      if (vy > mxY) mxY = vy;
+      if (vy < mnY) mnY = vy;
+      if (vz > mxZ) mxZ = vz;
+      if (vz < mnZ) mnZ = vz;
+      found = true;
+    }
+    if (!found) return null;
+    return {
+      cy: (mxY + mnY) / 2,
+      ry: (mxY - mnY) / 2 + offset,
+      rz: (mxZ - mnZ) / 2 + offset,
+      cz: (mxZ + mnZ) / 2,
+    };
+  }
+
+  const rings = [];
+  for (let ri = 0; ri <= N_RINGS; ri++) {
+    const xAbs = xStart + xSpan * (ri / N_RINGS);
+    const s = scanAt(xAbs);
+    if (s) rings.push({ x: xAbs * xSign, ...s });
+  }
+  if (rings.length < 2) return null;
+
+  const positions = [];
+  const indices   = [];
+
+  function addRing({ x, cy, ry, rz, cz }) {
+    const base = positions.length / 3;
+    for (let si = 0; si < SEGS; si++) {
+      const a = (2 * Math.PI * si) / SEGS;
+      // Ring perpendicular to the X axis — sleeve runs along X
+      positions.push(x, cy + ry * Math.sin(a), cz + rz * Math.cos(a));
+    }
+    return base;
+  }
+
+  let prevBase = addRing(rings[0]);
+  for (let ri = 1; ri < rings.length; ri++) {
+    const currBase = addRing(rings[ri]);
+    for (let si = 0; si < SEGS; si++) {
+      const next = (si + 1) % SEGS;
+      indices.push(
+        prevBase + si,   currBase + si,   prevBase + next,
+        prevBase + next, currBase + si,   currBase + next,
+      );
+    }
+    prevBase = currBase;
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
  * Build clothing geometry by extruding body mesh faces outward (pants/shorts),
  * or by building a procedural tube from body cross-sections (shirts).
  *
@@ -272,8 +356,22 @@ export function buildClothingGeometry(bodyData, cfg) {
       result[ctype] = geo;
       console.log(`[Clothing] Built procedural legs '${ctype}': ${geo.positions.length / 3} verts`);
 
+    } else if (ctype === 'short_sleeve' || ctype === 'polo') {
+      // Torso tube + two separate sleeve tubes branching at the shoulder seam
+      const torso = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
+      // Sleeve: shoulder seam → ~1/3 of upper arm; arm Y spans ±margin around shirt top
+      const sleeveXEnd = xCap + bodyHeight * 0.11;
+      const sleeveYMin = yHi - bodyHeight * 0.08;
+      const sleeveYMax = yHi + bodyHeight * 0.02;
+      const rSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, +1, sleeveYMin, sleeveYMax, baseOffset);
+      const lSleeve = buildProceduralSleeve(bPos, vCount, xCap, sleeveXEnd, -1, sleeveYMin, sleeveYMax, baseOffset);
+      const geo = mergeTubes(torso, mergeTubes(rSleeve, lSleeve));
+      if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
+      result[ctype] = geo;
+      console.log(`[Clothing] Built shirt+sleeves '${ctype}': ${geo.positions.length / 3} verts`);
+
     } else if (isFinite(xCap) && xCapTop !== null) {
-      // Tapered shirt tube (short_sleeve, polo, v_neck)
+      // v_neck: torso tube only, no sleeve branches
       const geo = buildProceduralTube(bPos, vCount, yLo, yHi, xCap, xCapTop, baseOffset);
       if (!geo) { console.warn(`[Clothing] Shirt tube empty for '${ctype}'`); continue; }
       result[ctype] = geo;
