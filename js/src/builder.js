@@ -14,7 +14,7 @@ import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
 import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
 import { buildMouthGeometry, createMouthMaterial } from './mouth_geo.js';
-import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry, buildHemGeometry, buildBeltGeometry } from './clothing_geo.js';
+import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry, buildBeltGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
@@ -352,29 +352,6 @@ export async function buildHumanoid(cfg) {
           applyRawGeoToMesh(buttonMesh, buttonGeo);
           console.log('[Clothing] Added buttons');
         }
-      }
-    }
-
-    // Hem band — clean waist edge when both a top and bottom are present
-    const SHIRT_TYPES = ['polo', 'short_sleeve', 'v_neck', 'long_sleeve'];
-    const PANTS_TYPES = ['jeans', 'shorts'];
-    const hasShirt = clothingList.some(c => SHIRT_TYPES.includes(c));
-    const hasPants = clothingList.some(c => PANTS_TYPES.includes(c));
-    if (hasShirt && hasPants) {
-      const hemGeo = buildHemGeometry(bodyData, _hipY, _bodyH, 0.028);
-      if (hemGeo) {
-        const shirtType = clothingList.find(c => SHIRT_TYPES.includes(c));
-        const hemColorName = shirtType
-          ? ((cfg.clothingColor ?? {})[shirtType] ?? CLOTHING_DEFAULT_COLORS[shirtType] ?? 'grey')
-          : 'grey';
-        const hemRgba = CLOTHING_COLORS[hemColorName] ?? CLOTHING_COLORS.grey;
-        const hemMat = makePBR(scene, 'HemMat', hemRgba, 0.60, 0.0);
-        hemMat.backFaceCulling = false;
-        hemMat.twoSidedLighting = true;
-        const hemMesh = new Mesh('Clothing_hem', scene);
-        hemMesh.material = hemMat;
-        applyRawGeoToMesh(hemMesh, hemGeo);
-        console.log('[Clothing] Added hem band');
       }
     }
 

@@ -321,46 +321,8 @@ export function buildClothingGeometry(bodyData, cfg) {
         bSkinIdx, bSkinWts, 'excludeTorso'
       );
       if (!geo) { console.warn(`[Clothing] No verts for '${ctype}'`); continue; }
-
-      // Leg cuffs — scan each leg at yLo (ankle) and extend a cylinder down to the feet,
-      // covering the ragged shell bottom edge and filling the ankle-to-ground gap.
-      const buildLegCuff = (xSign) => {
-        const yWin = bodyHeight * 0.06;
-        let mxX = -Infinity, mnX = Infinity, mxZ = -Infinity, mnZ = Infinity, nf = 0;
-        for (let i = 0; i < vCount; i++) {
-          const vx = bPos[i*3], vy = bPos[i*3+1], vz = bPos[i*3+2];
-          if (Math.abs(vy - yLo) > yWin) continue;
-          if (xSign > 0 && vx < bodyHeight * 0.01) continue;   // right leg: skip center
-          if (xSign < 0 && vx > -bodyHeight * 0.01) continue;  // left leg: skip center
-          if (vx > mxX) mxX = vx; if (vx < mnX) mnX = vx;
-          if (vz > mxZ) mxZ = vz; if (vz < mnZ) mnZ = vz;
-          nf++;
-        }
-        if (nf < 3) return null;
-        const depth = yLo - minY;
-        if (depth < 0.005) return null;
-        const cx = (mxX + mnX) / 2, rx = (mxX - mnX) / 2 + baseOffset * 2;
-        const cz = (mxZ + mnZ) / 2, rz = (mxZ - mnZ) / 2 + baseOffset * 2;
-        const SEGS = 14;
-        const pos = [], idx = [];
-        for (let si = 0; si < SEGS; si++) {
-          const a = (2 * Math.PI * si) / SEGS;
-          pos.push(cx + rx * Math.cos(a), minY, cz + rz * Math.sin(a));  // bottom ring at ground
-          pos.push(cx + rx * Math.cos(a), yLo,  cz + rz * Math.sin(a));  // top ring at pants hem
-        }
-        for (let si = 0; si < SEGS; si++) {
-          const next = (si + 1) % SEGS;
-          const b0 = si*2, b1 = next*2, t0 = b0+1, t1 = b1+1;
-          idx.push(b0, t0, b1, b1, t0, t1);
-        }
-        const p = new Float32Array(pos), ix = new Uint32Array(idx);
-        return { positions: p, normals: computeVertexNormals(p, ix), indices: ix };
-      };
-
-      const rCuff = buildLegCuff(+1);
-      const lCuff = buildLegCuff(-1);
-      result[ctype] = mergeTubes(geo, mergeTubes(rCuff, lCuff));
-      console.log(`[Clothing] Built vertex-shell legs '${ctype}': ${result[ctype].positions.length/3} verts`);
+      result[ctype] = geo;
+      console.log(`[Clothing] Built vertex-shell legs '${ctype}': ${geo.positions.length/3} verts`);
 
     } else if (ctype === 'long_sleeve') {
       // Single shell covering torso + arms — no bone filter needed for full coverage
