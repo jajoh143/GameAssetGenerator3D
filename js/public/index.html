@@ -30,6 +30,17 @@
     <div id="sidebar">
       <div id="form-scroll">
 
+        <!-- Style toggle -->
+        <div class="section">
+          <div class="section-header">Style</div>
+          <div class="section-body">
+            <div class="style-toggle" id="style-toggle">
+              <button type="button" class="style-btn active" data-style="cartoon" id="btn-style-cartoon">Cartoon</button>
+              <button type="button" class="style-btn" data-style="lowpoly" id="btn-style-lowpoly">Low-Poly</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Character section -->
         <div class="section">
           <div class="section-header">Character</div>
@@ -312,6 +323,54 @@
 </div><!-- /app -->
 
 <script>
+// ── Style toggle ─────────────────────────────────────────────────────────────
+
+const CARTOON_PRESETS = [
+  { value: 'average', label: 'Average' },
+  { value: 'tall',    label: 'Tall' },
+  { value: 'short',   label: 'Short' },
+  { value: 'child',   label: 'Child' },
+  { value: 'brute',   label: 'Brute' },
+  { value: 'slender', label: 'Slender' },
+];
+
+const LOWPOLY_PRESETS = [
+  { value: 'average',  label: 'Average' },
+  { value: 'tall',     label: 'Tall' },
+  { value: 'short',    label: 'Short' },
+  { value: 'athletic', label: 'Athletic' },
+  { value: 'heavy',    label: 'Heavy' },
+];
+
+let currentStyle = 'cartoon'; // 'cartoon' | 'lowpoly'
+
+function setStyle(style) {
+  currentStyle = style;
+
+  document.getElementById('btn-style-cartoon').classList.toggle('active', style === 'cartoon');
+  document.getElementById('btn-style-lowpoly').classList.toggle('active', style === 'lowpoly');
+
+  // Swap preset options
+  const presetSel = document.getElementById('preset');
+  const currentVal = presetSel.value;
+  const options = style === 'lowpoly' ? LOWPOLY_PRESETS : CARTOON_PRESETS;
+  presetSel.innerHTML = options.map(o =>
+    `<option value="${o.value}"${o.value === 'average' ? ' selected' : ''}>${o.label}</option>`
+  ).join('');
+  // Preserve selection if the value still exists
+  if (options.some(o => o.value === currentVal)) presetSel.value = currentVal;
+}
+
+document.getElementById('btn-style-cartoon').addEventListener('click', () => setStyle('cartoon'));
+document.getElementById('btn-style-lowpoly').addEventListener('click',  () => setStyle('lowpoly'));
+
+function previewEndpoint()  { return currentStyle === 'lowpoly' ? '/preview-lowpoly'  : '/preview'; }
+function generateEndpoint() { return currentStyle === 'lowpoly' ? '/generate-lowpoly' : '/generate'; }
+function downloadFilename(jobId) {
+  const prefix = currentStyle === 'lowpoly' ? 'lowpoly' : 'humanoid';
+  return `${prefix}_${jobId.slice(0, 8)}.glb`;
+}
+
 // ── Babylon.js viewer setup ──────────────────────────────────────────────────
 
 const canvas = document.getElementById('viewer-canvas');
@@ -536,7 +595,7 @@ document.getElementById('btn-preview').addEventListener('click', async () => {
 
   let jobId;
   try {
-    const res = await fetch('/preview', {
+    const res = await fetch(previewEndpoint(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -587,7 +646,7 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
 
   let jobId;
   try {
-    const res = await fetch('/generate', {
+    const res = await fetch(generateEndpoint(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -620,7 +679,7 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
 
     if (job.download_url) {
       dlAnchor.href = job.download_url;
-      dlAnchor.download = `humanoid_${jobId.slice(0, 8)}.glb`;
+      dlAnchor.download = downloadFilename(jobId);
       dlLink.classList.add('visible');
     }
   });
