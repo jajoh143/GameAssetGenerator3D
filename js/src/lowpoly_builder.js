@@ -192,9 +192,11 @@ export async function buildLowPolyCharacter(cfg) {
   const headBoneY  = H * 0.92;
 
   // headRadius: width-based from the tight head zone, clamped to a
-  // plausible range so it can't balloon from stray neck/shoulder verts.
-  const rawWidthR  = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.11;
-  const headRadius = Math.min(Math.max(rawWidthR, H * 0.09), H * 0.13);
+  // plausible range. The NBM mesh head half-width is ~0.09-0.11 m;
+  // clamping [H*0.055, H*0.085] = [0.096, 0.149] for H=1.75 keeps us
+  // in realistic territory without inflating from stray neck vertices.
+  const rawWidthR  = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.08;
+  const headRadius = Math.min(Math.max(rawWidthR, H * 0.055), H * 0.085);
 
   // faceFrontZ: the face points toward +Z in our coordinate system.
   // Use the forward (max-Z) extent of head-zone vertices.
@@ -316,7 +318,7 @@ export async function buildLowPolyCharacter(cfg) {
       if (y > _maxY) _maxY = y;
     }
     const _bodyH = _maxY - _minY;
-    const _armY  = _minY + _bodyH * 0.73;   // realistic: arm/shoulder at 73%
+    const _armY  = _minY + _bodyH * 0.82;   // realistic: shoulder at 82%
     const _hipY  = _minY + _bodyH * 0.53;   // realistic: hip at 53%
 
     const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
