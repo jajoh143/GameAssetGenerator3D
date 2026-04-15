@@ -12,8 +12,9 @@ import { writeFileSync } from 'fs';
 import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
-import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
-import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry } from './clothing_geo.js';
+import { buildEyeGeometry, createEyeMaterials, buildNoseGeometry } from './eye_geo.js';
+import { buildMouthGeometry, createMouthMaterial } from './mouth_geo.js';
+import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry, buildBeltGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
@@ -207,8 +208,10 @@ export async function buildHumanoid(cfg) {
     if (hairGeo) {
       const hairColorName = cfg.hairColor ?? 'brown';
       const hairRgba = HAIR_COLORS[hairColorName] ?? HAIR_COLORS.brown;
-      const hairMat = makePBR(scene, 'HairMaterial', hairRgba, 0.75, 0.0);
+      const HAIR_ROUGHNESS = { buzzed: 0.82, short: 0.65, long: 0.70, spiky: 0.55 };
+      const hairMat = makePBR(scene, 'HairMaterial', hairRgba, HAIR_ROUGHNESS[hairStyle] ?? 0.70, 0.0);
       hairMat.backFaceCulling = false;
+      hairMat.twoSidedLighting = true;
 
       const hairMesh = new Mesh('Hair', scene);
       hairMesh.material = hairMat;
@@ -220,7 +223,7 @@ export async function buildHumanoid(cfg) {
       // handedness fix which would flip the sign of rotation.x (inverting the cap).
       const hp = hairGeo.positions;
       const hn = hairGeo.normals;
-      const earY = headBoneY + headRadius * 0.5;
+      const earY = headBoneY + headRadius * ((cfg.faceTweaks?.hairY ?? 0.05) + 0.2);
       for (let i = 0; i < hp.length / 3; i++) {
         const hx = hp[i*3], hy = hp[i*3+1], hz = hp[i*3+2];
         hp[i*3]   = hx;
@@ -239,7 +242,7 @@ export async function buildHumanoid(cfg) {
 
   // 6. Eyes — geometry is in absolute world space (Y-up); no rotation needed.
   {
-    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ);
+    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ, cfg.faceTweaks ?? {});
     const eyeMatParams = createEyeMaterials();
 
     const eyeDiscMesh = new Mesh('Eyes', scene);
@@ -248,6 +251,7 @@ export async function buildHumanoid(cfg) {
     eyeMat.roughness      = eyeMatParams.eyeDiscMaterial.roughness;
     eyeMat.metallic       = eyeMatParams.eyeDiscMaterial.metallic;
     eyeMat.backFaceCulling = false;
+    eyeMat.twoSidedLighting = true;
     eyeDiscMesh.material  = eyeMat;
     applyRawGeoToMesh(eyeDiscMesh, eyeGeos.eyeDiscGeometry);
 
@@ -258,13 +262,41 @@ export async function buildHumanoid(cfg) {
     hlMat.metallic        = eyeMatParams.highlightMaterial.metallic;
     hlMat.emissiveColor   = new Color3(...eyeMatParams.highlightMaterial.emissiveColor);
     hlMat.backFaceCulling = false;
+    hlMat.twoSidedLighting = true;
     highlightMesh.material = hlMat;
     applyRawGeoToMesh(highlightMesh, eyeGeos.highlightGeometry);
 
     console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.20).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
   }
 
-  // 7. Clothing
+  // 7. Mouth
+  {
+    const mouthGeo    = buildMouthGeometry(headRadius, headBoneY, faceFrontZ, cfg.faceTweaks ?? {});
+    const mouthParams = createMouthMaterial();
+    const mouthMat    = new PBRMaterial('MouthMaterial', scene);
+    mouthMat.albedoColor    = new Color3(...mouthParams.albedoColor);
+    mouthMat.roughness      = mouthParams.roughness;
+    mouthMat.metallic       = mouthParams.metallic;
+    mouthMat.backFaceCulling = false;
+    mouthMat.twoSidedLighting = true;
+    const mouthMesh = new Mesh('Mouth', scene);
+    mouthMesh.material = mouthMat;
+    applyRawGeoToMesh(mouthMesh, mouthGeo);
+
+    const mouthY = cfg.faceTweaks?.mouthY ?? -0.10;
+    console.log(`[Mouth] Placed at world Y=${(headBoneY + headRadius * mouthY).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
+  }
+
+  // 7b. Nose — small cartoony ellipsoid ball, skin-coloured
+  {
+    const noseGeo  = buildNoseGeometry(headRadius, headBoneY, faceFrontZ);
+    const noseMesh = new Mesh('Nose', scene);
+    noseMesh.material = skinMat;
+    applyRawGeoToMesh(noseMesh, noseGeo);
+    console.log(`[Nose] Placed at world Y=${(headBoneY - headRadius * 0.55).toFixed(3)}, Z=${(faceFrontZ + headRadius * 0.055).toFixed(3)}`);
+  }
+
+  // 8. Clothing
   if (cfg.clothing && cfg.clothing.length > 0) {
     const clothingColors = cfg.clothingColor ?? {};
     const clothingGeos = buildClothingGeometry(bodyData, cfg);
@@ -272,8 +304,10 @@ export async function buildHumanoid(cfg) {
     for (const [ctype, geo] of Object.entries(clothingGeos)) {
       const colorName = clothingColors[ctype] ?? CLOTHING_DEFAULT_COLORS[ctype] ?? 'grey';
       const rgba = CLOTHING_COLORS[colorName] ?? CLOTHING_COLORS.grey;
-      const mat = makePBR(scene, `ClothingMat_${ctype}`, rgba, 0.65, 0.0);
+      const CLOTH_ROUGHNESS = { polo: 0.58, short_sleeve: 0.62, long_sleeve: 0.60, v_neck: 0.68, jeans: 0.80, shorts: 0.75 };
+      const mat = makePBR(scene, `ClothingMat_${ctype}`, rgba, CLOTH_ROUGHNESS[ctype] ?? 0.65, 0.0);
       mat.backFaceCulling = false;
+      mat.twoSidedLighting = true;
 
       const mesh = new Mesh(`Clothing_${ctype}`, scene);
       mesh.material = mat;
@@ -292,11 +326,12 @@ export async function buildHumanoid(cfg) {
     const _bodyH = _maxY - _minY;
     const _armY  = _minY + _bodyH * 0.63;
     const _hipY  = _minY + _bodyH * 0.43;
+    const _neckY = _minY + _bodyH * 0.78;
 
     const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
 
     if (clothingList.includes('polo')) {
-      const collarGeo = buildCollarGeometry(bodyData, _armY, _bodyH, 0.020);
+      const collarGeo = buildCollarGeometry(bodyData, _neckY, _bodyH, 0.020);
       if (collarGeo) {
         const topColorName = (cfg.clothingColor ?? {})['polo'] ?? 'grey';
         const topRgba = CLOTHING_COLORS[topColorName] ?? CLOTHING_COLORS.grey;
@@ -307,6 +342,7 @@ export async function buildHumanoid(cfg) {
         ];
         const collarMat = makePBR(scene, 'CollarMat', lighterRgba, 0.55, 0.0);
         collarMat.backFaceCulling = false;
+        collarMat.twoSidedLighting = true;
         const collarMesh = new Mesh('Clothing_polo_collar', scene);
         collarMesh.material = collarMat;
         applyRawGeoToMesh(collarMesh, collarGeo);
@@ -327,9 +363,25 @@ export async function buildHumanoid(cfg) {
         }
       }
     }
+
+    // Belt
+    if (cfg.belt) {
+      const beltGeo = buildBeltGeometry(bodyData, _hipY, _bodyH, 0.032);
+      if (beltGeo) {
+        const beltColorName = cfg.beltColor ?? 'brown';
+        const beltRgba = CLOTHING_COLORS[beltColorName] ?? [0.35, 0.22, 0.10, 1];
+        const beltMat = makePBR(scene, 'BeltMat', beltRgba, 0.65, 0.08);
+        beltMat.backFaceCulling = false;
+        beltMat.twoSidedLighting = true;
+        const beltMesh = new Mesh('Clothing_belt', scene);
+        beltMesh.material = beltMat;
+        applyRawGeoToMesh(beltMesh, beltGeo);
+        console.log('[Clothing] Added belt');
+      }
+    }
   }
 
-  // 8. Animations
+  // 9. Animations
   const clips = buildAnimations(cfg);
   buildAnimationGroups(clips, skeleton, scene);
 

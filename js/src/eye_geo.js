@@ -76,22 +76,23 @@ function createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, segments = 10) {
 /**
  * Small glint discs in the XY plane, slightly forward of the eye disc.
  */
-function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segments = 6) {
+function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, eyeRx, segments = 6) {
   const hlHeightY = eyeHeightY + eyeRy * 0.45;  // upper portion of eye
   const hlZ       = eyeZ + 0.002;               // slightly forward of eye disc
+  const offsetX   = eyeRx * 0.30;               // inward offset within the eye disc
 
   const positions = [];
   const indices = [];
 
   // Left highlight
   const leftHlCenter = positions.length / 3;
-  positions.push(-eyeX + eyeX * 0.35, hlHeightY, hlZ);
+  positions.push(-eyeX + offsetX, hlHeightY, hlZ);
   const leftHlRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     leftHlRing.push(positions.length / 3);
     positions.push(
-      -eyeX + eyeX * 0.35 + highlightR * Math.cos(angle),
+      -eyeX + offsetX + highlightR * Math.cos(angle),
       hlHeightY + highlightR * Math.sin(angle),
       hlZ
     );
@@ -102,19 +103,73 @@ function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segm
 
   // Right highlight
   const rightHlCenter = positions.length / 3;
-  positions.push(eyeX - eyeX * 0.35, hlHeightY, hlZ);
+  positions.push(eyeX - offsetX, hlHeightY, hlZ);
   const rightHlRing = [];
   for (let i = 0; i < segments; i++) {
     const angle = (2 * Math.PI * i) / segments;
     rightHlRing.push(positions.length / 3);
     positions.push(
-      eyeX - eyeX * 0.35 + highlightR * Math.cos(angle),
+      eyeX - offsetX + highlightR * Math.cos(angle),
       hlHeightY + highlightR * Math.sin(angle),
       hlZ
     );
   }
   for (let i = 0; i < segments; i++) {
     indices.push(rightHlCenter, rightHlRing[i], rightHlRing[(i + 1) % segments]);
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
+/**
+ * Build a small cartoony nose — an ellipsoid ball centred slightly in front of the
+ * face surface so it protrudes naturally.  Material should be the body skin colour.
+ *
+ * @param {number} headRadius  - head half-width (X extent)
+ * @param {number} headBoneY   - world Y of the Head bone
+ * @param {number} faceFrontZ  - world Z of the face surface
+ * @returns {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }}
+ */
+export function buildNoseGeometry(headRadius, headBoneY, faceFrontZ) {
+  const cx = 0;
+  // Vertically centred between eyes (headBoneY - 0.30*hr) and mouth (headBoneY - 0.80*hr)
+  const cy = headBoneY - headRadius * 0.55;
+  // Sphere centre sits partly inside face so the ball protrudes naturally
+  const cz = faceFrontZ + headRadius * 0.055;
+  const rx  = headRadius * 0.065;   // lateral half-width
+  const ry  = headRadius * 0.060;   // vertical half-height
+  const rz  = headRadius * 0.085;   // forward protrusion (tip ~ faceFrontZ + 0.14*hr)
+
+  const LATS = 6, LONS = 8;
+  const positions = [];
+  const indices   = [];
+
+  // Standard lat/lon sphere: phi in [-PI/2, PI/2] (south→north), theta in [0, 2PI]
+  // Oriented so theta=0 points forward (+Z), giving x=0, z=rz*cosP at theta=0.
+  for (let lat = 0; lat <= LATS; lat++) {
+    const phi  = (Math.PI * lat / LATS) - Math.PI / 2;
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+    for (let lon = 0; lon <= LONS; lon++) {
+      const theta = (2 * Math.PI * lon) / LONS;
+      positions.push(
+        cx + rx * cosP * Math.sin(theta),
+        cy + ry * sinP,
+        cz + rz * cosP * Math.cos(theta),
+      );
+    }
+  }
+
+  // Quad faces
+  for (let lat = 0; lat < LATS; lat++) {
+    for (let lon = 0; lon < LONS; lon++) {
+      const a = lat * (LONS + 1) + lon;
+      const b = a + (LONS + 1);
+      indices.push(a, a + 1, b);
+      indices.push(b, a + 1, b + 1);
+    }
   }
 
   const pos = new Float32Array(positions);
@@ -131,17 +186,17 @@ function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segm
  * @param {number} faceFrontZ  - world Z of the face surface (forward extent of head)
  * @returns {{ eyeDiscGeometry, highlightGeometry }}
  */
-export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12) {
-  const eyeX       = headRadius * 0.45;               // lateral separation
-  const eyeHeightY = headBoneY  + headRadius * 0.05;  // eye socket height (20% up from chin)
-  const eyeZ       = faceFrontZ + 0.003;              // just in front of face surface
-  const rx         = headRadius * 0.10;               // horizontal radius of disc
-  const ry         = headRadius * 0.08;               // vertical radius of disc
-  const highlightR = headRadius * 0.035;              // glint radius
+export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12, tweaks = {}) {
+  const eyeX       = headRadius * (tweaks.eyeSpread  ?? 0.45);  // lateral separation
+  const eyeHeightY = headBoneY  + headRadius * ((tweaks.eyeHeight ?? 0.20) - 0.5);  // eye socket height
+  const eyeZ       = faceFrontZ + 0.003;                        // just in front of face surface
+  const rx         = headRadius * (tweaks.eyeRx      ?? 0.10);  // horizontal radius of disc
+  const ry         = headRadius * (tweaks.eyeRy      ?? 0.08);  // vertical radius of disc
+  const highlightR = headRadius * 0.035;                        // glint radius
 
   return {
     eyeDiscGeometry:   createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, 10),
-    highlightGeometry: createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, ry, 6),
+    highlightGeometry: createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, ry, rx, 6),
   };
 }
 

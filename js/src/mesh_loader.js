@@ -27,14 +27,9 @@ const GLB_JOINT_TO_BONE_IDX = {
   RightUpLeg: 16, RightLeg: 17, RightFoot: 18, RightToes: 18,
 };
 
-/**
- * Unpack one of the 4 Babylon-packed bone indices from a single Float32.
- * Babylon stores 4 uint8 joint indices packed into one float via DataView.
- */
-function unpackBoneIndex(packedFloat, slot) {
-  const buf = new ArrayBuffer(4);
-  new DataView(buf).setFloat32(0, packedFloat, true);
-  return new DataView(buf).getUint8(slot);
+/** Read one bone index from Babylon's matricesIndices Float32Array (plain float values). */
+function unpackBoneIndex(floatVal) {
+  return Math.round(floatVal);
 }
 
 /**
@@ -122,7 +117,7 @@ export async function loadCartoonMale(targetHeight = 1.75) {
     const accum = new Map(); // ourBoneIdx → accumulated weight
 
     for (let j = 0; j < 4; j++) {
-      const origIdx = unpackBoneIndex(matIdxArr[v * 4 + j], 0); // packed into slot 0
+      const origIdx = unpackBoneIndex(matIdxArr[v * 4 + j]);
       const wt = matWtArr[v * 4 + j];
       if (wt <= 0) continue;
 
