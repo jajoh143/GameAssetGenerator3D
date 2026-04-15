@@ -12,7 +12,7 @@ import { writeFileSync } from 'fs';
 import { loadCartoonMale } from './mesh_loader.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
-import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
+import { buildEyeGeometry, createEyeMaterials, buildNoseGeometry } from './eye_geo.js';
 import { buildMouthGeometry, createMouthMaterial } from './mouth_geo.js';
 import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry, buildBeltGeometry } from './clothing_geo.js';
 import { buildAnimations } from './animation.js';
@@ -285,6 +285,15 @@ export async function buildHumanoid(cfg) {
 
     const mouthY = cfg.faceTweaks?.mouthY ?? -0.10;
     console.log(`[Mouth] Placed at world Y=${(headBoneY + headRadius * mouthY).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
+  }
+
+  // 7b. Nose — small cartoony ellipsoid ball, skin-coloured
+  {
+    const noseGeo  = buildNoseGeometry(headRadius, headBoneY, faceFrontZ);
+    const noseMesh = new Mesh('Nose', scene);
+    noseMesh.material = skinMat;
+    applyRawGeoToMesh(noseMesh, noseGeo);
+    console.log(`[Nose] Placed at world Y=${(headBoneY - headRadius * 0.55).toFixed(3)}, Z=${(faceFrontZ + headRadius * 0.055).toFixed(3)}`);
   }
 
   // 8. Clothing

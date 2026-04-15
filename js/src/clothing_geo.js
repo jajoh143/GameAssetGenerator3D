@@ -55,18 +55,19 @@ function buildVertexShell(bPos, bNorm, bIdx, vCount, triCount,
                           skinIdx, skinWts, boneMode) {
 
   // Bone filter
-  // 'excludeArm':    include unless arm-bone total (5-12) >= 0.50  → shirt torso
+  // 'excludeArm':    include unless arm-bone total (5-12) >= 0.50 or neck/head (3-4) >= 0.20  → shirt torso
   // 'excludeTorso':  include unless spine/chest total (1-4)  >= 0.50  → pants (mirrors excludeArm)
   // 'none':          include all                                        → long_sleeve
   function passFilter(i) {
     if (boneMode === 'none' || !skinIdx || !skinWts) return true;
-    let armWt = 0, torsoWt = 0;
+    let armWt = 0, neckWt = 0, torsoWt = 0;
     for (let j = 0; j < 4; j++) {
       const b = skinIdx[i*4+j], w = skinWts[i*4+j];
       if (b >= 5 && b <= 12) armWt  += w;   // arm bones
+      if (b === 3 || b === 4) neckWt += w;  // Neck(3) + Head(4) — shirt must not cover neck/face
       if (b >= 1 && b <= 4)  torsoWt += w;  // Spine(1), Chest(2), Neck(3), Head(4)
     }
-    if (boneMode === 'excludeArm')    return armWt   < 0.50;
+    if (boneMode === 'excludeArm')    return armWt < 0.50 && neckWt < 0.20;
     if (boneMode === 'excludeTorso')  return torsoWt < 0.50;
     return true;
   }
