@@ -21,6 +21,7 @@ import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
 import { CLOTHING_COLORS, CLOTHING_DEFAULT_COLORS } from './clothing_colors.js';
 import { loadLowPolyMesh } from './lowpoly_mesh_loader.js';
+import { buildNoseGeometry, buildMouthGeometry } from './face_geo.js';
 
 // Re-export exportGLB so callers only need to import from this module.
 export { exportGLB } from './builder.js';
@@ -165,27 +166,41 @@ export async function buildLowPolyCharacter(cfg) {
   vd.applyToMesh(bodyMesh);
   bodyMesh.skeleton = skeleton;
 
-  // Compute head bounding box from vertices above 80% of body height.
-  const headYThresh = H * 0.80;
-  let hxMin = Infinity, hxMax = -Infinity, hyMax = -Infinity, hzMax = -Infinity;
+  // ── Head geometry detection ───────────────────────────────────────────────
+  // Use the top 14% of model height as the head zone. For a realistic 1.75m
+  // figure that's the top ~0.245m, safely above the shoulder/neck junction.
+  // (The old 80% threshold caught shoulder vertices and inflated headRadius.)
+  const headZoneBottom = H * 0.86;
+  let hxMin = Infinity, hxMax = -Infinity;
+  let hyMax = -Infinity;
+  let hzMin = Infinity, hzMax = -Infinity;
   for (let i = 0; i < vCount; i++) {
     const by = positions[i * 3 + 1];
-    if (by > headYThresh) {
+    if (by > headZoneBottom) {
       const bx = positions[i * 3];
       const bz = positions[i * 3 + 2];
       if (bx < hxMin) hxMin = bx;
       if (bx > hxMax) hxMax = bx;
       if (by > hyMax) hyMax = by;
+      if (bz < hzMin) hzMin = bz;
       if (bz > hzMax) hzMax = bz;
     }
   }
-  const headBoneY   = H * 0.87;
-  const headWidthR  = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.13;
-  const headHeightR = hyMax > headBoneY ? hyMax - headBoneY : H * 0.13;
-  const headRadius  = Math.max(headWidthR, headHeightR, H * 0.12);
-  const faceFrontZ  = hzMax > -Infinity ? hzMax : H * 0.10;
 
-  console.log(`[Head] headRadius=${headRadius.toFixed(3)} (widthR=${headWidthR.toFixed(3)}, heightR=${headHeightR.toFixed(3)}), headBoneY=${headBoneY.toFixed(3)}, faceFrontZ=${faceFrontZ.toFixed(3)}`);
+  // headBoneY: for realistic proportions the head centre sits higher than
+  // the cartoon value of H*0.87. Use H*0.92 (7.5:1 head-to-body ratio).
+  const headBoneY  = H * 0.92;
+
+  // headRadius: width-based from the tight head zone, clamped to a
+  // plausible range so it can't balloon from stray neck/shoulder verts.
+  const rawWidthR  = hxMin < hxMax ? (hxMax - hxMin) / 2 : H * 0.11;
+  const headRadius = Math.min(Math.max(rawWidthR, H * 0.09), H * 0.13);
+
+  // faceFrontZ: the face points toward +Z in our coordinate system.
+  // Use the forward (max-Z) extent of head-zone vertices.
+  const faceFrontZ = hzMax > -Infinity ? hzMax : headBoneY * 0.06;
+
+  console.log(`[Head] headRadius=${headRadius.toFixed(3)} (raw=${rawWidthR.toFixed(3)}), headBoneY=${headBoneY.toFixed(3)}, faceFrontZ=${faceFrontZ.toFixed(3)}`);
 
   // 5. Hair
   const hairStyle = cfg.hairStyle ?? 'short';
@@ -246,7 +261,29 @@ export async function buildLowPolyCharacter(cfg) {
     console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.20).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
   }
 
-  // 7. Clothing
+  // 7. Nose
+  {
+    const noseGeo = buildNoseGeometry(headRadius, headBoneY, faceFrontZ);
+    const noseMesh = new Mesh('Nose', scene);
+    // Slightly darker than skin tone for definition
+    const noseMat = makePBR(scene, 'NoseMaterial',
+      [skinRgba[0] * 0.88, skinRgba[1] * 0.82, skinRgba[2] * 0.78], 0.55, 0.0);
+    noseMesh.material = noseMat;
+    applyRawGeoToMesh(noseMesh, noseGeo);
+  }
+
+  // 8. Mouth
+  {
+    const mouthGeo = buildMouthGeometry(headRadius, headBoneY, faceFrontZ);
+    const mouthMesh = new Mesh('Mouth', scene);
+    // Muted dusty-rose tone
+    const mouthMat = makePBR(scene, 'MouthMaterial',
+      [skinRgba[0] * 0.78, skinRgba[1] * 0.55, skinRgba[2] * 0.52], 0.60, 0.0);
+    mouthMesh.material = mouthMat;
+    applyRawGeoToMesh(mouthMesh, mouthGeo);
+  }
+
+  // 9. Clothing
   if (cfg.clothing && cfg.clothing.length > 0) {
     const clothingColors = cfg.clothingColor ?? {};
     const clothingGeos = buildClothingGeometry(bodyData, cfg);
@@ -310,7 +347,7 @@ export async function buildLowPolyCharacter(cfg) {
     }
   }
 
-  // 8. Animations
+  // 10. Animations
   const clips = buildAnimations(cfg);
   buildAnimationGroups(clips, skeleton, scene);
 
