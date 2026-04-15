@@ -29,9 +29,9 @@ export function buildNoseGeometry(headRadius, headBoneY, faceFrontZ) {
   // Nose sits slightly below head centre (eye level is above centre,
   // nose is below eye level)
   const noseY     = headBoneY - hr * 0.08;   // vertical centre of nose
-  const tipOffset = hr * 0.14;               // how far nose sticks out
-  const noseW     = hr * 0.13;               // half-width of nose base
-  const noseH     = hr * 0.18;               // height of nose shape
+  const tipOffset = hr * 0.16;               // how far nose sticks out
+  const noseW     = hr * 0.16;               // half-width of nose base
+  const noseH     = hr * 0.24;               // height of nose shape
 
   // Vertices
   // 0: bridge (top centre, on face surface)
@@ -80,9 +80,9 @@ export function buildMouthGeometry(headRadius, headBoneY, faceFrontZ) {
   const hr = headRadius;
   const fz = faceFrontZ;
 
-  const mouthY   = headBoneY - hr * 0.38;   // below nose
-  const mouthW   = hr * 0.45;               // half-width of mouth
-  const lipH     = hr * 0.07;               // height of lip strip
+  const mouthY   = headBoneY - hr * 0.40;   // below nose
+  const mouthW   = hr * 0.48;               // half-width of mouth
+  const lipH     = hr * 0.10;               // height of lip strip
   const mouthZ   = fz + hr * 0.02;          // slightly proud of face
 
   // 5 vertices: top-left, top-centre, top-right, bottom-left, bottom-right

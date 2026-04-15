@@ -129,15 +129,21 @@ function createHighlightGeometry(eyeX, eyeZ, eyeHeightY, highlightR, eyeRy, segm
  * @param {number} headRadius  - head half-width (X extent)
  * @param {number} headBoneY   - world Y of the Head bone (height, default H*0.87 for H=1.75)
  * @param {number} faceFrontZ  - world Z of the face surface (forward extent of head)
+ * @param {Object} [opts]      - optional multiplier overrides for tuning per model type
+ * @param {number} [opts.eyeXMult=0.45]        - lateral separation as fraction of headRadius
+ * @param {number} [opts.eyeHeightMult=0.05]   - eye height offset above headBoneY
+ * @param {number} [opts.rxMult=0.10]          - horizontal disc radius fraction
+ * @param {number} [opts.ryMult=0.08]          - vertical disc radius fraction
+ * @param {number} [opts.highlightRMult=0.035] - glint disc radius fraction
  * @returns {{ eyeDiscGeometry, highlightGeometry }}
  */
-export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12) {
-  const eyeX       = headRadius * 0.45;               // lateral separation
-  const eyeHeightY = headBoneY  + headRadius * 0.05;  // eye socket height (20% up from chin)
-  const eyeZ       = faceFrontZ + 0.003;              // just in front of face surface
-  const rx         = headRadius * 0.10;               // horizontal radius of disc
-  const ry         = headRadius * 0.08;               // vertical radius of disc
-  const highlightR = headRadius * 0.035;              // glint radius
+export function buildEyeGeometry(headRadius, headBoneY = 1.52, faceFrontZ = 0.12, opts = {}) {
+  const eyeX       = headRadius * (opts.eyeXMult        ?? 0.45);
+  const eyeHeightY = headBoneY  + headRadius * (opts.eyeHeightMult ?? 0.05);
+  const eyeZ       = faceFrontZ + 0.003;
+  const rx         = headRadius * (opts.rxMult           ?? 0.10);
+  const ry         = headRadius * (opts.ryMult           ?? 0.08);
+  const highlightR = headRadius * (opts.highlightRMult   ?? 0.035);
 
   return {
     eyeDiscGeometry:   createEyeDiscGeometry(eyeX, eyeZ, eyeHeightY, rx, ry, 10),

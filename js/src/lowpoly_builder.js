@@ -15,7 +15,7 @@ import {
 import { buildSkeleton } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
 import { buildEyeGeometry, createEyeMaterials } from './eye_geo.js';
-import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry } from './clothing_geo.js';
+import { buildClothingGeometry, buildCollarGeometry, buildButtonGeometry } from './lowpoly_clothing_geo.js';
 import { buildAnimations } from './animation.js';
 import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
@@ -236,7 +236,15 @@ export async function buildLowPolyCharacter(cfg) {
 
   // 6. Eyes
   {
-    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ);
+    // Larger eye discs for the realistic mesh — cartoon's 0.10/0.08 is too small
+    // at realistic head proportions (headRadius ≈ H*0.11 vs cartoon's H*0.18+)
+    const eyeGeos = buildEyeGeometry(headRadius, headBoneY, faceFrontZ, {
+      eyeXMult:      0.42,   // slightly inward for a natural look
+      eyeHeightMult: 0.08,   // a touch higher than head centre
+      rxMult:        0.18,   // ~3.5cm horizontal for H=1.75 — clearly visible
+      ryMult:        0.14,   // ~2.7cm vertical
+      highlightRMult: 0.06,  // proportionally larger glint
+    });
     const eyeMatParams = createEyeMaterials();
 
     const eyeDiscMesh = new Mesh('Eyes', scene);
@@ -308,8 +316,8 @@ export async function buildLowPolyCharacter(cfg) {
       if (y > _maxY) _maxY = y;
     }
     const _bodyH = _maxY - _minY;
-    const _armY  = _minY + _bodyH * 0.63;
-    const _hipY  = _minY + _bodyH * 0.43;
+    const _armY  = _minY + _bodyH * 0.73;   // realistic: arm/shoulder at 73%
+    const _hipY  = _minY + _bodyH * 0.53;   // realistic: hip at 53%
 
     const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
 
