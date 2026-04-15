@@ -80,22 +80,27 @@ function autoOrient(pos, nrm, vCount) {
   const rX = maxX-minX, rY = maxY-minY, rZ = maxZ-minZ;
 
   // ── 2. Rotate so height axis → Y ─────────────────────────────────────────
+  // Babylon's GLB loader converts from right-handed (glTF) to its own
+  // left-handed system by negating Z. So the "Z-up" values we read back are
+  // the NEGATIVE of the original Blender Z. We must negate when using them
+  // as the new Y to get head-at-top rather than head-at-bottom.
+  //
+  //   Z-up export (Blender):  newY = -oldZ,  newZ =  oldY
+  //   X-up (rare):            newY = -oldX,  newX =  oldZ
   let orientation = 'Y';
   if (rZ > rY && rZ > rX) {
-    // Z-up (common Blender export): swap Y↔Z, negate new Z to keep handedness
     orientation = 'Z';
     for (let i = 0; i < vCount; i++) {
       const y=pos[i*3+1], z=pos[i*3+2];
-      pos[i*3+1]=z; pos[i*3+2]=-y;
-      if (nrm) { const ny=nrm[i*3+1], nz=nrm[i*3+2]; nrm[i*3+1]=nz; nrm[i*3+2]=-ny; }
+      pos[i*3+1]=-z; pos[i*3+2]=y;
+      if (nrm) { const ny=nrm[i*3+1], nz=nrm[i*3+2]; nrm[i*3+1]=-nz; nrm[i*3+2]=ny; }
     }
   } else if (rX > rY && rX > rZ) {
-    // X-up (unusual): swap X↔Y, negate new X
     orientation = 'X';
     for (let i = 0; i < vCount; i++) {
-      const x=pos[i*3], y=pos[i*3+1];
-      pos[i*3]=-y; pos[i*3+1]=x;
-      if (nrm) { const nx=nrm[i*3], ny=nrm[i*3+1]; nrm[i*3]=-ny; nrm[i*3+1]=nx; }
+      const x=pos[i*3], z=pos[i*3+2];
+      pos[i*3]= z; pos[i*3+2]=-x;
+      if (nrm) { const nx=nrm[i*3], nz=nrm[i*3+2]; nrm[i*3]=nz; nrm[i*3+2]=-nx; }
     }
   }
 
@@ -106,45 +111,7 @@ function autoOrient(pos, nrm, vCount) {
     if (y<minH) minH=y; if (y>maxH) maxH=y;
   }
 
-  // ── 3. Detect & fix upside-down model ────────────────────────────────────
-  // For a humanoid, the top 20% should have a narrower XZ span than the
-  // bottom 20% (head vs. shoulders/hips). If it doesn't, flip Y.
-  const H = maxH - minH;
-  const topThresh = maxH - H*0.20;
-  const botThresh = minH + H*0.20;
-  let topMinX=Infinity,topMaxX=-Infinity,topMinZ=Infinity,topMaxZ=-Infinity;
-  let botMinX=Infinity,botMaxX=-Infinity,botMinZ=Infinity,botMaxZ=-Infinity;
-  for (let i = 0; i < vCount; i++) {
-    const x=pos[i*3], y=pos[i*3+1], z=pos[i*3+2];
-    if (y > topThresh) {
-      if (x<topMinX) topMinX=x; if (x>topMaxX) topMaxX=x;
-      if (z<topMinZ) topMinZ=z; if (z>topMaxZ) topMaxZ=z;
-    }
-    if (y < botThresh) {
-      if (x<botMinX) botMinX=x; if (x>botMaxX) botMaxX=x;
-      if (z<botMinZ) botMinZ=z; if (z>botMaxZ) botMaxZ=z;
-    }
-  }
-  const topSpan = (topMaxX-topMinX) + (topMaxZ-topMinZ);
-  const botSpan = (botMaxX-botMinX) + (botMaxZ-botMinZ);
-  const upsideDown = topSpan > botSpan * 1.5;
-
-  if (upsideDown) {
-    console.log('[lowpoly_mesh_loader] Model appears upside-down — flipping Y');
-    for (let i = 0; i < vCount; i++) {
-      pos[i*3+1] = -pos[i*3+1];
-      if (nrm) nrm[i*3+1] = -nrm[i*3+1];
-    }
-    // Recompute Y bounds after flip
-    minH = -maxH; maxH = -minH;
-    // Recalculate properly
-    minH=Infinity; maxH=-Infinity;
-    for (let i = 0; i < vCount; i++) {
-      const y=pos[i*3+1]; if (y<minH) minH=y; if (y>maxH) maxH=y;
-    }
-  }
-
-  console.log(`[lowpoly_mesh_loader] Auto-orient: detected ${orientation}-up${upsideDown?' (was upside-down)':''}, ranges X=${rX.toFixed(3)} Y=${rY.toFixed(3)} Z=${rZ.toFixed(3)}`);
+  console.log(`[lowpoly_mesh_loader] Auto-orient: detected ${orientation}-up, ranges X=${rX.toFixed(3)} Y=${rY.toFixed(3)} Z=${rZ.toFixed(3)}, post-rotate Y=[${minH.toFixed(3)}, ${maxH.toFixed(3)}]`);
   return { minH, maxH };
 }
 
