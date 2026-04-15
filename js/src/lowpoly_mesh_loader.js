@@ -46,6 +46,109 @@ function unpackBoneIndex(packedFloat, slot) {
 }
 
 /**
+ * Auto-orient positions (and normals) so that the height axis is Y.
+ *
+ * Blender exports in Z-up; the standard glTF exporter converts to Y-up but
+ * some pipelines skip this. We detect the height axis (largest bounding-box
+ * range) and rotate in-place so height → Y.
+ *
+ * Also detects upside-down models: for a humanoid the top 20% of the model
+ * should have a narrow cross-section (the head). If the top is wider than the
+ * bottom the mesh is inverted and we flip it.
+ *
+ * Rotations applied (right-handed, preserves handedness):
+ *   Z-up → Y-up:  newY = oldZ,  newZ = -oldY
+ *   X-up → Y-up:  newY = oldX,  newX = -oldZ  (rare but handled)
+ *   Upside-down:  newY = -oldY, shift so min=0 after
+ *
+ * @param {Float32Array} pos  - flat XYZ positions, modified in-place
+ * @param {Float32Array|null} nrm - flat XYZ normals, modified in-place (or null)
+ * @param {number} vCount
+ * @returns {{ minH: number, maxH: number }} bounding box along the (corrected) Y axis
+ */
+function autoOrient(pos, nrm, vCount) {
+  // ── 1. Find per-axis bounding box ────────────────────────────────────────
+  let minX=Infinity, maxX=-Infinity;
+  let minY=Infinity, maxY=-Infinity;
+  let minZ=Infinity, maxZ=-Infinity;
+  for (let i = 0; i < vCount; i++) {
+    const x=pos[i*3], y=pos[i*3+1], z=pos[i*3+2];
+    if (x<minX) minX=x; if (x>maxX) maxX=x;
+    if (y<minY) minY=y; if (y>maxY) maxY=y;
+    if (z<minZ) minZ=z; if (z>maxZ) maxZ=z;
+  }
+  const rX = maxX-minX, rY = maxY-minY, rZ = maxZ-minZ;
+
+  // ── 2. Rotate so height axis → Y ─────────────────────────────────────────
+  let orientation = 'Y';
+  if (rZ > rY && rZ > rX) {
+    // Z-up (common Blender export): swap Y↔Z, negate new Z to keep handedness
+    orientation = 'Z';
+    for (let i = 0; i < vCount; i++) {
+      const y=pos[i*3+1], z=pos[i*3+2];
+      pos[i*3+1]=z; pos[i*3+2]=-y;
+      if (nrm) { const ny=nrm[i*3+1], nz=nrm[i*3+2]; nrm[i*3+1]=nz; nrm[i*3+2]=-ny; }
+    }
+  } else if (rX > rY && rX > rZ) {
+    // X-up (unusual): swap X↔Y, negate new X
+    orientation = 'X';
+    for (let i = 0; i < vCount; i++) {
+      const x=pos[i*3], y=pos[i*3+1];
+      pos[i*3]=-y; pos[i*3+1]=x;
+      if (nrm) { const nx=nrm[i*3], ny=nrm[i*3+1]; nrm[i*3]=-ny; nrm[i*3+1]=nx; }
+    }
+  }
+
+  // Recompute Y range after potential rotation
+  let minH=Infinity, maxH=-Infinity;
+  for (let i = 0; i < vCount; i++) {
+    const y=pos[i*3+1];
+    if (y<minH) minH=y; if (y>maxH) maxH=y;
+  }
+
+  // ── 3. Detect & fix upside-down model ────────────────────────────────────
+  // For a humanoid, the top 20% should have a narrower XZ span than the
+  // bottom 20% (head vs. shoulders/hips). If it doesn't, flip Y.
+  const H = maxH - minH;
+  const topThresh = maxH - H*0.20;
+  const botThresh = minH + H*0.20;
+  let topMinX=Infinity,topMaxX=-Infinity,topMinZ=Infinity,topMaxZ=-Infinity;
+  let botMinX=Infinity,botMaxX=-Infinity,botMinZ=Infinity,botMaxZ=-Infinity;
+  for (let i = 0; i < vCount; i++) {
+    const x=pos[i*3], y=pos[i*3+1], z=pos[i*3+2];
+    if (y > topThresh) {
+      if (x<topMinX) topMinX=x; if (x>topMaxX) topMaxX=x;
+      if (z<topMinZ) topMinZ=z; if (z>topMaxZ) topMaxZ=z;
+    }
+    if (y < botThresh) {
+      if (x<botMinX) botMinX=x; if (x>botMaxX) botMaxX=x;
+      if (z<botMinZ) botMinZ=z; if (z>botMaxZ) botMaxZ=z;
+    }
+  }
+  const topSpan = (topMaxX-topMinX) + (topMaxZ-topMinZ);
+  const botSpan = (botMaxX-botMinX) + (botMaxZ-botMinZ);
+  const upsideDown = topSpan > botSpan * 1.5;
+
+  if (upsideDown) {
+    console.log('[lowpoly_mesh_loader] Model appears upside-down — flipping Y');
+    for (let i = 0; i < vCount; i++) {
+      pos[i*3+1] = -pos[i*3+1];
+      if (nrm) nrm[i*3+1] = -nrm[i*3+1];
+    }
+    // Recompute Y bounds after flip
+    minH = -maxH; maxH = -minH;
+    // Recalculate properly
+    minH=Infinity; maxH=-Infinity;
+    for (let i = 0; i < vCount; i++) {
+      const y=pos[i*3+1]; if (y<minH) minH=y; if (y>maxH) maxH=y;
+    }
+  }
+
+  console.log(`[lowpoly_mesh_loader] Auto-orient: detected ${orientation}-up${upsideDown?' (was upside-down)':''}, ranges X=${rX.toFixed(3)} Y=${rY.toFixed(3)} Z=${rZ.toFixed(3)}`);
+  return { minH, maxH };
+}
+
+/**
  * Distance from point P to the line segment AB.
  */
 function distToSegment(px, py, pz, ax, ay, az, bx, by, bz) {
@@ -194,19 +297,22 @@ export async function loadLowPolyMesh(gender = 'neutral', targetHeight = 1.75) {
 
   const vCount    = posArr.length / 3;
   const positions = new Float32Array(posArr);
+  const normals   = normArr ? new Float32Array(normArr) : null;
+
+  // Auto-orient: detect height axis (Y vs Z vs X) and flip upside-down models.
+  // The NBM_Lowpoly GLBs are Blender Z-up exports; this converts them to Y-up.
+  const { minH, maxH } = autoOrient(positions, normals, vCount);
 
   // Normalise: scale to targetHeight, feet at Y=0
-  let minY = Infinity, maxY = -Infinity;
-  for (let i = 0; i < vCount; i++) {
-    const y = positions[i*3+1];
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-  const scale = targetHeight / (maxY - minY);
+  const scale = targetHeight / (maxH - minH);
   for (let i = 0; i < vCount; i++) {
     positions[i*3]     *= scale;
-    positions[i*3+1]    = (positions[i*3+1] - minY) * scale;
+    positions[i*3+1]    = (positions[i*3+1] - minH) * scale;
     positions[i*3+2]   *= scale;
+    if (normals) {
+      // Normals are direction vectors — no translation, no scaling needed
+      // (already rotated by autoOrient in-place)
+    }
   }
 
   // ── Skin weights ───────────────────────────────────────────────────────────
@@ -240,8 +346,8 @@ export async function loadLowPolyMesh(gender = 'neutral', targetHeight = 1.75) {
     ({ skinIndices, skinWeights } = computeEnvelopeWeights(positions, vCount, targetHeight));
   }
 
-  const normals = normArr ? new Float32Array(normArr) : null;
-  const uvs     = uvArr   ? new Float32Array(uvArr)   : null;
+  // normals already built (and rotated) above
+  const uvs = uvArr ? new Float32Array(uvArr) : null;
   const indices = new Uint32Array(idxArr);
 
   engine.dispose();
