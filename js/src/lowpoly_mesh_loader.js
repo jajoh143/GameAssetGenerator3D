@@ -64,47 +64,57 @@ export async function loadLowPolyMesh(gender = 'neutral', targetHeight = 1.75) {
 
   const result = await SceneLoader.ImportMeshAsync('', '', dataUrl, scene, null, '.glb');
 
-  // Find the main skinned mesh (skip tiny helpers < 30 verts)
-  let skinnedMesh = null;
+  // Find the largest mesh with at least 30 vertices.
+  // Prefer a skinned mesh (has skeleton), but fall back to any mesh if none
+  // are skinned — the NBM_Lowpoly exports are static meshes without rigs.
+  let bestMesh = null;
+  let bestSkinned = null;
   for (const mesh of result.meshes) {
-    if (!mesh.skeleton) continue;
     const vCount = mesh.getTotalVertices();
     if (vCount < 30) continue;
-    if (!skinnedMesh || vCount > skinnedMesh.getTotalVertices()) {
-      skinnedMesh = mesh;
+    if (mesh.skeleton && (!bestSkinned || vCount > bestSkinned.getTotalVertices())) {
+      bestSkinned = mesh;
+    }
+    if (!bestMesh || vCount > bestMesh.getTotalVertices()) {
+      bestMesh = mesh;
     }
   }
 
-  if (!skinnedMesh) {
+  const targetMesh = bestSkinned ?? bestMesh;
+  if (!targetMesh) {
     engine.dispose();
-    throw new Error(`No SkinnedMesh found in ${filename}`);
+    throw new Error(`No usable mesh found in ${filename}`);
   }
 
-  // Build origJointIdx → ourBoneIdx mapping and log any unmapped bones
-  const skeleton = skinnedMesh.skeleton;
-  const origBoneNames = skeleton.bones.map(b => b.name);
-  const origToOur = new Array(origBoneNames.length).fill(-1);
-  const unmapped = [];
-  for (let i = 0; i < origBoneNames.length; i++) {
-    const name = origBoneNames[i];
-    if (name in GLB_JOINT_TO_BONE_IDX) {
-      origToOur[i] = GLB_JOINT_TO_BONE_IDX[name];
-    } else {
-      unmapped.push(name);
+  const isSkinned = !!targetMesh.skeleton;
+  console.log(`[lowpoly_mesh_loader] ${filename}: using mesh "${targetMesh.name}" (${targetMesh.getTotalVertices()} verts, ${isSkinned ? 'skinned' : 'static — will bind to Hips'})`);
+
+  // If the mesh has a skeleton, build joint remapping and log unmapped bones
+  let origToOur = null;
+  if (isSkinned) {
+    const origBoneNames = targetMesh.skeleton.bones.map(b => b.name);
+    origToOur = new Array(origBoneNames.length).fill(-1);
+    const unmapped = [];
+    for (let i = 0; i < origBoneNames.length; i++) {
+      const name = origBoneNames[i];
+      if (name in GLB_JOINT_TO_BONE_IDX) {
+        origToOur[i] = GLB_JOINT_TO_BONE_IDX[name];
+      } else {
+        unmapped.push(name);
+      }
+    }
+    if (unmapped.length > 0) {
+      console.warn(`[lowpoly_mesh_loader] ${filename}: unmapped bone names (will default to Hips): ${unmapped.join(', ')}`);
     }
   }
-  if (unmapped.length > 0) {
-    console.warn(`[lowpoly_mesh_loader] ${filename}: unmapped bone names (will default to Hips): ${unmapped.join(', ')}`);
-  }
-  console.log(`[lowpoly_mesh_loader] Loaded ${filename} — ${origBoneNames.length} joints, ${unmapped.length} unmapped`);
 
   // Extract vertex data
-  const posArr    = skinnedMesh.getVerticesData('position');
-  const normArr   = skinnedMesh.getVerticesData('normal');
-  const uvArr     = skinnedMesh.getVerticesData('uv');
-  const matIdxArr = skinnedMesh.getVerticesData('matricesIndices');
-  const matWtArr  = skinnedMesh.getVerticesData('matricesWeights');
-  const idxArr    = skinnedMesh.getIndices();
+  const posArr    = targetMesh.getVerticesData('position');
+  const normArr   = targetMesh.getVerticesData('normal');
+  const uvArr     = targetMesh.getVerticesData('uv');
+  const matIdxArr = targetMesh.getVerticesData('matricesIndices');
+  const matWtArr  = targetMesh.getVerticesData('matricesWeights');
+  const idxArr    = targetMesh.getIndices();
 
   const vCount = posArr.length / 3;
 
@@ -129,38 +139,48 @@ export async function loadLowPolyMesh(gender = 'neutral', targetHeight = 1.75) {
     positions[i * 3 + 2]  *= scale;
   }
 
-  // Remap skin indices and weights
+  // Build skin indices and weights.
+  // Static mesh (no skeleton): bind every vertex 100% to bone 0 (Hips) so
+  // the mesh at least moves with the root and the builder doesn't error.
   const skinIndices = new Uint16Array(vCount * 4);
   const skinWeights = new Float32Array(vCount * 4);
 
-  for (let v = 0; v < vCount; v++) {
-    const accum = new Map(); // ourBoneIdx → accumulated weight
-
-    for (let j = 0; j < 4; j++) {
-      const origIdx = unpackBoneIndex(matIdxArr[v * 4 + j], 0);
-      const wt = matWtArr[v * 4 + j];
-      if (wt <= 0) continue;
-
-      const ourIdx = origToOur[origIdx] ?? -1;
-      if (ourIdx < 0) continue;
-
-      accum.set(ourIdx, (accum.get(ourIdx) ?? 0) + wt);
+  if (!isSkinned || !matIdxArr || !matWtArr) {
+    // No skin data — root-bind all vertices to Hips (bone 0)
+    for (let v = 0; v < vCount; v++) {
+      skinIndices[v * 4] = 0;
+      skinWeights[v * 4] = 1.0;
     }
+  } else {
+    for (let v = 0; v < vCount; v++) {
+      const accum = new Map(); // ourBoneIdx → accumulated weight
 
-    // Sort by weight descending, keep top 4
-    const sorted = Array.from(accum.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
+      for (let j = 0; j < 4; j++) {
+        const origIdx = unpackBoneIndex(matIdxArr[v * 4 + j], 0);
+        const wt = matWtArr[v * 4 + j];
+        if (wt <= 0) continue;
 
-    // Normalise
-    const totalWt = sorted.reduce((s, [, w]) => s + w, 0);
-    const norm = totalWt > 0 ? 1.0 / totalWt : 0;
+        const ourIdx = origToOur[origIdx] ?? -1;
+        if (ourIdx < 0) continue;
 
-    for (let j = 0; j < 4; j++) {
-      if (j < sorted.length) {
-        skinIndices[v * 4 + j] = sorted[j][0];
-        skinWeights[v * 4 + j] = sorted[j][1] * norm;
-      } else {
-        skinIndices[v * 4 + j] = 0;
-        skinWeights[v * 4 + j] = 0;
+        accum.set(ourIdx, (accum.get(ourIdx) ?? 0) + wt);
+      }
+
+      // Sort by weight descending, keep top 4
+      const sorted = Array.from(accum.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+      // Normalise
+      const totalWt = sorted.reduce((s, [, w]) => s + w, 0);
+      const norm = totalWt > 0 ? 1.0 / totalWt : 0;
+
+      for (let j = 0; j < 4; j++) {
+        if (j < sorted.length) {
+          skinIndices[v * 4 + j] = sorted[j][0];
+          skinWeights[v * 4 + j] = sorted[j][1] * norm;
+        } else {
+          skinIndices[v * 4 + j] = 0;
+          skinWeights[v * 4 + j] = 0;
+        }
       }
     }
   }
