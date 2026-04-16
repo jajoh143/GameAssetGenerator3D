@@ -35,7 +35,11 @@ Thumbs.db
 .claude/
 frontend/.env
 
+# Generated bar assets
+assets/bar/
+
 # Node.js
 js/node_modules/
+babylon/node_modules/
 package-lock.json
 js/package-lock.json
