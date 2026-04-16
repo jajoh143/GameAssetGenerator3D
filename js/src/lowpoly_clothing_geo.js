@@ -36,111 +36,151 @@ function computeVertexNormals(positions, indices) {
   return normals;
 }
 
+// ── Shared geometry helpers ───────────────────────────────────────────────────
+
+/** Merge an array of { positions, normals, indices } geometries into one. */
+function mergeGeometries(geos) {
+  const valid = geos.filter(Boolean);
+  if (valid.length === 0) return null;
+  if (valid.length === 1) return valid[0];
+
+  let totalV = 0, totalI = 0;
+  for (const g of valid) { totalV += g.positions.length / 3; totalI += g.indices.length; }
+
+  const mp = new Float32Array(totalV * 3);
+  const mn = new Float32Array(totalV * 3);
+  const mi = new Uint32Array(totalI);
+  let vOff = 0, iOff = 0;
+
+  for (const g of valid) {
+    mp.set(g.positions, vOff * 3);
+    mn.set(g.normals,   vOff * 3);
+    for (let i = 0; i < g.indices.length; i++) mi[iOff + i] = g.indices[i] + vOff;
+    vOff += g.positions.length / 3;
+    iOff += g.indices.length;
+  }
+  return { positions: mp, normals: mn, indices: mi };
+}
+
+/** Build a smooth tube from a set of sampled rings. */
+function tubeFromRings(rings, numSegs) {
+  if (rings.length < 2) return null;
+  const positions = [];
+  const indices   = [];
+
+  for (const { y, cx, cz, r } of rings) {
+    for (let seg = 0; seg < numSegs; seg++) {
+      const angle = (2 * Math.PI * seg) / numSegs;
+      positions.push(cx + r * Math.cos(angle), y, cz + r * Math.sin(angle));
+    }
+  }
+
+  // Winding (a,c,b)/(b,c,d) gives outward normals on a CCW ring
+  for (let ri = 0; ri < rings.length - 1; ri++) {
+    for (let seg = 0; seg < numSegs; seg++) {
+      const next = (seg + 1) % numSegs;
+      const a = ri       * numSegs + seg;
+      const b = ri       * numSegs + next;
+      const c = (ri + 1) * numSegs + seg;
+      const d = (ri + 1) * numSegs + next;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+}
+
 // ── Pants tube helper ─────────────────────────────────────────────────────────
 
 /**
- * Build two smooth tube legs for jeans or shorts.
+ * Build smooth pants geometry: two leg tubes + a waistband that covers the
+ * open top of each tube and creates the smooth waist connection.
  *
- * At each Y height we sample the actual leg profile from the body mesh,
- * compute a bounding circle, then generate a smooth ring of vertices.
- * Left and right legs are built separately (split at X = 0) and merged.
- *
- * @param {Float32Array} bPos     body mesh positions
- * @param {number}       yLo      bottom of pants zone (world Y)
- * @param {number}       yHi      top of pants zone / hip level (world Y)
+ * @param {Float32Array} bPos       body mesh positions
+ * @param {number}       yLo        bottom of pants zone (world Y)
+ * @param {number}       yHi        top of pants zone / hip crease (world Y)
+ * @param {number}       bodyHeight full body Y span (for waistband sizing)
  * @param {number}       baseOffset radial clearance beyond body surface
  */
-function buildPantsGeometry(bPos, yLo, yHi, baseOffset) {
-  const vCount  = bPos.length / 3;
-  const numSlices = 12;   // Y divisions
-  const numSegs   = 14;   // angular segments per ring
+function buildPantsGeometry(bPos, yLo, yHi, bodyHeight, baseOffset) {
+  const vCount    = bPos.length / 3;
+  const numSlices = 12;
+  const legSegs   = 14;   // segments per leg ring
+  const hipSegs   = 18;   // segments for the wider waistband ring
 
+  // ── Individual leg tubes ─────────────────────────────────────────────────
   function buildLegTube(isLeft) {
-    const rings = [];   // { y, cx, cz, r }
+    const rings = [];
 
     for (let si = 0; si <= numSlices; si++) {
       const y    = yLo + (yHi - yLo) * (si / numSlices);
       const yWin = (yHi - yLo) / numSlices * 0.65;
 
-      // Find vertices belonging to this leg at this height
       let sumX = 0, sumZ = 0, n = 0;
       for (let i = 0; i < vCount; i++) {
-        const py = bPos[i*3+1];
-        const px = bPos[i*3];
+        const py = bPos[i*3+1], px = bPos[i*3];
         if (py < y - yWin || py > y + yWin) continue;
         if (isLeft ? px >= 0 : px <= 0) continue;
         sumX += px; sumZ += bPos[i*3+2]; n++;
       }
-      if (n < 3) continue;   // no vertices for this leg at this height
+      if (n < 3) continue;
 
       const cx = sumX / n, cz = sumZ / n;
-
-      // Bounding radius for the leg cross-section
       let maxR = 0;
       for (let i = 0; i < vCount; i++) {
-        const py = bPos[i*3+1];
-        const px = bPos[i*3];
+        const py = bPos[i*3+1], px = bPos[i*3];
         if (py < y - yWin || py > y + yWin) continue;
         if (isLeft ? px >= 0 : px <= 0) continue;
         const dx = px - cx, dz = bPos[i*3+2] - cz;
-        const r = Math.sqrt(dx*dx + dz*dz);
-        if (r > maxR) maxR = r;
+        maxR = Math.max(maxR, Math.sqrt(dx*dx + dz*dz));
       }
-      if (maxR < 0.01) maxR = 0.04;  // safety floor for very sparse meshes
-
+      if (maxR < 0.01) maxR = 0.04;
       rings.push({ y, cx, cz, r: maxR + baseOffset });
     }
 
-    if (rings.length < 2) return null;
-
-    const positions = [];
-    const indices   = [];
-
-    // Vertex layout: ring ri occupies positions [ri*numSegs … (ri+1)*numSegs-1]
-    for (const { y, cx, cz, r } of rings) {
-      for (let seg = 0; seg < numSegs; seg++) {
-        const angle = (2 * Math.PI * seg) / numSegs;
-        positions.push(cx + r * Math.cos(angle), y, cz + r * Math.sin(angle));
-      }
-    }
-
-    // Quads between consecutive rings — winding (a,c,b) / (b,c,d) gives outward normals
-    for (let ri = 0; ri < rings.length - 1; ri++) {
-      for (let seg = 0; seg < numSegs; seg++) {
-        const next = (seg + 1) % numSegs;
-        const a = ri       * numSegs + seg;
-        const b = ri       * numSegs + next;
-        const c = (ri + 1) * numSegs + seg;
-        const d = (ri + 1) * numSegs + next;
-        indices.push(a, c, b, b, c, d);
-      }
-    }
-
-    const pos = new Float32Array(positions);
-    const idx = new Uint32Array(indices);
-    return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
+    return tubeFromRings(rings, legSegs);
   }
 
-  const left  = buildLegTube(true);
-  const right = buildLegTube(false);
-  if (!left && !right) return null;
-  if (!left)  return right;
-  if (!right) return left;
+  // ── Waistband tube — spans full hip width, hides the leg tube openings ──
+  function buildWaistband() {
+    const waistH  = bodyHeight * 0.055;  // ~9 cm tall waistband for H=1.75
+    const wLo     = yHi - waistH * 0.4; // start slightly below hipY
+    const wHi     = yHi + waistH * 0.6; // extend above hipY
+    const wSlices = 4;
+    const rings   = [];
 
-  // Merge both legs into a single geometry
-  const lOff = left.positions.length / 3;
-  const mp = new Float32Array(left.positions.length + right.positions.length);
-  const mn = new Float32Array(left.normals.length   + right.normals.length);
-  const mi = new Uint32Array (left.indices.length   + right.indices.length);
+    for (let si = 0; si <= wSlices; si++) {
+      const y    = wLo + (wHi - wLo) * (si / wSlices);
+      const yWin = waistH / wSlices;
 
-  mp.set(left.positions);  mp.set(right.positions, left.positions.length);
-  mn.set(left.normals);    mn.set(right.normals,   left.normals.length);
-  mi.set(left.indices);
-  for (let i = 0; i < right.indices.length; i++) {
-    mi[left.indices.length + i] = right.indices[i] + lOff;
+      // Use ALL vertices at this height (full hip width, not split by side)
+      let sumX = 0, sumZ = 0, n = 0;
+      for (let i = 0; i < vCount; i++) {
+        const py = bPos[i*3+1];
+        if (py < y - yWin || py > y + yWin) continue;
+        sumX += bPos[i*3]; sumZ += bPos[i*3+2]; n++;
+      }
+      if (n < 3) continue;
+
+      const cx = sumX / n, cz = sumZ / n;
+      let maxR = 0;
+      for (let i = 0; i < vCount; i++) {
+        const py = bPos[i*3+1];
+        if (py < y - yWin || py > y + yWin) continue;
+        const dx = bPos[i*3] - cx, dz = bPos[i*3+2] - cz;
+        maxR = Math.max(maxR, Math.sqrt(dx*dx + dz*dz));
+      }
+      if (maxR < 0.01) maxR = 0.08;
+      // Slightly larger than body to create a visible shelf over leg tubes
+      rings.push({ y, cx, cz, r: maxR + baseOffset * 1.15 });
+    }
+
+    return tubeFromRings(rings, hipSegs);
   }
 
-  return { positions: mp, normals: mn, indices: mi };
+  return mergeGeometries([buildLegTube(true), buildLegTube(false), buildWaistband()]);
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -191,7 +231,7 @@ export function buildClothingGeometry(bodyData, cfg) {
     // ── Pants/shorts: tube geometry ──────────────────────────────────────────
     if (ctype === 'jeans' || ctype === 'shorts') {
       const yLo = ctype === 'jeans' ? footTop : kneeY;
-      const geo = buildPantsGeometry(bPos, yLo, hipY, baseOffset);
+      const geo = buildPantsGeometry(bPos, yLo, hipY, bodyHeight, baseOffset);
       if (!geo) {
         console.warn(`[LP Clothing] No leg geometry found for '${ctype}'`);
         continue;
