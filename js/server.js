@@ -10,6 +10,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveConfig } from './src/presets.js';
 import { buildHumanoid, exportGLB } from './src/builder.js';
+import { resolveLowPolyConfig } from './src/lowpoly_presets.js';
+import { buildLowPolyCharacter } from './src/lowpoly_builder.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
@@ -23,14 +25,15 @@ app.use(express.static(join(__dirname, 'public')));
 
 const jobs = new Map();
 
-async function runJob(jobId, cfgFn, outputPath) {
+async function runJob(jobId, cfgFn, outputPath, builderFn = buildHumanoid) {
   jobs.set(jobId, { status: 'running', log: [], output: outputPath });
   const log = [];
   try {
     const cfg = cfgFn();
-    log.push(`[job] Building humanoid: ${JSON.stringify({ skinTone: cfg.skinTone, hairStyle: cfg.hairStyle })}`);
-    const { scene, clips } = await buildHumanoid(cfg);
-    await exportGLB(scene, clips, outputPath);
+    const label = cfg.modelType === 'lowpoly' ? 'low-poly character' : 'humanoid';
+    log.push(`[job] Building ${label}: ${JSON.stringify({ skinTone: cfg.skinTone, hairStyle: cfg.hairStyle })}`);
+    const { scene, engine } = await builderFn(cfg);
+    await exportGLB(scene, engine, outputPath);
     log.push(`[job] Done: ${outputPath}`);
     jobs.set(jobId, { status: 'done', log, output: outputPath });
   } catch (err) {
@@ -65,6 +68,32 @@ function cfgFromBody(data, animations = 'all') {
   });
 }
 
+function cfgFromBodyLowPoly(data, animations = 'all') {
+  const top    = data.clothing_top    ?? 'none';
+  const bottom = data.clothing_bottom ?? 'none';
+  const clothing = [top, bottom].filter(c => c && c !== 'none');
+
+  const clothingColor = {};
+  if (data.top_color    && top    !== 'none') clothingColor[top]    = data.top_color;
+  if (data.bottom_color && bottom !== 'none') clothingColor[bottom] = data.bottom_color;
+
+  const buttons = data.buttons === 'true' || data.buttons === '1' || data.buttons === true;
+
+  return resolveLowPolyConfig({
+    preset:       data.preset       ?? 'average',
+    build:        data.build        ?? 'average',
+    gender:       data.gender       ?? 'neutral',
+    skinTone:     data.skin_tone    ?? 'tan',
+    hairStyle:    data.hair_style   ?? 'short',
+    hairColor:    data.hair_color   ?? 'brown',
+    clothing,
+    clothingColor,
+    buttons,
+    animations,
+    lod:          data.lod          ?? 'low',
+  });
+}
+
 app.post('/preview', (req, res) => {
   const jobId = randomUUID();
   const outputPath = join(PREVIEW_DIR, `${jobId}.glb`);
@@ -78,6 +107,22 @@ app.post('/generate', (req, res) => {
   const outputPath = join(OUTPUT_DIR, `humanoid_${jobId.slice(0, 8)}.glb`);
   jobs.set(jobId, { status: 'queued', log: [], output: outputPath });
   runJob(jobId, () => cfgFromBody(req.body, 'all'), outputPath);
+  res.json({ job_id: jobId });
+});
+
+app.post('/preview-lowpoly', (req, res) => {
+  const jobId = randomUUID();
+  const outputPath = join(PREVIEW_DIR, `${jobId}.glb`);
+  jobs.set(jobId, { status: 'queued', log: [], output: outputPath });
+  runJob(jobId, () => cfgFromBodyLowPoly(req.body, []), outputPath, buildLowPolyCharacter);
+  res.json({ job_id: jobId });
+});
+
+app.post('/generate-lowpoly', (req, res) => {
+  const jobId = randomUUID();
+  const outputPath = join(OUTPUT_DIR, `lowpoly_${jobId.slice(0, 8)}.glb`);
+  jobs.set(jobId, { status: 'queued', log: [], output: outputPath });
+  runJob(jobId, () => cfgFromBodyLowPoly(req.body, 'all'), outputPath, buildLowPolyCharacter);
   res.json({ job_id: jobId });
 });
 

@@ -6,6 +6,19 @@ A Blender-based procedural 3D game asset generator. Generate low-poly game-ready
 
 - [Blender](https://www.blender.org/) 3.6+ (must be on PATH, or set `BLENDER_PATH`)
 - Python 3.10+ (for the CLI wrapper)
+- Node.js 18+ (for the Character Builder web UI)
+
+## Character Builder (Web UI)
+
+The interactive character builder runs a local web server on port 5000.
+
+```bash
+cd js
+npm install        # first time only — installs three.js and express
+npm start          # starts server at http://localhost:5000
+```
+
+Open `http://localhost:5000` in your browser to build and preview characters.
 
 ## Quick Start
 

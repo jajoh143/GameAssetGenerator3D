@@ -36,3 +36,5 @@ frontend/.env
 
 # Node.js
 js/node_modules/
+package-lock.json
+js/package-lock.json

@@ -5,15 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GameAssetGenerator3D — Character Builder</title>
   <link rel="stylesheet" href="/static/style.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
-      "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/loaders/GLTFLoader.js",
-      "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/controls/OrbitControls.js"
-    }
-  }
-  </script>
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+  <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -35,6 +29,17 @@
     <!-- Left: options sidebar -->
     <div id="sidebar">
       <div id="form-scroll">
+
+        <!-- Style toggle -->
+        <div class="section">
+          <div class="section-header">Style</div>
+          <div class="section-body">
+            <div class="style-toggle" id="style-toggle">
+              <button type="button" class="style-btn active" data-style="cartoon" id="btn-style-cartoon">Cartoon</button>
+              <button type="button" class="style-btn" data-style="lowpoly" id="btn-style-lowpoly">Low-Poly</button>
+            </div>
+          </div>
+        </div>
 
         <!-- Character section -->
         <div class="section">
@@ -317,158 +322,156 @@
   </div><!-- /main -->
 </div><!-- /app -->
 
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+<script>
+// ── Style toggle ─────────────────────────────────────────────────────────────
 
-// ── Three.js setup ───────────────────────────────────────────────────────────
+const CARTOON_PRESETS = [
+  { value: 'average', label: 'Average' },
+  { value: 'tall',    label: 'Tall' },
+  { value: 'short',   label: 'Short' },
+  { value: 'child',   label: 'Child' },
+  { value: 'brute',   label: 'Brute' },
+  { value: 'slender', label: 'Slender' },
+];
+
+const LOWPOLY_PRESETS = [
+  { value: 'average',  label: 'Average' },
+  { value: 'tall',     label: 'Tall' },
+  { value: 'short',    label: 'Short' },
+  { value: 'athletic', label: 'Athletic' },
+  { value: 'heavy',    label: 'Heavy' },
+];
+
+let currentStyle = 'cartoon'; // 'cartoon' | 'lowpoly'
+
+function setStyle(style) {
+  currentStyle = style;
+
+  document.getElementById('btn-style-cartoon').classList.toggle('active', style === 'cartoon');
+  document.getElementById('btn-style-lowpoly').classList.toggle('active', style === 'lowpoly');
+
+  // Swap preset options
+  const presetSel = document.getElementById('preset');
+  const currentVal = presetSel.value;
+  const options = style === 'lowpoly' ? LOWPOLY_PRESETS : CARTOON_PRESETS;
+  presetSel.innerHTML = options.map(o =>
+    `<option value="${o.value}"${o.value === 'average' ? ' selected' : ''}>${o.label}</option>`
+  ).join('');
+  // Preserve selection if the value still exists
+  if (options.some(o => o.value === currentVal)) presetSel.value = currentVal;
+}
+
+document.getElementById('btn-style-cartoon').addEventListener('click', () => setStyle('cartoon'));
+document.getElementById('btn-style-lowpoly').addEventListener('click',  () => setStyle('lowpoly'));
+
+function previewEndpoint()  { return currentStyle === 'lowpoly' ? '/preview-lowpoly'  : '/preview'; }
+function generateEndpoint() { return currentStyle === 'lowpoly' ? '/generate-lowpoly' : '/generate'; }
+function downloadFilename(jobId) {
+  const prefix = currentStyle === 'lowpoly' ? 'lowpoly' : 'humanoid';
+  return `${prefix}_${jobId.slice(0, 8)}.glb`;
+}
+
+// ── Babylon.js viewer setup ──────────────────────────────────────────────────
 
 const canvas = document.getElementById('viewer-canvas');
 const panel  = document.getElementById('viewer-panel');
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.setClearColor(0x1a1a2e, 1);
+const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+const scene  = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0.102, 0.102, 0.180, 1);
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
+// Camera — ArcRotateCamera has orbit built in (no OrbitControls needed)
+const camera = new BABYLON.ArcRotateCamera('cam', -Math.PI / 2, Math.PI / 3, 3.5, new BABYLON.Vector3(0, 0.9, 0), scene);
+camera.lowerRadiusLimit = 0.5;
+camera.upperRadiusLimit = 30;
+camera.wheelDeltaPercentage = 0.01;
+camera.attachControl(canvas, true);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
-camera.position.set(0, 1.4, 3.5);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor  = 0.08;
-controls.minDistance    = 0.5;
-controls.maxDistance    = 30;
-controls.target.set(0, 0.9, 0);
-controls.update();
+let defaultAlpha  = camera.alpha;
+let defaultBeta   = camera.beta;
+let defaultRadius = camera.radius;
+let defaultTarget = camera.target.clone();
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
-scene.add(ambientLight);
+const ambientLight = new BABYLON.HemisphericLight('ambient', new BABYLON.Vector3(0, 1, 0), scene);
+ambientLight.intensity = 0.55;
+ambientLight.diffuse   = new BABYLON.Color3(1, 1, 1);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
-dirLight.position.set(3, 6, 4);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(1024, 1024);
-dirLight.shadow.camera.near = 0.5;
-dirLight.shadow.camera.far  = 30;
-dirLight.shadow.camera.left = dirLight.shadow.camera.bottom = -4;
-dirLight.shadow.camera.right = dirLight.shadow.camera.top   =  4;
-scene.add(dirLight);
+const dirLight = new BABYLON.DirectionalLight('dir', new BABYLON.Vector3(-3, -6, -4).normalize(), scene);
+dirLight.intensity = 1.1;
+dirLight.position  = new BABYLON.Vector3(3, 6, 4);
 
-const fillLight = new THREE.DirectionalLight(0x8899cc, 0.4);
-fillLight.position.set(-3, 2, -2);
-scene.add(fillLight);
+const fillLight = new BABYLON.DirectionalLight('fill', new BABYLON.Vector3(3, -2, 2).normalize(), scene);
+fillLight.intensity = 0.4;
+fillLight.diffuse   = new BABYLON.Color3(0.533, 0.6, 0.8);
 
-// Grid
-const grid = new THREE.GridHelper(10, 20, 0x2e2e55, 0x2e2e55);
-grid.material.opacity = 0.6;
-grid.material.transparent = true;
-scene.add(grid);
-
-// Shadow plane
-const shadowGeo  = new THREE.PlaneGeometry(10, 10);
-const shadowMat  = new THREE.ShadowMaterial({ opacity: 0.35 });
-const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
-shadowPlane.rotation.x = -Math.PI / 2;
-shadowPlane.receiveShadow = true;
-scene.add(shadowPlane);
+// Grid (uses BABYLON.GridMaterial from materialsLibrary)
+const ground = BABYLON.MeshBuilder.CreateGround('grid', { width: 10, height: 10 }, scene);
+const gridMat = new BABYLON.GridMaterial('gridMat', scene);
+gridMat.majorUnitFrequency  = 5;
+gridMat.minorUnitVisibility = 0.5;
+gridMat.gridRatio = 0.5;
+gridMat.mainColor    = new BABYLON.Color3(0.18, 0.18, 0.33);
+gridMat.lineColor    = new BABYLON.Color3(0.18, 0.18, 0.33);
+gridMat.opacity      = 0.6;
+ground.material      = gridMat;
+ground.isPickable    = false;
 
 // State
-let currentModel  = null;
+let currentMeshes = [];
 let wireframeMode = false;
-let defaultCamPos = new THREE.Vector3(0, 1.4, 3.5);
-let defaultTarget = new THREE.Vector3(0, 0.9, 0);
 
 // Resize handler
 function resize() {
-  const w = panel.clientWidth;
-  const h = panel.clientHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  engine.resize();
 }
 resize();
 new ResizeObserver(resize).observe(panel);
 
 // Render loop
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-}
-animate();
+engine.runRenderLoop(() => scene.render());
 
 // ── Model loading ────────────────────────────────────────────────────────────
 
-const loader = new GLTFLoader();
+function fitCameraToMeshes(meshes) {
+  const { min, max } = scene.getWorldExtends(m => meshes.includes(m));
+  const size   = max.subtract(min);
+  const center = min.add(size.scale(0.5));
 
-function fitCameraToModel(model) {
-  const box = new THREE.Box3().setFromObject(model);
-  const size   = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
+  const dist    = size.y * 1.25;
+  const targetY = min.y + size.y * 0.65;
 
-  // Use character height (size.y) to drive distance — multiply by 0.75
-  // so the full figure fills most of the viewport.
-  const dist = size.y * 1.25
+  camera.target = new BABYLON.Vector3(center.x, targetY, center.z);
+  camera.radius = dist;
+  camera.alpha  = -Math.PI / 2;
+  camera.beta   = Math.PI / 3;
 
-  // Aim at mid-torso (~45 % up from feet) rather than geometric centre,
-  // so the head isn't cropped and feet aren't wasted space.
-  const targetY = box.min.y + size.y * 0.65;
-  camera.position.set(center.x, targetY, center.z + dist);
-  controls.target.set(center.x, targetY, center.z);
-  controls.update();
-
-  defaultCamPos.copy(camera.position);
-  defaultTarget.copy(controls.target);
+  defaultAlpha  = camera.alpha;
+  defaultBeta   = camera.beta;
+  defaultRadius = camera.radius;
+  defaultTarget = camera.target.clone();
 }
 
 function loadModel(url, label) {
   return new Promise((resolve, reject) => {
-    loader.load(
-      url,
-      (gltf) => {
-        if (currentModel) {
-          scene.remove(currentModel);
-          currentModel.traverse(obj => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-              const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-              mats.forEach(m => m.dispose());
-            }
-          });
-        }
+    // Dispose previous model
+    for (const m of currentMeshes) m.dispose();
+    currentMeshes = [];
 
-        const model = gltf.scene;
-        model.traverse(obj => {
-          if (obj.isMesh) {
-            obj.castShadow = true;
-            obj.receiveShadow = true;
-          }
-        });
+    BABYLON.SceneLoader.ImportMesh('', '', url, scene,
+      (meshes) => {
+        currentMeshes = meshes;
+        fitCameraToMeshes(meshes);
 
-        scene.add(model);
-        currentModel = model;
-        fitCameraToModel(model);
-
-        // Update badge
         const badge = document.getElementById('viewer-badge');
         badge.textContent = label || 'Model loaded';
         badge.classList.add('visible');
 
-        // Hide empty state
         document.getElementById('viewer-empty').classList.add('hidden');
-
-        resolve(model);
+        resolve(meshes);
       },
-      undefined,
-      reject
+      null,
+      (_scene, msg, err) => reject(err || new Error(msg))
     );
   });
 }
@@ -477,13 +480,8 @@ function loadModel(url, label) {
 
 document.getElementById('btn-toggle-wire').addEventListener('click', () => {
   wireframeMode = !wireframeMode;
-  if (currentModel) {
-    currentModel.traverse(obj => {
-      if (obj.isMesh) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        mats.forEach(m => { m.wireframe = wireframeMode; });
-      }
-    });
+  for (const m of currentMeshes) {
+    if (m.material) m.material.wireframe = wireframeMode;
   }
   const btn = document.getElementById('btn-toggle-wire');
   btn.style.color       = wireframeMode ? 'var(--accent-blue)' : '';
@@ -493,18 +491,19 @@ document.getElementById('btn-toggle-wire').addEventListener('click', () => {
 // ── Grid toggle ──────────────────────────────────────────────────────────────
 
 document.getElementById('btn-toggle-grid').addEventListener('click', () => {
-  grid.visible = !grid.visible;
+  ground.isVisible = !ground.isVisible;
   const btn = document.getElementById('btn-toggle-grid');
-  btn.style.color       = grid.visible ? 'var(--accent-blue)' : '';
-  btn.style.borderColor = grid.visible ? 'var(--accent-blue)' : '';
+  btn.style.color       = ground.isVisible ? 'var(--accent-blue)' : '';
+  btn.style.borderColor = ground.isVisible ? 'var(--accent-blue)' : '';
 });
 
 // ── Reset camera ─────────────────────────────────────────────────────────────
 
 document.getElementById('btn-reset-camera').addEventListener('click', () => {
-  camera.position.copy(defaultCamPos);
-  controls.target.copy(defaultTarget);
-  controls.update();
+  camera.alpha  = defaultAlpha;
+  camera.beta   = defaultBeta;
+  camera.radius = defaultRadius;
+  camera.target = defaultTarget.clone();
 });
 
 // ── Status helpers ───────────────────────────────────────────────────────────
@@ -530,7 +529,7 @@ function showLog(lines) {
 }
 
 function setLoading(visible, text) {
-  loadText.textContent = text || 'Running Blender…';
+  loadText.textContent = text || 'Running…';
   loadingDiv.classList.toggle('visible', visible);
 }
 
@@ -574,7 +573,7 @@ function pollJob(jobId, onDone) {
         onDone(null, json);
       } else if (json.status === 'error') {
         clearInterval(interval);
-        onDone(new Error('Blender job failed'), json);
+        onDone(new Error('Job failed'), json);
       }
     } catch (err) {
       clearInterval(interval);
@@ -590,13 +589,13 @@ document.getElementById('btn-preview').addEventListener('click', async () => {
 
   setButtons(true);
   setStatus('running', 'Generating preview…');
-  setLoading(true, 'Running Blender (mesh only)…');
+  setLoading(true, 'Generating (mesh only)…');
   dlLink.classList.remove('visible');
   logBox.textContent = '';
 
   let jobId;
   try {
-    const res = await fetch('/preview', {
+    const res = await fetch(previewEndpoint(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -641,13 +640,13 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
 
   setButtons(true);
   setStatus('running', 'Generating full asset…');
-  setLoading(true, 'Running Blender with animations…');
+  setLoading(true, 'Generating with animations…');
   dlLink.classList.remove('visible');
   logBox.textContent = '';
 
   let jobId;
   try {
-    const res = await fetch('/generate', {
+    const res = await fetch(generateEndpoint(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -680,7 +679,7 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
 
     if (job.download_url) {
       dlAnchor.href = job.download_url;
-      dlAnchor.download = `humanoid_${jobId.slice(0, 8)}.glb`;
+      dlAnchor.download = downloadFilename(jobId);
       dlLink.classList.add('visible');
     }
   });
@@ -710,7 +709,7 @@ document.getElementById('anim-clear').addEventListener('click', () => {
 
 // ── Hair color visibility ────────────────────────────────────────────────────
 
-const hairStyleSel = document.getElementById('hair_style');
+const hairStyleSel   = document.getElementById('hair_style');
 const hairColorField = document.getElementById('hair-color-field');
 
 function updateHairColorVisibility() {
@@ -721,10 +720,11 @@ updateHairColorVisibility();
 
 // ── Clothing color visibility ────────────────────────────────────────────────
 
-const topSel = document.getElementById('clothing_top');
+const topSel        = document.getElementById('clothing_top');
 const topColorField = document.getElementById('top-color-field');
 const buttonsField  = document.getElementById('buttons-field');
 const BUTTON_TOPS   = ['polo', 'short_sleeve', 'v_neck', 'long_sleeve'];
+
 function updateTopFields() {
   const none = topSel.value === 'none';
   topColorField.style.display = none ? 'none' : '';
@@ -733,12 +733,11 @@ function updateTopFields() {
 topSel.addEventListener('change', updateTopFields);
 updateTopFields();
 
-const bottomSel = document.getElementById('clothing_bottom');
+const bottomSel        = document.getElementById('clothing_bottom');
 const bottomColorField = document.getElementById('bottom-color-field');
 bottomSel.addEventListener('change', () => {
   bottomColorField.style.display = (bottomSel.value === 'none') ? 'none' : '';
 });
-
 </script>
 </body>
 </html>

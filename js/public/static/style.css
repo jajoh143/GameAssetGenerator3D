@@ -553,6 +553,42 @@ header .subtitle {
   display: block;
 }
 
+/* ── Style toggle ────────────────────────────────────── */
+
+.style-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.style-btn {
+  flex: 1;
+  padding: 6px 0;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font);
+  transition: background 0.15s, color 0.15s;
+}
+
+.style-btn:first-child {
+  border-right: 1px solid var(--border);
+}
+
+.style-btn.active {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.style-btn:not(.active):hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
 /* ── Responsive ──────────────────────────────────────── */
 
 @media (max-width: 900px) {
@@ -571,3 +607,4 @@ header .subtitle {
     height: 45vh;
   }
 }
+

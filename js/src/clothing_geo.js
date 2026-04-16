@@ -1,76 +1,82 @@
 /**
  * Face-extrusion clothing geometry from body mesh.
- * Port of generators/humanoid/gltf_pipeline/clothing_geo.py
+ * Returns plain { positions, normals, indices } arrays — no Three.js dependency.
  *
- * Clothing is created by selecting faces from the body mesh within a
- * Y-height range (Y=up in glTF/Three.js), then offsetting their vertices
- * radially outward in the X-Z plane (keeping Y unchanged).
- *
- * Zone boundaries are computed from the actual body geometry's Y range,
- * so they work correctly regardless of character height/scale.
- *
- * T-pose note: arms are horizontal at ~72% body height with large X extent.
- * Per-type X caps exclude arm vertices for torso-only clothing.
+ * Clothing is created by selecting faces from the body mesh within a Y-height
+ * range (Y=up in glTF), then offsetting their vertices along surface normals.
+ * Zone boundaries are computed from actual body geometry Y range.
  */
 
-import * as THREE from 'three';
+function computeVertexNormals(positions, indices) {
+  const nVerts = positions.length / 3;
+  const normals = new Float32Array(nVerts * 3);
+
+  for (let t = 0; t < indices.length / 3; t++) {
+    const ia = indices[t*3], ib = indices[t*3+1], ic = indices[t*3+2];
+    const ax = positions[ia*3], ay = positions[ia*3+1], az = positions[ia*3+2];
+    const bx = positions[ib*3], by = positions[ib*3+1], bz = positions[ib*3+2];
+    const cx = positions[ic*3], cy = positions[ic*3+1], cz = positions[ic*3+2];
+    const ex = bx-ax, ey = by-ay, ez = bz-az;
+    const fx = cx-ax, fy = cy-ay, fz = cz-az;
+    const nx = ey*fz - ez*fy, ny = ez*fx - ex*fz, nz = ex*fy - ey*fx;
+    for (const i of [ia, ib, ic]) {
+      normals[i*3] += nx; normals[i*3+1] += ny; normals[i*3+2] += nz;
+    }
+  }
+
+  for (let i = 0; i < nVerts; i++) {
+    const nx = normals[i*3], ny = normals[i*3+1], nz = normals[i*3+2];
+    const len = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+    normals[i*3] /= len; normals[i*3+1] /= len; normals[i*3+2] /= len;
+  }
+  return normals;
+}
 
 /**
  * Build clothing geometry by extruding body mesh faces outward.
  *
- * @param {THREE.BufferGeometry} bodyGeo - the body mesh geometry
+ * @param {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }} bodyData
  * @param {Object} cfg - character config with .clothing array
- * @returns {Object} map of clothing type name → THREE.BufferGeometry
+ * @returns {Object} map of clothing type name → { positions, normals, indices }
  */
-export function buildClothingGeometry(bodyGeo, cfg) {
-  const posAttr  = bodyGeo.attributes.position;
-  const normAttr = bodyGeo.attributes.normal;
-  const idxAttr  = bodyGeo.index;
+export function buildClothingGeometry(bodyData, cfg) {
+  const { positions: bPos, normals: bNorm, indices: bIdx } = bodyData;
+  const vCount = bPos.length / 3;
+  const triCount = bIdx.length / 3;
 
-  // Compute body Y (height) range and max X extent from actual geometry
+  // Compute body Y range and max X extent
   let minY = Infinity, maxY = -Infinity, maxAbsX = 0;
-  for (let i = 0; i < posAttr.count; i++) {
-    const y = posAttr.getY(i);
-    const ax = Math.abs(posAttr.getX(i));
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3 + 1];
+    const ax = Math.abs(bPos[i*3]);
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
     if (ax > maxAbsX) maxAbsX = ax;
   }
   const bodyHeight = maxY - minY;
 
-  // Zone boundaries as fractions of body height.
-  // The cartoon character has a large head (~28% of total Y), so body landmarks
-  // sit lower than realistic proportions. Fractions tuned for Cartoon_Male.glb.
-  const footTop  = minY + bodyHeight * 0.05;   // just above floor level
-  const kneeY    = minY + bodyHeight * 0.24;   // knee height
-  const hipY     = minY + bodyHeight * 0.43;   // hip/waist height
-  const chestY   = minY + bodyHeight * 0.57;   // lower chest height
-  const armY     = minY + bodyHeight * 0.63;   // shoulder / shirt collar height
+  // Zone boundaries tuned for cartoon character (large head ≈ 28% of total Y)
+  const footTop  = minY + bodyHeight * 0.05;
+  const kneeY    = minY + bodyHeight * 0.24;
+  const hipY     = minY + bodyHeight * 0.43;
+  const chestY   = minY + bodyHeight * 0.57;
+  const armY     = minY + bodyHeight * 0.63;
   const waistGap = bodyHeight * 0.010;
 
-  // Per-type X caps to exclude arm geometry in T-pose.
-  // Arms are horizontal: maxAbsX ≈ full arm span. Use centroid-based X test
-  // so one wide vertex doesn't discard the whole face.
-  const X_TORSO        = maxAbsX * 0.20;   // torso body only
-  const X_LEGS         = maxAbsX * 0.28;   // hip + legs (legs splay slightly)
-  const X_SHORT_SLEEVE = maxAbsX * 0.34;   // shoulder + short sleeve stub
-  // kneeY already defined above
+  const X_TORSO        = maxAbsX * 0.20;
+  const X_LEGS         = maxAbsX * 0.28;
+  const X_SHORT_SLEEVE = maxAbsX * 0.34;
 
-  // Define clothing zones: [yMin, yMax, xCap]
-  // xCap applied to face centroid |x| so partial-boundary faces aren't dropped.
   const ZONES = {
-    short_sleeve: [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
-    polo:         [hipY + waistGap, armY,                 X_SHORT_SLEEVE],
-    long_sleeve:  [hipY + waistGap, armY,                 Infinity      ],
-    v_neck:       [hipY + waistGap, chestY,               X_TORSO       ],
-    jeans:        [footTop,         hipY,                  X_LEGS       ],
-    shorts:       [kneeY,           hipY,                  X_LEGS       ],
+    short_sleeve: [hipY + waistGap, armY,   X_SHORT_SLEEVE],
+    polo:         [hipY + waistGap, armY,   X_SHORT_SLEEVE],
+    long_sleeve:  [hipY + waistGap, armY,   Infinity      ],
+    v_neck:       [hipY + waistGap, chestY, X_TORSO       ],
+    jeans:        [footTop,         hipY,   X_LEGS        ],
+    shorts:       [kneeY,           hipY,   X_LEGS        ],
   };
 
-  // Offset from body surface along vertex normals (clothing thickness).
-  // 2cm gives enough separation to prevent z-fighting without looking puffy.
   const baseOffset = 0.020;
-
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
   const result = {};
 
@@ -82,41 +88,30 @@ export function buildClothingGeometry(bodyGeo, cfg) {
 
     const verts = [];
     const faces = [];
-    const vertMap = new Map(); // original vertex index → new index
+    const vertMap = new Map();
 
-    const triCount = idxAttr ? idxAttr.count / 3 : posAttr.count / 3;
     for (let t = 0; t < triCount; t++) {
-      const [ia, ib, ic] = idxAttr
-        ? [idxAttr.getX(t*3), idxAttr.getX(t*3+1), idxAttr.getX(t*3+2)]
-        : [t*3, t*3+1, t*3+2];
+      const ia = bIdx[t*3], ib = bIdx[t*3+1], ic = bIdx[t*3+2];
 
       const vs = [ia, ib, ic].map(i => ({
-        x: posAttr.getX(i),
-        y: posAttr.getY(i),
-        z: posAttr.getZ(i),
+        x: bPos[i*3],
+        y: bPos[i*3+1],
+        z: bPos[i*3+2],
         i,
       }));
 
-      // Face must have at least one vertex in the Y zone
       const anyInZone = vs.some(v => v.y >= yLo && v.y <= yHi);
       if (!anyInZone) continue;
 
-      // Exclude faces whose centroid X exceeds the cap (arm filtering).
-      // Centroid-based avoids discarding faces that merely touch the boundary.
       const centX = (vs[0].x + vs[1].x + vs[2].x) / 3;
       if (Math.abs(centX) > xCap) continue;
 
       const newIdxs = vs.map(v => {
         if (!vertMap.has(v.i)) {
-          // Offset along body surface normal for a uniform-thickness clothing layer
-          const nx = normAttr ? normAttr.getX(v.i) : 0;
-          const ny = normAttr ? normAttr.getY(v.i) : 0;
-          const nz = normAttr ? normAttr.getZ(v.i) : 0;
-          verts.push(
-            v.x + nx * baseOffset,
-            v.y + ny * baseOffset,
-            v.z + nz * baseOffset
-          );
+          const nx = bNorm ? bNorm[v.i*3]   : 0;
+          const ny = bNorm ? bNorm[v.i*3+1] : 0;
+          const nz = bNorm ? bNorm[v.i*3+2] : 0;
+          verts.push(v.x + nx * baseOffset, v.y + ny * baseOffset, v.z + nz * baseOffset);
           vertMap.set(v.i, verts.length / 3 - 1);
         }
         return vertMap.get(v.i);
@@ -125,15 +120,13 @@ export function buildClothingGeometry(bodyGeo, cfg) {
     }
 
     if (verts.length === 0) {
-      console.warn(`[Clothing] No faces found for '${ctype}' (yLo=${yLo.toFixed(3)}, yHi=${yHi.toFixed(3)}, xCap=${xCap.toFixed(3)})`);
+      console.warn(`[Clothing] No faces found for '${ctype}' (yLo=${yLo.toFixed(3)}, yHi=${yHi.toFixed(3)}, xCap=${isFinite(xCap) ? xCap.toFixed(3) : 'Inf'})`);
       continue;
     }
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(faces), 1));
-    geo.computeVertexNormals();
-    result[ctype] = geo;
+    const pos = new Float32Array(verts);
+    const idx = new Uint32Array(faces);
+    result[ctype] = { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
 
     console.log(`[Clothing] Built '${ctype}': ${verts.length / 3} verts, ${faces.length / 3} faces`);
   }
@@ -143,27 +136,25 @@ export function buildClothingGeometry(bodyGeo, cfg) {
 
 /**
  * Build a procedural collar ring for a polo shirt.
- * Samples the neck cross-section from the body geometry and builds a cylinder band.
  *
- * @param {THREE.BufferGeometry} bodyGeo
- * @param {number} armY - Y position of the collar level (top of shirt zone)
- * @param {number} bodyHeight - total Y range of the body mesh
+ * @param {{ positions: Float32Array }} bodyData
+ * @param {number} armY - Y level of the collar
+ * @param {number} bodyHeight - total Y range of body
  * @param {number} baseOffset - radial offset from body surface
- * @returns {THREE.BufferGeometry|null}
+ * @returns {{ positions, normals, indices }|null}
  */
-export function buildCollarGeometry(bodyGeo, armY, bodyHeight, baseOffset) {
-  const posAttr = bodyGeo.attributes.position;
-  const yWindow = bodyHeight * 0.04;
-  // Only sample neck-width geometry — the arms extend to large X at this height
-  // so we cap sampling to just the neck/throat area (~5% of body height wide)
+export function buildCollarGeometry(bodyData, armY, bodyHeight, baseOffset) {
+  const bPos = bodyData.positions;
+  const vCount = bPos.length / 3;
+  const yWindow  = bodyHeight * 0.04;
   const neckXCap = bodyHeight * 0.05;
 
   let maxZ = -Infinity, minZ = Infinity, maxAbsX = 0;
-  for (let i = 0; i < posAttr.count; i++) {
-    const y  = posAttr.getY(i);
-    const ax = Math.abs(posAttr.getX(i));
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3+1];
+    const ax = Math.abs(bPos[i*3]);
     if (Math.abs(y - armY) < yWindow && ax < neckXCap) {
-      const z = posAttr.getZ(i);
+      const z = bPos[i*3+2];
       if (z > maxZ) maxZ = z;
       if (z < minZ) minZ = z;
       if (ax > maxAbsX) maxAbsX = ax;
@@ -185,44 +176,41 @@ export function buildCollarGeometry(bodyGeo, armY, bodyHeight, baseOffset) {
     const angle = (2 * Math.PI * i) / segments;
     const x = radiusX * Math.cos(angle);
     const z = centerZ + radiusZ * Math.sin(angle);
-    positions.push(x, armY - collarH * 0.25, z);  // bottom of collar band
-    positions.push(x, armY + collarH * 0.75, z);  // top of collar band
+    positions.push(x, armY - collarH * 0.25, z);
+    positions.push(x, armY + collarH * 0.75, z);
   }
 
   for (let i = 0; i < segments; i++) {
     const next = (i + 1) % segments;
-    const b0 = i * 2, b1 = next * 2;
+    const b0 = i * 2,   b1 = next * 2;
     const t0 = b0 + 1,  t1 = b1 + 1;
     indices.push(b0, t0, b1, b1, t0, t1);
   }
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
-  geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-  geo.computeVertexNormals();
-  return geo;
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
 }
 
 /**
  * Place small flat disc buttons along the center-front of the shirt zone.
  *
- * @param {THREE.BufferGeometry} bodyGeo
- * @param {number} yLo - bottom Y of the shirt zone
- * @param {number} yHi - top Y of the shirt zone
+ * @param {{ positions: Float32Array }} bodyData
+ * @param {number} yLo - bottom Y of shirt zone
+ * @param {number} yHi - top Y of shirt zone
  * @param {number} numButtons
- * @returns {THREE.BufferGeometry|null}
+ * @returns {{ positions, normals, indices }|null}
  */
-export function buildButtonGeometry(bodyGeo, yLo, yHi, numButtons = 4) {
-  const posAttr = bodyGeo.attributes.position;
+export function buildButtonGeometry(bodyData, yLo, yHi, numButtons = 4) {
+  const bPos = bodyData.positions;
+  const vCount = bPos.length / 3;
 
   let maxZ = -Infinity;
-  for (let i = 0; i < posAttr.count; i++) {
-    const y  = posAttr.getY(i);
-    const ax = Math.abs(posAttr.getX(i));
-    const z  = posAttr.getZ(i);
-    if (y >= yLo && y <= yHi && ax < 0.05) {
-      if (z > maxZ) maxZ = z;
-    }
+  for (let i = 0; i < vCount; i++) {
+    const y  = bPos[i*3+1];
+    const ax = Math.abs(bPos[i*3]);
+    const z  = bPos[i*3+2];
+    if (y >= yLo && y <= yHi && ax < 0.05 && z > maxZ) maxZ = z;
   }
   if (maxZ === -Infinity) return null;
 
@@ -250,9 +238,7 @@ export function buildButtonGeometry(bodyGeo, yLo, yHi, numButtons = 4) {
     }
   }
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
-  geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-  geo.computeVertexNormals();
-  return geo;
+  const pos = new Float32Array(positions);
+  const idx = new Uint32Array(indices);
+  return { positions: pos, normals: computeVertexNormals(pos, idx), indices: idx };
 }

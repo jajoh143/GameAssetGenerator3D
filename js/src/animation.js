@@ -1,9 +1,8 @@
 /**
- * Animation keyframe builders.
+ * Animation keyframe builders — framework-agnostic.
+ * Returns plain data objects; builder.js converts to Babylon AnimationGroups.
  * Port of generators/humanoid/gltf_pipeline/anim_data.py
  */
-
-import * as THREE from 'three';
 
 // ── Animation parameters (same as Python ANIM_PARAMS) ─────────────────────────
 
@@ -76,60 +75,71 @@ const ANIM_PARAMS = {
   },
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Pure-math Euler → Quaternion (no framework dependency) ────────────────────
 
 function eulerToQuat(xDeg, yDeg = 0, zDeg = 0) {
-  const q = new THREE.Quaternion();
-  q.setFromEuler(new THREE.Euler(
-    THREE.MathUtils.degToRad(xDeg),
-    THREE.MathUtils.degToRad(yDeg),
-    THREE.MathUtils.degToRad(zDeg),
-    'XYZ'
-  ));
-  return q;
+  const toR = Math.PI / 180;
+  const rx = xDeg * toR * 0.5;
+  const ry = yDeg * toR * 0.5;
+  const rz = zDeg * toR * 0.5;
+
+  const cx = Math.cos(rx), sx = Math.sin(rx);
+  const cy = Math.cos(ry), sy = Math.sin(ry);
+  const cz = Math.cos(rz), sz = Math.sin(rz);
+
+  // XYZ order
+  return {
+    x: sx * cy * cz + cx * sy * sz,
+    y: cx * sy * cz - sx * cy * sz,
+    z: cx * cy * sz + sx * sy * cz,
+    w: cx * cy * cz - sx * sy * sz,
+  };
 }
 
-// Helper: (time, bone, [rx,ry,rz]) rotation keyframe
+// Helper: rotation keyframe entry
 function _rot(bone, frame, fps, rx = 0, ry = 0, rz = 0) {
   return [frame / fps, bone, [rx, ry, rz]];
 }
 
-// Helper: (time, bone, [x,y,z]) translation keyframe
+// Helper: translation keyframe entry
 function _trans(bone, frame, fps, x, y, z) {
   return [frame / fps, bone, [x, y, z]];
 }
 
-// Convert list of (time, boneName, euler-xyz-degrees) to QuaternionKeyframeTrack per bone
-function buildRotTracks(rotKfs) {
+// Group rotation keyframes by bone → { boneName: { times[], quats[] } }
+function groupRotKfs(rotKfs) {
   const byBone = new Map();
   for (const [t, bone, [rx, ry, rz]] of rotKfs) {
     if (!byBone.has(bone)) byBone.set(bone, []);
     byBone.get(bone).push({ t, q: eulerToQuat(rx, ry, rz) });
   }
-  const tracks = [];
+  const result = new Map();
   for (const [bone, kfs] of byBone) {
     kfs.sort((a, b) => a.t - b.t);
-    const times = kfs.map(k => k.t);
-    const values = kfs.flatMap(k => [k.q.x, k.q.y, k.q.z, k.q.w]);
-    tracks.push(new THREE.QuaternionKeyframeTrack(`${bone}.quaternion`, times, values));
+    result.set(bone, {
+      times:  kfs.map(k => k.t),
+      values: kfs.flatMap(k => [k.q.x, k.q.y, k.q.z, k.q.w]),
+    });
   }
-  return tracks;
+  return result;
 }
 
-function buildTransTracks(transKfs) {
+// Group translation keyframes by bone → { boneName: { times[], values[] } }
+function groupTransKfs(transKfs) {
   const byBone = new Map();
   for (const [t, bone, [x, y, z]] of transKfs) {
     if (!byBone.has(bone)) byBone.set(bone, []);
     byBone.get(bone).push({ t, x, y, z });
   }
-  const tracks = [];
+  const result = new Map();
   for (const [bone, kfs] of byBone) {
     kfs.sort((a, b) => a.t - b.t);
-    const times = kfs.map(k => k.t);
-    const values = kfs.flatMap(k => [k.x, k.y, k.z]);
-    tracks.push(new THREE.VectorKeyframeTrack(`${bone}.position`, times, values));
+    result.set(bone, {
+      times:  kfs.map(k => k.t),
+      values: kfs.flatMap(k => [k.x, k.y, k.z]),
+    });
   }
-  return tracks;
+  return result;
 }
 
 // ── Idle animation ─────────────────────────────────────────────────────────────
@@ -150,7 +160,6 @@ function idleKfs(_cfg) {
   const rotKfs = [];
   const transKfs = [];
 
-  // Chest breathing
   for (const [frame, chestAngle, spineAngle] of [
     [0,     0,          0],
     [q,     bc,         bs],
@@ -162,21 +171,18 @@ function idleKfs(_cfg) {
     rotKfs.push(_rot('Spine', frame, fps, -spineAngle));
   }
 
-  // Head look left/right
   for (const [frame, angle] of [
     [0, 0], [q, hl], [q * 2, 0], [q * 3, -hl], [f, 0],
   ]) {
     rotKfs.push(_rot('Head', frame, fps, 0, 0, angle));
   }
 
-  // Hip sway (Z rotation)
   for (const [frame, sway] of [
     [0, 0], [q, hs], [q * 2, 0], [q * 3, -hs], [f, 0],
   ]) {
     rotKfs.push(_rot('Hips', frame, fps, 0, 0, sway));
   }
 
-  // Arm breathing
   for (const side of ['L', 'R']) {
     for (const [frame, angle] of [
       [0, 0], [q, ab], [q * 2, 0], [q * 3, ab * 0.7], [f, 0],
@@ -265,7 +271,7 @@ function walkKfs(_cfg) {
     [half + hh,  bob,   0],
     [frames,     0,    -sway],
   ]) {
-    transKfs.push(_trans('Hips', frame, fps, 0, 0, b));
+    transKfs.push(_trans('Hips', frame, fps, 0, b, 0));
     rotKfs.push(_rot('Hips', frame, fps, 0, 0, s));
   }
 
@@ -372,7 +378,7 @@ function runKfs(_cfg) {
     [half + hh,  bob,   0],
     [frames,     0,    -sway],
   ]) {
-    transKfs.push(_trans('Hips', frame, fps, 0, 0, b));
+    transKfs.push(_trans('Hips', frame, fps, 0, b, 0));
     rotKfs.push(_rot('Hips', frame, fps, 0, 0, s));
   }
 
@@ -393,10 +399,7 @@ function jumpKfs(_cfg) {
   const rotKfs = [];
   const transKfs = [];
 
-  // Frame 0: neutral
-  for (const bn of ['Spine', 'Chest', 'Hips']) {
-    rotKfs.push(_rot(bn, 0, fps));
-  }
+  for (const bn of ['Spine', 'Chest', 'Hips']) rotKfs.push(_rot(bn, 0, fps));
   for (const side of ['L', 'R']) {
     for (const bn of [`UpperLeg.${side}`, `LowerLeg.${side}`, `Foot.${side}`,
                        `UpperArm.${side}`, `LowerArm.${side}`]) {
@@ -405,7 +408,6 @@ function jumpKfs(_cfg) {
   }
   transKfs.push(_trans('Hips', 0, fps, 0, 0, 0));
 
-  // Crouch
   const cl = jp.crouch_legs;
   const cs = jp.crouch_spine;
   for (const side of ['L', 'R']) {
@@ -417,9 +419,8 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fCrouch, fps, cs));
   rotKfs.push(_rot('Chest', fCrouch, fps, cs * 0.6));
-  transKfs.push(_trans('Hips', fCrouch, fps, 0, 0, -0.08));
+  transKfs.push(_trans('Hips', fCrouch, fps, 0, -0.08, 0));
 
-  // Launch
   const llLaunch = jp.launch_legs;
   const ls = jp.launch_spine;
   const ar = jp.arm_raise;
@@ -432,9 +433,8 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fLaunch, fps, ls));
   rotKfs.push(_rot('Chest', fLaunch, fps, ls * 0.5));
-  transKfs.push(_trans('Hips', fLaunch, fps, 0, 0, jp.hip_height));
+  transKfs.push(_trans('Hips', fLaunch, fps, 0, jp.hip_height, 0));
 
-  // Apex tuck
   const tl = jp.tuck_legs;
   for (const side of ['L', 'R']) {
     rotKfs.push(_rot(`UpperLeg.${side}`, fApex, fps, tl));
@@ -443,9 +443,8 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fApex, fps, 5));
   rotKfs.push(_rot('Chest', fApex, fps, 3));
-  transKfs.push(_trans('Hips', fApex, fps, 0, 0, jp.hip_height * 0.8));
+  transKfs.push(_trans('Hips', fApex, fps, 0, jp.hip_height * 0.8, 0));
 
-  // Landing
   const la = jp.land_absorb;
   for (const side of ['L', 'R']) {
     rotKfs.push(_rot(`UpperLeg.${side}`, fLand, fps, la));
@@ -456,12 +455,9 @@ function jumpKfs(_cfg) {
   }
   rotKfs.push(_rot('Spine', fLand, fps, -10));
   rotKfs.push(_rot('Chest', fLand, fps, -8));
-  transKfs.push(_trans('Hips', fLand, fps, 0, 0, -0.06));
+  transKfs.push(_trans('Hips', fLand, fps, 0, -0.06, 0));
 
-  // Return to neutral
-  for (const bn of ['Spine', 'Chest']) {
-    rotKfs.push(_rot(bn, fTotal, fps));
-  }
+  for (const bn of ['Spine', 'Chest']) rotKfs.push(_rot(bn, fTotal, fps));
   for (const side of ['L', 'R']) {
     for (const bn of [`UpperLeg.${side}`, `LowerLeg.${side}`, `Foot.${side}`,
                        `UpperArm.${side}`, `LowerArm.${side}`]) {
@@ -486,10 +482,7 @@ function attackKfs(_cfg) {
   const rotKfs = [];
   const transKfs = [];
 
-  // Frame 0: neutral
-  for (const bn of ['Spine', 'Chest']) {
-    rotKfs.push(_rot(bn, 0, fps));
-  }
+  for (const bn of ['Spine', 'Chest']) rotKfs.push(_rot(bn, 0, fps));
   for (const side of ['L', 'R']) {
     for (const bn of [`UpperArm.${side}`, `LowerArm.${side}`,
                        `UpperLeg.${side}`, `LowerLeg.${side}`]) {
@@ -497,7 +490,6 @@ function attackKfs(_cfg) {
     }
   }
 
-  // Windup
   const tt = ap.torso_twist;
   rotKfs.push(_rot('Spine', fWindup, fps, -5, 0, -tt));
   rotKfs.push(_rot('Chest', fWindup, fps, 0, 0, -tt * 0.6));
@@ -508,7 +500,6 @@ function attackKfs(_cfg) {
   rotKfs.push(_rot('UpperLeg.R', fWindup, fps, ap.rear_leg));
   rotKfs.push(_rot('UpperLeg.L', fWindup, fps, ap.lunge_leg * 0.5));
 
-  // Strike
   rotKfs.push(_rot('Spine', fStrike, fps, 8, 0, tt * 0.8));
   rotKfs.push(_rot('Chest', fStrike, fps, 0, 0, tt * 0.5));
   rotKfs.push(_rot('UpperArm.R', fStrike, fps, ap.strike_arm));
@@ -519,16 +510,12 @@ function attackKfs(_cfg) {
   rotKfs.push(_rot('LowerLeg.L', fStrike, fps, -ap.lunge_leg * 0.5));
   rotKfs.push(_rot('UpperLeg.R', fStrike, fps, ap.rear_leg));
 
-  // Follow-through
   rotKfs.push(_rot('Spine', fFollow, fps, 3, 0, tt * 0.3));
   rotKfs.push(_rot('Chest', fFollow, fps, 0, 0, tt * 0.2));
   rotKfs.push(_rot('UpperArm.R', fFollow, fps, ap.strike_arm + 15));
   rotKfs.push(_rot('LowerArm.R', fFollow, fps, ap.strike_forearm - 10));
 
-  // Return to neutral
-  for (const bn of ['Spine', 'Chest']) {
-    rotKfs.push(_rot(bn, fTotal, fps));
-  }
+  for (const bn of ['Spine', 'Chest']) rotKfs.push(_rot(bn, fTotal, fps));
   for (const side of ['L', 'R']) {
     for (const bn of [`UpperArm.${side}`, `LowerArm.${side}`,
                        `UpperLeg.${side}`, `LowerLeg.${side}`]) {
@@ -557,10 +544,16 @@ const DURATIONS = {
   attack: 20 / 24,
 };
 
+const FPS = {
+  idle: 24, walk: 24, run: 24, jump: 24, attack: 24,
+};
+
 /**
- * Build THREE.AnimationClip array for the requested animations.
+ * Build animation clip data for the requested animations.
+ * Returns plain objects — no framework dependency.
+ *
  * @param {Object} cfg - config with .animations ('all' or string[])
- * @returns {THREE.AnimationClip[]}
+ * @returns {Array<{name, duration, fps, rotByBone: Map, transByBone: Map}>}
  */
 export function buildAnimations(cfg) {
   const requested = cfg.animations === 'all'
@@ -571,7 +564,12 @@ export function buildAnimations(cfg) {
     const builder = BUILDERS[name];
     if (!builder) throw new Error(`Unknown animation '${name}'`);
     const { rotKfs, transKfs } = builder(cfg);
-    const tracks = [...buildRotTracks(rotKfs), ...buildTransTracks(transKfs)];
-    return new THREE.AnimationClip(name, DURATIONS[name], tracks);
+    return {
+      name,
+      duration:   DURATIONS[name],
+      fps:        FPS[name],
+      rotByBone:  groupRotKfs(rotKfs),
+      transByBone: groupTransKfs(transKfs),
+    };
   });
 }
