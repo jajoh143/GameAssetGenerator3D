@@ -1,417 +1,260 @@
 /**
- * Professional ring-based hair geometry builder for Three.js.
- * Based on GameAssetGenerator3D's Blender/Python hair system.
- *
- * Architecture:
- * - Ring-based parametric geometry with spherical proportions
- * - Tapered hair clumps using CGCookie "big→medium→small" technique
- * - Panel rows for nape/back coverage
- * - Modular style builders for extensibility
- * - Single unified mesh output (merged geometry)
+ * Ring-based hair geometry builder — returns plain { positions, normals, indices } arrays.
+ * No Three.js dependency; compatible with Babylon.js builder.
  */
 
-import * as THREE from 'three';
+// ─── Minimal Vec3 for internal calculations ──────────────────────────────────
+
+class Vec3 {
+  constructor(x, y, z) { this.x = x; this.y = y; this.z = z; }
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-// Shared cap elevation levels: (z_offset, rx_multiplier, ry_multiplier)
-// Proportions follow spherical dome (sin/cos of elevation angle θ)
 const CAP_LEVELS = [
-  [0.00, 0.97, 0.90],   // 0° - hairline/brow (equatorial)
-  [0.50, 0.84, 0.77],   // 30° - upper forehead
-  [0.86, 0.52, 0.48],   // 60° - upper cranium
-  [0.97, 0.14, 0.13],   // 80° - crown apex
+  [0.00, 0.88, 0.90, 1.05],
+  [0.50, 0.80, 0.77, 0.90],
+  [0.86, 0.50, 0.48, 0.54],
+  [0.97, 0.13, 0.13, 0.14],
 ];
 
-const CAP_RING_N = 12;  // 12 vertices per ring = smooth circular silhouette
+const CAP_RING_N = 12;
 
-// ─── Helper Functions for Ring-Based Geometry ──────────────────────────────
+// ─── Normal computation ──────────────────────────────────────────────────────
 
-/**
- * Create an n-vertex elliptical ring in the XY plane at height z.
- * Returns array of Vector3 positions.
- */
-function createRing(cx, cy, cz, rx, ry, n = CAP_RING_N) {
+function computeVertexNormals(positions, indices) {
+  const nVerts = positions.length / 3;
+  const normals = new Float32Array(nVerts * 3);
+
+  for (let t = 0; t < indices.length / 3; t++) {
+    const ia = indices[t*3], ib = indices[t*3+1], ic = indices[t*3+2];
+    const ax = positions[ia*3], ay = positions[ia*3+1], az = positions[ia*3+2];
+    const bx = positions[ib*3], by = positions[ib*3+1], bz = positions[ib*3+2];
+    const cx = positions[ic*3], cy = positions[ic*3+1], cz = positions[ic*3+2];
+    const ex = bx-ax, ey = by-ay, ez = bz-az;
+    const fx = cx-ax, fy = cy-ay, fz = cz-az;
+    const nx = ey*fz - ez*fy, ny = ez*fx - ex*fz, nz = ex*fy - ey*fx;
+    for (const i of [ia, ib, ic]) {
+      normals[i*3] += nx; normals[i*3+1] += ny; normals[i*3+2] += nz;
+    }
+  }
+
+  for (let i = 0; i < nVerts; i++) {
+    const nx = normals[i*3], ny = normals[i*3+1], nz = normals[i*3+2];
+    const len = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+    normals[i*3] /= len; normals[i*3+1] /= len; normals[i*3+2] /= len;
+  }
+  return normals;
+}
+
+// ─── Geometry accumulator helpers ────────────────────────────────────────────
+
+function createRing(cx, cy, cz, rx, ry, n = CAP_RING_N, ryBack = null) {
+  const ryB = ryBack !== null ? ryBack : ry;
   const verts = [];
   for (let i = 0; i < n; i++) {
     const a = (2 * Math.PI * i) / n;
-    verts.push(new THREE.Vector3(
-      cx + rx * Math.sin(a),
-      cy - ry * Math.cos(a),
-      cz
-    ));
+    const cosA = Math.cos(a);
+    // Blend front depth (cosA=+1) into back depth (cosA=-1) smoothly.
+    // At the sides (cosA=0) the effective radius is the average of both.
+    const ryEff = ry * (1 + cosA) / 2 + ryB * (1 - cosA) / 2;
+    verts.push(new Vec3(cx + rx * Math.sin(a), cy - ryEff * cosA, cz));
   }
   return verts;
 }
 
-/**
- * Connect two equal-length vertex rings with quad strips.
- * Adds faces to the geometry.
- */
-function bridgeRings(geometry, ringA, ringB) {
-  const n = ringA.length;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    addFace(geometry, ringA[i], ringA[j], ringB[j], ringB[i]);
-  }
-}
-
-/**
- * Close a ring with a triangle fan pointing toward a center vertex.
- * Returns the center vertex.
- */
-function closeRing(geometry, ring, pointUp = true) {
-  const n = ring.length;
-  const cx = ring.reduce((sum, v) => sum + v.x, 0) / n;
-  const cy = ring.reduce((sum, v) => sum + v.y, 0) / n;
-  const cz = ring.reduce((sum, v) => sum + v.z, 0) / n;
-  const center = new THREE.Vector3(cx, cy, cz);
-
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    if (pointUp) {
-      addFace(geometry, ring[i], ring[j], center);
-    } else {
-      addFace(geometry, ring[j], ring[i], center);
-    }
-  }
-  return center;
-}
-
-/**
- * Add a face (triangle or quad) to geometry.
- * Handles updating positions, normals, and faces array.
- */
-function addFace(geometry, ...verts) {
-  // Get or create position and index
-  if (!geometry._positions) {
-    geometry._positions = [];
-    geometry._indices = [];
-    geometry._vertexMap = new Map();
-  }
-
+function addFace(geom, ...verts) {
   const indices = [];
   for (const v of verts) {
     const key = `${v.x.toFixed(6)},${v.y.toFixed(6)},${v.z.toFixed(6)}`;
-    let idx = geometry._vertexMap.get(key);
+    let idx = geom._vertexMap.get(key);
     if (idx === undefined) {
-      idx = geometry._positions.length / 3;
-      geometry._positions.push(v.x, v.y, v.z);
-      geometry._vertexMap.set(key, idx);
+      idx = geom._positions.length / 3;
+      geom._positions.push(v.x, v.y, v.z);
+      geom._vertexMap.set(key, idx);
     }
     indices.push(idx);
   }
-
-  // Add triangle or quad as triangles
   if (indices.length === 3) {
-    geometry._indices.push(...indices);
+    geom._indices.push(...indices);
   } else if (indices.length === 4) {
-    // Quad as two triangles
-    geometry._indices.push(indices[0], indices[1], indices[2]);
-    geometry._indices.push(indices[0], indices[2], indices[3]);
+    geom._indices.push(indices[0], indices[1], indices[2]);
+    geom._indices.push(indices[0], indices[2], indices[3]);
   }
 }
 
-/**
- * Get vertices from a specific region of a ring.
- * Useful for accessing back, side, or front sections.
- */
-function backHalfVerts(ring) {
-  // Back 270° - everything except front 3 vertices
-  const n = ring.length;
-  return ring.slice(2, n - 1);
+function bridgeRings(geom, ringA, ringB) {
+  const n = ringA.length;
+  for (let i = 0; i < n; i++) {
+    addFace(geom, ringA[i], ringA[(i+1)%n], ringB[(i+1)%n], ringB[i]);
+  }
 }
 
-function frontVerts(ring) {
+function closeRing(geom, ring, pointUp = true) {
   const n = ring.length;
-  return [ring[n - 1], ring[0], ring[1]];
+  const cx = ring.reduce((s, v) => s + v.x, 0) / n;
+  const cy = ring.reduce((s, v) => s + v.y, 0) / n;
+  const cz = ring.reduce((s, v) => s + v.z, 0) / n;
+  const center = new Vec3(cx, cy, cz);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    pointUp ? addFace(geom, ring[i], ring[j], center)
+            : addFace(geom, ring[j], ring[i], center);
+  }
 }
 
-function leftVerts(ring) {
-  const n = ring.length;
-  const c = Math.floor(n / 4);
-  return [ring[c - 1], ring[c], ring[c + 1]];
-}
+function backHalfVerts(ring) { return ring.slice(2, ring.length - 1); }
 
-function rightVerts(ring) {
-  const n = ring.length;
-  const c = Math.floor((3 * n) / 4);
-  return [ring[c - 1], ring[c], ring[c + 1]];
-}
-
-/**
- * Build a tapered hair clump using the CGCookie technique.
- * Spine: array of Vector3 points (root → mid → tip)
- * Widths: array of half-widths at each spine point (last = 0 for pointed tip)
- */
-function createHairClump(geometry, spine, widths) {
+function createHairClump(geom, spine, widths) {
   const n = spine.length;
-
-  // Create left and right edge vertices
-  const left = [];
-  const right = [];
+  const left = [], right = [];
   for (let i = 0; i < n - 1; i++) {
     const w = widths[i];
-    left.push(new THREE.Vector3(spine[i].x - w, spine[i].y, spine[i].z));
-    right.push(new THREE.Vector3(spine[i].x + w, spine[i].y, spine[i].z));
+    left.push(new Vec3(spine[i].x - w, spine[i].y, spine[i].z));
+    right.push(new Vec3(spine[i].x + w, spine[i].y, spine[i].z));
   }
-
-  // Add quad strip segments
   for (let i = 0; i < n - 2; i++) {
-    addFace(geometry, left[i], left[i + 1], right[i + 1], right[i]);
+    addFace(geom, left[i], left[i+1], right[i+1], right[i]);
   }
-
-  // Triangulated tip
-  addFace(geometry, left[n - 2], spine[n - 1], right[n - 2]);
+  addFace(geom, left[n-2], spine[n-1], right[n-2]);
 }
 
-/**
- * Create fringe clumps (bangs) across the forehead.
- * clumpDefs: array of (cx, xDrift, yFwd, zMid, zTip, wRoot)
- */
-function createFringeClumps(geometry, headR, hlZ, frY, clumpDefs, headRHoriz = null) {
+function createFringeClumps(geom, headR, hlZ, frY, clumpDefs, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
-
   for (const [cx, xDrift, yFwd, zMid, zTip, wRoot] of clumpDefs) {
-    const rx = cx * hrH;
-    const drift = xDrift * hrH;
-    const wdRoot = wRoot * hrH;
-    const wdMid = wdRoot * 0.58;  // Taper to 58% at mid-point
-
+    const rx = cx * hrH, drift = xDrift * hrH;
+    const wdRoot = wRoot * hrH, wdMid = wdRoot * 0.58;
     const spine = [
-      new THREE.Vector3(rx, frY, hlZ + headR * 0.02),
-      new THREE.Vector3(rx + drift * 0.5, frY - hrH * yFwd * 0.5, hlZ - headR * zMid),
-      new THREE.Vector3(rx + drift, frY - hrH * yFwd, hlZ - headR * zTip),
+      new Vec3(rx, frY, hlZ + headR * 0.02),
+      new Vec3(rx + drift * 0.5, frY - hrH * yFwd * 0.5, hlZ - headR * zMid),
+      new Vec3(rx + drift, frY - hrH * yFwd, hlZ - headR * zTip),
     ];
-
-    createHairClump(geometry, spine, [wdRoot, wdMid, 0]);
+    createHairClump(geom, spine, [wdRoot, wdMid, 0]);
   }
 }
 
-/**
- * Extrude a strip of vertices downward in sequential quad rows.
- * rowsSpec: array of (dz, xScale, yScale) tuples
- */
-function createPanelRows(geometry, topVerts, rowsSpec, headR) {
+function createPanelRows(geom, topVerts, rowsSpec) {
   let prev = topVerts;
-  let cumulativeDz = 0;
-
+  let cumDz = 0;
   for (const [dz, xm, ym] of rowsSpec) {
-    cumulativeDz += dz;
-    const newRow = topVerts.map(
-      v => new THREE.Vector3(v.x * xm, v.y * ym, v.z + cumulativeDz)
-    );
-
-    // Bridge rows
+    cumDz += dz;
+    const newRow = topVerts.map(v => new Vec3(v.x * xm, v.y * ym, v.z + cumDz));
     for (let i = 0; i < prev.length - 1; i++) {
-      addFace(geometry, prev[i], prev[i + 1], newRow[i + 1], newRow[i]);
+      addFace(geom, prev[i], prev[i+1], newRow[i+1], newRow[i]);
     }
-
     prev = newRow;
   }
 }
 
-/**
- * Build the shared domed cap from hairline to crown.
- * Returns array of rings.
- */
-function buildCap(geometry, headZ, headR, hScale = 1.20, capLevels = null, headRHoriz = null) {
+function buildCap(geom, headZ, headR, hScale = 1.20, capLevels = null, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
   const levels = capLevels !== null ? capLevels : CAP_LEVELS;
-  const rings = [];
-
-  // Create rings at each elevation
-  for (const [zOff, rxM, ryM] of levels) {
-    const z = headZ + headR * zOff;
-    rings.push(
-      createRing(
-        0, 0, z,
-        hrH * rxM * hScale,
-        hrH * ryM * hScale,
-        CAP_RING_N
-      )
-    );
-  }
-
-  // Bridge rings with quad strips
-  for (let i = 0; i < rings.length - 1; i++) {
-    bridgeRings(geometry, rings[i], rings[i + 1]);
-  }
-
-  // Close crown with triangle fan
-  closeRing(geometry, rings[rings.length - 1], true);
-
+  const rings = levels.map(([zOff, rxM, ryM, ryBackM]) =>
+    createRing(
+      0, 0, headZ + headR * zOff,
+      hrH * rxM * hScale,
+      hrH * ryM * hScale,
+      CAP_RING_N,
+      ryBackM != null ? hrH * ryBackM * hScale : null,
+    )
+  );
+  for (let i = 0; i < rings.length - 1; i++) bridgeRings(geom, rings[i], rings[i+1]);
+  closeRing(geom, rings[rings.length - 1], true);
   return rings;
 }
 
-// ─── Style Builders (Modular) ───────────────────────────────────────────────
+// ─── Style builders ──────────────────────────────────────────────────────────
 
-function buildBuzzed(geometry, headZ, headR, headRHoriz = null) {
-  const rings = buildCap(geometry, headZ, headR, 1.15, CAP_LEVELS, headRHoriz);
-  const hl = rings[0];
-
-  // Single row around back for nape coverage
-  createPanelRows(geometry, backHalfVerts(hl), [
-    [-headR * 0.18, 1.0, 1.0],
-  ], headR);
+function buildBuzzed(geom, headZ, headR) {
+  const rings = buildCap(geom, headZ, headR, 1.15);
+  createPanelRows(geom, backHalfVerts(rings[0]), [[-headR * 0.12, 0.97, 1.0]]);
 }
 
-function buildShort(geometry, headZ, headR, headRHoriz = null) {
+function buildShort(geom, headZ, headR, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
-
-  // Custom cap levels for short style
-  const shortCapLevels = [
-    [0.00, 0.97, 0.90],   // hairline - equatorial
-    [0.45, 0.86, 0.79],   // upper sides
-    [0.78, 0.55, 0.50],   // upper cranium
-    [0.92, 0.18, 0.16],   // crown apex
-  ];
-
-  const rings = buildCap(geometry, headZ, headR, 1.20, shortCapLevels, headRHoriz);
-  const hl = rings[0];
-
-  // Back-half panel (3 rows)
-  createPanelRows(geometry, backHalfVerts(hl), [
-    [-headR * 0.16, 0.97, 0.95],
-    [-headR * 0.15, 0.93, 0.90],
-    [-headR * 0.13, 0.88, 0.85],
-  ], headR);
-
-  // Fringe clumps (5 clumps across forehead)
-  const hlZ = hl[0].z;
+  const rings = buildCap(geom, headZ, headR, 1.20, [
+    [0.00, 0.88, 0.90, 1.05], [0.45, 0.82, 0.79, 0.92],
+    [0.78, 0.52, 0.50, 0.56], [0.92, 0.17, 0.16, 0.17],
+  ], headRHoriz);
+  createPanelRows(geom, backHalfVerts(rings[0]), [
+    [-headR * 0.14, 0.97, 1.0], [-headR * 0.12, 0.95, 1.0],
+  ]);
+  const hlZ = rings[0][0].z;
   const frY = -(hrH * 0.90 * 1.06) - 0.003;
-  createFringeClumps(geometry, headR, hlZ, frY, [
-    [-0.46, -0.05, 0.04, 0.04, 0.12, 0.13],   // left
-    [-0.22, 0.00, 0.05, 0.04, 0.13, 0.13],
-    [0.00, 0.00, 0.05, 0.04, 0.14, 0.15],     // center
-    [0.22, 0.00, 0.05, 0.04, 0.13, 0.13],
-    [0.46, 0.05, 0.04, 0.04, 0.12, 0.13],     // right
+  createFringeClumps(geom, headR, hlZ, frY, [
+    [-0.52, -0.06, 0.03, 0.03, 0.11, 0.10],
+    [-0.36, -0.03, 0.04, 0.04, 0.12, 0.11],
+    [-0.18,  0.00, 0.05, 0.04, 0.13, 0.12],
+    [ 0.00,  0.00, 0.05, 0.04, 0.14, 0.13],
+    [ 0.18,  0.00, 0.05, 0.04, 0.13, 0.12],
+    [ 0.36,  0.03, 0.04, 0.04, 0.12, 0.11],
+    [ 0.52,  0.06, 0.03, 0.03, 0.11, 0.10],
   ], hrH);
 }
 
-function buildLong(geometry, headZ, headR, headRHoriz = null) {
+function buildLong(geom, headZ, headR, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
-
-  // Custom cap for long style (lower hairline)
-  const longCapLevels = [
-    [-0.10, 0.99, 0.92],   // lower hairline
-    [0.35, 0.87, 0.80],
-    [0.72, 0.58, 0.52],
-    [0.94, 0.20, 0.18],
-  ];
-
-  const rings = buildCap(geometry, headZ, headR, 1.22, longCapLevels, headRHoriz);
-  const hl = rings[0];
-
-  // Back curtain (6 rows for long hair)
-  createPanelRows(geometry, backHalfVerts(hl), [
-    [-headR * 0.14, 0.98, 0.96],
-    [-headR * 0.18, 0.96, 0.93],
-    [-headR * 0.22, 0.94, 0.90],
-    [-headR * 0.26, 0.92, 0.88],
-    [-headR * 0.30, 0.90, 0.86],
-    [-headR * 0.32, 0.88, 0.84],
-  ], headR);
-
-  // Longer fringe
-  const hlZ = hl[0].z;
+  const rings = buildCap(geom, headZ, headR, 1.22, [
+    [-0.10, 0.90, 0.92, 1.08], [0.35, 0.83, 0.80, 0.94],
+    [ 0.72, 0.55, 0.52, 0.58], [0.94, 0.18, 0.18, 0.19],
+  ], headRHoriz);
+  createPanelRows(geom, backHalfVerts(rings[0]), [
+    [-headR * 0.14, 0.98, 1.0], [-headR * 0.16, 0.97, 1.0],
+    [-headR * 0.20, 0.96, 1.0], [-headR * 0.18, 0.95, 1.0],
+  ]);
+  const hlZ = rings[0][0].z;
   const frY = -(hrH * 0.92 * 1.06) - 0.005;
-  createFringeClumps(geometry, headR, hlZ, frY, [
-    [-0.50, -0.08, 0.06, 0.08, 0.20, 0.14],
-    [-0.25, -0.02, 0.08, 0.08, 0.22, 0.14],
-    [0.00, 0.00, 0.08, 0.08, 0.24, 0.16],
-    [0.25, 0.02, 0.08, 0.08, 0.22, 0.14],
-    [0.50, 0.08, 0.06, 0.08, 0.20, 0.14],
+  createFringeClumps(geom, headR, hlZ, frY, [
+    [-0.54, -0.10, 0.05, 0.07, 0.19, 0.12],
+    [-0.37, -0.05, 0.07, 0.08, 0.21, 0.13],
+    [-0.18, -0.01, 0.08, 0.08, 0.22, 0.14],
+    [ 0.00,  0.00, 0.08, 0.08, 0.23, 0.15],
+    [ 0.18,  0.01, 0.08, 0.08, 0.22, 0.14],
+    [ 0.37,  0.05, 0.07, 0.08, 0.21, 0.13],
+    [ 0.54,  0.10, 0.05, 0.07, 0.19, 0.12],
   ], hrH);
 }
 
-function buildSpiky(geometry, headZ, headR, headRHoriz = null) {
+function buildSpiky(geom, headZ, headR, headRHoriz = null) {
   const hrH = headRHoriz !== null ? headRHoriz : headR;
-
-  // Spiky cap (lower, wider base for spikes)
-  const spikyCapLevels = [
-    [0.20, 0.98, 0.98],   // low hairline
-    [0.48, 0.86, 0.79],
-    [0.72, 0.60, 0.55],
-    [0.88, 0.30, 0.28],   // small crown
-  ];
-
-  const rings = buildCap(geometry, headZ, headR, 1.18, spikyCapLevels, headRHoriz);
-  const hl = rings[0];
-
-  // Back panel
-  createPanelRows(geometry, backHalfVerts(hl), [
-    [-headR * 0.15, 0.96, 0.94],
-    [-headR * 0.14, 0.92, 0.90],
-  ], headR);
-
-  // 6 spike clumps arranged in a circle
-  const spikeZ = headZ + headR * 0.88;
-  const spikeClumps = [
-    [-0.50, -0.15, 0.00, 0.00, 0.40, 0.08],
-    [-0.25, -0.10, 0.10, 0.05, 0.45, 0.09],
-    [0.00, 0.00, 0.15, 0.10, 0.50, 0.10],
-    [0.25, 0.10, 0.10, 0.05, 0.45, 0.09],
-    [0.50, 0.15, 0.00, 0.00, 0.40, 0.08],
-    [0.00, -0.15, -0.20, 0.00, 0.35, 0.07],
-  ];
-
-  createFringeClumps(geometry, headR, spikeZ, 0, spikeClumps, hrH);
+  const rings = buildCap(geom, headZ, headR, 1.18, [
+    [0.20, 0.90, 0.98, 1.06], [0.48, 0.82, 0.79, 0.88],
+    [0.72, 0.56, 0.55, 0.60], [0.88, 0.28, 0.28, 0.30],
+  ], headRHoriz);
+  createPanelRows(geom, backHalfVerts(rings[0]), [
+    [-headR * 0.10, 0.95, 1.0], [-headR * 0.08, 0.93, 1.0],
+  ]);
+  createFringeClumps(geom, headR, headZ + headR * 0.88, 0, [
+    [-0.50, -0.15, 0.00, 0.00, 0.40, 0.08], [-0.25, -0.10, 0.10, 0.05, 0.45, 0.09],
+    [0.00, 0.00, 0.15, 0.10, 0.50, 0.10],   [0.25, 0.10, 0.10, 0.05, 0.45, 0.09],
+    [0.50, 0.15, 0.00, 0.00, 0.40, 0.08],   [0.00, -0.15, -0.20, 0.00, 0.35, 0.07],
+  ], hrH);
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────
+// ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Build hair geometry for the given style.
- * Geometry is centered at origin - positioning/rotation handled by builder.
- *
- * @param {number} headRadius - Head radius in 3D units
- * @param {string} style - Hair style name ('short', 'long', 'spiky', 'buzzed', etc.)
- * @returns {THREE.BufferGeometry|null}
+ * @returns {{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }|null}
  */
 export function buildHairGeometry(headRadius, style = 'short') {
   if (style === 'none') return null;
 
-  // Build geometry centered at origin (Z=0)
-  // This allows builder.js to handle all positioning/rotation
-  const headZ = 0;
+  const geom = { _positions: [], _indices: [], _vertexMap: new Map() };
 
-  // Create accumulator geometry
-  const geom = new THREE.BufferGeometry();
-  geom._positions = [];
-  geom._indices = [];
-  geom._vertexMap = new Map();
-
-  // Route to appropriate style builder
   switch (style) {
-    case 'buzzed':
-      buildBuzzed(geom, headZ, headRadius);
-      break;
-    case 'short':
-      buildShort(geom, headZ, headRadius);
-      break;
-    case 'long':
-      buildLong(geom, headZ, headRadius);
-      break;
-    case 'spiky':
-      buildSpiky(geom, headZ, headRadius);
-      break;
-    default:
-      // Fallback to short if unknown style
-      buildShort(geom, headZ, headRadius);
+    case 'buzzed': buildBuzzed(geom, 0, headRadius); break;
+    case 'short':  buildShort(geom, 0, headRadius);  break;
+    case 'long':   buildLong(geom, 0, headRadius);   break;
+    case 'spiky':  buildSpiky(geom, 0, headRadius);  break;
+    default:       buildShort(geom, 0, headRadius);
   }
 
-  // Convert accumulated data to BufferGeometry
-  if (geom._positions.length === 0) {
-    return null;
-  }
+  if (geom._positions.length === 0) return null;
 
-  const positionArray = new Float32Array(geom._positions);
-  const indexArray = new Uint32Array(geom._indices);
+  const positions = new Float32Array(geom._positions);
+  const indices   = new Uint32Array(geom._indices);
+  const normals   = computeVertexNormals(positions, indices);
 
-  geom.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
-  geom.setIndex(new THREE.BufferAttribute(indexArray, 1));
-  geom.computeVertexNormals();
-
-  return geom;
+  return { positions, normals, indices };
 }

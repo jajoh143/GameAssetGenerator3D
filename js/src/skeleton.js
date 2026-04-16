@@ -1,9 +1,9 @@
 /**
- * 19-bone skeleton hierarchy using THREE.Bone/Skeleton.
+ * 19-bone skeleton hierarchy using BABYLON.Bone/Skeleton.
  * Port of generators/humanoid/gltf_pipeline/skeleton.py
  */
 
-import * as THREE from 'three';
+import { Skeleton, Bone, Matrix } from '@babylonjs/core';
 
 export const BONE_NAMES = [
   'Hips',                                              // 0  — root
@@ -22,64 +22,64 @@ export const BONE_PARENTS = [-1,0,1,2,3,2,5,6,7,2,9,10,11,0,13,14,0,16,17];
  * @returns {Array<[number,number,number]>} array of [x,y,z] per bone
  */
 export function boneWorldPositions(H) {
+  // [x, y, z] — Y = height (up), Z = forward depth, X = lateral
   return [
     // Spine/head chain
-    [0.0,          0.0,          H * 0.52],  // 0  Hips
-    [0.0,          0.0,          H * 0.60],  // 1  Spine
-    [0.0,          0.0,          H * 0.68],  // 2  Chest
-    [0.0,          0.0,          H * 0.82],  // 3  Neck
-    [0.0,          0.0,          H * 0.87],  // 4  Head
+    [0.0,          H * 0.52, 0.0        ],  // 0  Hips
+    [0.0,          H * 0.60, 0.0        ],  // 1  Spine
+    [0.0,          H * 0.68, 0.0        ],  // 2  Chest
+    [0.0,          H * 0.82, 0.0        ],  // 3  Neck
+    [0.0,          H * 0.87, 0.0        ],  // 4  Head
     // Left arm chain
-    [+H * 0.08,    0.0,          H * 0.72],  // 5  Shoulder.L
-    [+H * 0.14,    0.0,          H * 0.70],  // 6  UpperArm.L
-    [+H * 0.14,    0.0,          H * 0.53],  // 7  LowerArm.L
-    [+H * 0.14,    0.0,          H * 0.38],  // 8  Hand.L
+    [+H * 0.08,    H * 0.72, 0.0        ],  // 5  Shoulder.L
+    [+H * 0.14,    H * 0.70, 0.0        ],  // 6  UpperArm.L
+    [+H * 0.14,    H * 0.53, 0.0        ],  // 7  LowerArm.L
+    [+H * 0.14,    H * 0.38, 0.0        ],  // 8  Hand.L
     // Right arm chain
-    [-H * 0.08,    0.0,          H * 0.72],  // 9  Shoulder.R
-    [-H * 0.14,    0.0,          H * 0.70],  // 10 UpperArm.R
-    [-H * 0.14,    0.0,          H * 0.53],  // 11 LowerArm.R
-    [-H * 0.14,    0.0,          H * 0.38],  // 12 Hand.R
+    [-H * 0.08,    H * 0.72, 0.0        ],  // 9  Shoulder.R
+    [-H * 0.14,    H * 0.70, 0.0        ],  // 10 UpperArm.R
+    [-H * 0.14,    H * 0.53, 0.0        ],  // 11 LowerArm.R
+    [-H * 0.14,    H * 0.38, 0.0        ],  // 12 Hand.R
     // Left leg chain
-    [+H * 0.09,    0.0,          H * 0.50],  // 13 UpperLeg.L
-    [+H * 0.09,    0.0,          H * 0.27],  // 14 LowerLeg.L
-    [+H * 0.09,    H * 0.08,     H * 0.03],  // 15 Foot.L
+    [+H * 0.09,    H * 0.50, 0.0        ],  // 13 UpperLeg.L
+    [+H * 0.09,    H * 0.27, 0.0        ],  // 14 LowerLeg.L
+    [+H * 0.09,    H * 0.03, H * 0.08  ],  // 15 Foot.L (Z = toe forward)
     // Right leg chain
-    [-H * 0.09,    0.0,          H * 0.50],  // 16 UpperLeg.R
-    [-H * 0.09,    0.0,          H * 0.27],  // 17 LowerLeg.R
-    [-H * 0.09,    H * 0.08,     H * 0.03],  // 18 Foot.R
+    [-H * 0.09,    H * 0.50, 0.0        ],  // 16 UpperLeg.R
+    [-H * 0.09,    H * 0.27, 0.0        ],  // 17 LowerLeg.R
+    [-H * 0.09,    H * 0.03, H * 0.08  ],  // 18 Foot.R (Z = toe forward)
   ];
 }
 
 /**
- * Build a THREE.Skeleton with 19 bones at rest positions proportional to H.
+ * Build a BABYLON.Skeleton with 19 bones at rest positions proportional to H.
  * @param {number} H - character height in metres
- * @returns {THREE.Skeleton}
+ * @param {BABYLON.Scene} scene - Babylon scene the skeleton belongs to
+ * @returns {BABYLON.Skeleton}
  */
-export function buildSkeleton(H) {
+export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
+  const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
 
-  // Create all bones
-  const bones = BONE_NAMES.map((name, i) => {
-    const bone = new THREE.Bone();
-    bone.name = name;
-    return bone;
-  });
-
-  // Set local positions and wire up parent/child hierarchy
-  for (let i = 0; i < bones.length; i++) {
+  // Create all bones sequentially so each parent is available when children reference it
+  const bones = [];
+  for (let i = 0; i < BONE_NAMES.length; i++) {
+    const name = BONE_NAMES[i];
     const parentIdx = BONE_PARENTS[i];
+    const parentBone = parentIdx === -1 ? null : bones[parentIdx];
     const [wx, wy, wz] = worldPos[i];
 
+    let lx, ly, lz;
     if (parentIdx === -1) {
-      // Root bone: local position == world position
-      bones[i].position.set(wx, wy, wz);
+      lx = wx; ly = wy; lz = wz;
     } else {
-      // Local position = world position minus parent world position
       const [px, py, pz] = worldPos[parentIdx];
-      bones[i].position.set(wx - px, wy - py, wz - pz);
-      bones[parentIdx].add(bones[i]);
+      lx = wx - px; ly = wy - py; lz = wz - pz;
     }
+
+    const localMatrix = Matrix.Translation(lx, ly, lz);
+    bones.push(new Bone(name, skeleton, parentBone, localMatrix));
   }
 
-  return new THREE.Skeleton(bones);
+  return skeleton;
 }
