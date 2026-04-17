@@ -76,11 +76,15 @@ export function buildClothingGeometry(bodyData, cfg) {
   const chestY  = minY + bodyH * 0.68;   // chest              (bone: 0.68)
   const armY    = minY + bodyH * 0.72;   // shoulder armhole   (bone: 0.72)
 
-  // X caps as fractions of the mesh's own half-width.
-  // Realistic body: shoulders ≈ 45% of maxAbsX, arms ≈ 60-75%.
-  const X_TORSO        = maxAbsX * 0.45;  // torso only, no arms
-  const X_LEGS         = maxAbsX * 0.65;  // both legs (excludes far arm swing)
-  const X_SHORT_SLEEVE = maxAbsX * 0.75;  // shoulder + short sleeve area
+  // X caps relative to bodyH (height-based absolute values).
+  // This is reliable regardless of mesh pose (T-pose, A-pose, I-pose):
+  //   torso half-width  ≈ bodyH * 0.14  (shoulder bone at H*0.08, plus margin)
+  //   short sleeve end  ≈ bodyH * 0.22  (upper-arm bone at H*0.14, plus margin)
+  //   leg width         ≈ bodyH * 0.18  (hip-joint bone at H*0.09, plus generous margin)
+  // Pants and long sleeves use Infinity — the Y zone alone is sufficient
+  // (there are no arm verts in the leg Y band, no need to cap X there).
+  const X_TORSO        = bodyH * 0.16;   // torso only (v-neck)
+  const X_SHORT_SLEEVE = bodyH * 0.26;   // torso + upper arm (polo/short_sleeve)
 
   const waistGap = bodyH * 0.010;
 
@@ -89,9 +93,11 @@ export function buildClothingGeometry(bodyData, cfg) {
     polo:         [hipY + waistGap, armY,   X_SHORT_SLEEVE],
     long_sleeve:  [hipY + waistGap, armY,   Infinity      ],
     v_neck:       [hipY + waistGap, chestY, X_TORSO       ],
-    jeans:        [footTop,         hipY,   X_LEGS        ],
-    shorts:       [kneeY,           hipY,   X_LEGS        ],
+    jeans:        [footTop,         hipY,   Infinity      ],
+    shorts:       [kneeY,           hipY,   Infinity      ],
   };
+
+  console.log(`[LP Clothing] bodyH=${bodyH.toFixed(3)} minY=${minY.toFixed(3)} maxAbsX=${maxAbsX.toFixed(3)} | footTop=${footTop.toFixed(3)} knee=${kneeY.toFixed(3)} hip=${hipY.toFixed(3)} chest=${chestY.toFixed(3)} arm=${armY.toFixed(3)}`);
 
   const baseOffset   = 0.022;
   const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
