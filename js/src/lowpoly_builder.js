@@ -21,7 +21,7 @@ import { SKIN_TONES } from './presets.js';
 import { HAIR_COLORS } from './hair_colors.js';
 import { CLOTHING_COLORS, CLOTHING_DEFAULT_COLORS } from './clothing_colors.js';
 import { loadLowPolyMesh } from './lowpoly_mesh_loader.js';
-import { buildNoseGeometry, buildMouthGeometry } from './face_geo.js';
+import { buildNoseGeometry, buildMouthGeometry, buildEyebrowGeometry } from './face_geo.js';
 
 // Re-export exportGLB so callers only need to import from this module.
 export { exportGLB } from './builder.js';
@@ -151,6 +151,7 @@ export async function buildLowPolyCharacter(cfg) {
     ? cfg.skinTone
     : (SKIN_TONES[cfg.skinTone] ?? SKIN_TONES.tan);
   const skinMat = makePBR(scene, 'SkinMaterial', skinRgba, 0.42, 0.0);
+  skinMat.backFaceCulling = false;  // body must be double-sided so interior faces never show through
 
   // 4. Create skinned mesh
   const bodyMesh = new Mesh('Body', scene);
@@ -271,7 +272,18 @@ export async function buildLowPolyCharacter(cfg) {
     console.log(`[Eyes] Eyes placed at world Y=${(headBoneY + headRadius * 0.20).toFixed(3)}, Z=${(faceFrontZ + 0.003).toFixed(3)}`);
   }
 
-  // 7. Nose
+  // 7. Eyebrows
+  {
+    const browGeo = buildEyebrowGeometry(headRadius, headBoneY, faceFrontZ);
+    const browMesh = new Mesh('Eyebrows', scene);
+    // Dark brown — independent of skin tone
+    const browMat = makePBR(scene, 'EyebrowMaterial', [0.22, 0.15, 0.09], 0.8, 0.0);
+    browMat.backFaceCulling = false;
+    browMesh.material = browMat;
+    applyRawGeoToMesh(browMesh, browGeo);
+  }
+
+  // 8. Nose
   {
     const noseGeo = buildNoseGeometry(headRadius, headBoneY, faceFrontZ);
     const noseMesh = new Mesh('Nose', scene);
@@ -282,7 +294,7 @@ export async function buildLowPolyCharacter(cfg) {
     applyRawGeoToMesh(noseMesh, noseGeo);
   }
 
-  // 8. Mouth
+  // 9. Mouth
   {
     const mouthGeo = buildMouthGeometry(headRadius, headBoneY, faceFrontZ);
     const mouthMesh = new Mesh('Mouth', scene);
@@ -293,7 +305,7 @@ export async function buildLowPolyCharacter(cfg) {
     applyRawGeoToMesh(mouthMesh, mouthGeo);
   }
 
-  // 9. Clothing
+  // 10. Clothing
   if (cfg.clothing && cfg.clothing.length > 0) {
     const clothingColors = cfg.clothingColor ?? {};
     const clothingGeos = buildClothingGeometry(bodyData, cfg);
@@ -357,7 +369,7 @@ export async function buildLowPolyCharacter(cfg) {
     }
   }
 
-  // 10. Animations
+  // 11. Animations
   const clips = buildAnimations(cfg);
   buildAnimationGroups(clips, skeleton, scene);
 

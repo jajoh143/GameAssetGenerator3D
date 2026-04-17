@@ -65,6 +65,58 @@ export function buildNoseGeometry(headRadius, headBoneY, faceFrontZ) {
 }
 
 /**
+ * Build thin eyebrow quads above each eye — two arched rectangles,
+ * inner end slightly raised for a natural expression.
+ *
+ * Returns { positions, normals, indices }
+ */
+export function buildEyebrowGeometry(headRadius, headBoneY, faceFrontZ) {
+  const hr = headRadius;
+  const fz = faceFrontZ + 0.002;  // just proud of face, behind eye discs
+
+  const eyeY   = headBoneY + hr * 0.08;  // same height reference as eyes
+  const browY  = eyeY + hr * 0.17;       // brows sit above eyes
+  const browH  = hr * 0.055;             // thickness of brow strip
+  const browX  = hr * 0.40;             // lateral centre of each brow
+  const browW  = hr * 0.21;             // half-width of brow
+  const tiltIn = browH * 0.5;           // inner end raised by this much
+
+  // Left brow: 4 vertices (inner-top, inner-bottom, outer-top, outer-bottom)
+  // Right brow: mirror (sign-flip on X)
+  const positions = [];
+  const normals   = [];
+  const indices   = [];
+
+  function addBrow(side) {  // side = +1 (right) or -1 (left)
+    const cx = side * browX;
+    const inX  = cx - side * browW * 0.4;  // inner end (toward nose)
+    const outX = cx + side * browW * 0.6;  // outer end
+    const inY  = browY + tiltIn;           // inner end slightly higher
+    const outY = browY;
+    const base = positions.length / 3;
+
+    positions.push(
+      inX,  inY + browH, fz,   // 0 inner-top
+      inX,  inY,         fz,   // 1 inner-bottom
+      outX, outY + browH, fz,  // 2 outer-top
+      outX, outY,         fz,  // 3 outer-bottom
+    );
+    for (let i = 0; i < 4; i++) { normals.push(0, 0, 1); }  // all face +Z
+    // CCW winding from +Z: (top-inner, bottom-inner, top-outer), (bottom-inner, bottom-outer, top-outer)
+    indices.push(base+0, base+2, base+1,  base+1, base+2, base+3);
+  }
+
+  addBrow(-1);  // left
+  addBrow(+1);  // right
+
+  return {
+    positions: new Float32Array(positions),
+    normals:   new Float32Array(normals),
+    indices:   new Uint32Array(indices),
+  };
+}
+
+/**
  * Build a simple low-poly mouth: a thin horizontal quad representing
  * closed lips, with a very slight cupid's-bow curve on the top edge.
  *
@@ -82,7 +134,7 @@ export function buildMouthGeometry(headRadius, headBoneY, faceFrontZ) {
 
   const mouthY   = headBoneY - hr * 0.40;   // below nose
   const mouthW   = hr * 0.32;               // half-width (≈3.2cm for headRadius=0.10)
-  const lipH     = hr * 0.09;               // height of lip strip
+  const lipH     = hr * 0.12;               // height of lip strip (taller = more visible)
   const mouthZ   = fz + hr * 0.02;          // slightly proud of face
 
   // 5 vertices: top-left, top-centre, top-right, bottom-left, bottom-right

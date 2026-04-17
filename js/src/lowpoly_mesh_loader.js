@@ -313,7 +313,27 @@ export async function loadLowPolyMesh(gender = 'neutral', targetHeight = 1.75) {
     ({ skinIndices, skinWeights } = computeEnvelopeWeights(positions, vCount, targetHeight));
   }
 
-  // normals already built (and rotated) above
+  // ── Validate and auto-correct normal orientation ───────────────────────────
+  // Sample normals at the crown (top 12% of height). For a humanoid standing
+  // Y-up these should average upward (+Y). If they average downward the
+  // whole mesh winding is reversed; fix by negating all normals AND swapping
+  // each triangle's second and third index (B↔C).
+  if (normals && idxArr) {
+    const crownThresh = targetHeight * 0.88;
+    let sumNY = 0, crownCount = 0;
+    for (let i = 0; i < vCount; i++) {
+      if (positions[i*3+1] > crownThresh) { sumNY += normals[i*3+1]; crownCount++; }
+    }
+    if (crownCount > 0 && sumNY / crownCount < 0) {
+      console.log(`[lowpoly_mesh_loader] Normals inverted (crown avgNY=${(sumNY/crownCount).toFixed(3)}) — flipping normals and reversing winding`);
+      for (let i = 0; i < normals.length; i++) normals[i] = -normals[i];
+      const numTris = idxArr.length / 3;
+      for (let t = 0; t < numTris; t++) {
+        const tmp = idxArr[t*3+1]; idxArr[t*3+1] = idxArr[t*3+2]; idxArr[t*3+2] = tmp;
+      }
+    }
+  }
+
   const uvs = uvArr ? new Float32Array(uvArr) : null;
   const indices = new Uint32Array(idxArr);
 
