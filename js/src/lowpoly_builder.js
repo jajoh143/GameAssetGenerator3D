@@ -330,7 +330,7 @@ export async function buildLowPolyCharacter(cfg) {
       if (y > _maxY) _maxY = y;
     }
     const _bodyH = _maxY - _minY;
-    const _armY  = _minY + _bodyH * 0.82;   // realistic: shoulder at 82%
+    const _armY  = _minY + _bodyH * 0.72;   // shoulder bone at 72% of height
     const _hipY  = _minY + _bodyH * 0.53;   // realistic: hip at 53%
 
     const clothingList = Array.isArray(cfg.clothing) ? cfg.clothing : [];
