@@ -10,6 +10,7 @@ import {
 import { GLTF2Export } from '@babylonjs/serializers';
 import { writeFileSync } from 'fs';
 import { loadCartoonMale } from './mesh_loader.js';
+import { loadImportedGLB } from './glb_importer.js';
 import { buildSkeleton, BONE_NAMES } from './skeleton.js';
 import { buildHairGeometry } from './hair_geo.js';
 import { buildEyeGeometry, createEyeMaterials, buildNoseGeometry } from './eye_geo.js';
@@ -382,6 +383,62 @@ export async function buildHumanoid(cfg) {
   }
 
   // 9. Animations
+  const clips = buildAnimations(cfg);
+  buildAnimationGroups(clips, skeleton, scene);
+
+  return { scene, engine };
+}
+
+/**
+ * Build a rigged + animated scene from an imported GLB mesh.
+ *
+ * The mesh is loaded via loadImportedGLB() which normalises its height and
+ * applies skin weights (remapping existing skeleton if compatible, or running
+ * envelope-based auto-weighting otherwise).  The result can be exported with
+ * exportGLB() exactly like a procedurally generated humanoid.
+ *
+ * @param {Buffer|string} source - raw GLB bytes or base64 data URL
+ * @param {Object} cfg           - { height?, animations?, skinTone? }
+ * @returns {Promise<{scene: BABYLON.Scene, engine: BABYLON.NullEngine}>}
+ */
+export async function buildRiggedFromGLB(source, cfg = {}) {
+  const H = cfg.height ?? 1.75;
+
+  const engine = new NullEngine();
+  const scene  = new Scene(engine);
+
+  const bodyData = await loadImportedGLB(source, H);
+  const { positions, normals, uvs, skinIndices, skinWeights, indices, albedoColor } = bodyData;
+  const vCount = positions.length / 3;
+
+  const skeleton = buildSkeleton(H, scene);
+
+  // Use extracted albedo colour, cfg skin tone, or a neutral fallback
+  let color;
+  if (albedoColor) {
+    color = new Color3(albedoColor[0], albedoColor[1], albedoColor[2]);
+  } else {
+    const rgba = Array.isArray(cfg.skinTone) ? cfg.skinTone : [0.80, 0.78, 0.76];
+    color = new Color3(rgba[0], rgba[1], rgba[2]);
+  }
+  const mat = new PBRMaterial('ImportedMaterial', scene);
+  mat.albedoColor = color;
+  mat.roughness   = 0.5;
+  mat.metallic    = 0.0;
+
+  const bodyMesh = new Mesh('ImportedBody', scene);
+  bodyMesh.material = mat;
+
+  const vd = new VertexData();
+  vd.positions       = positions;
+  if (normals) vd.normals = normals;
+  if (uvs)     vd.uvs    = uvs;
+  vd.indices          = indices;
+  vd.matricesIndices  = packSkinIndices(skinIndices, vCount);
+  vd.matricesWeights  = skinWeights;
+  vd.applyToMesh(bodyMesh);
+  bodyMesh.skeleton = skeleton;
+
   const clips = buildAnimations(cfg);
   buildAnimationGroups(clips, skeleton, scene);
 

@@ -33,6 +33,7 @@
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="basic">Basic</button>
         <button class="tab-btn" data-tab="details">Details</button>
+        <button class="tab-btn" data-tab="import">Import</button>
       </div>
 
       <div id="form-scroll">
@@ -350,6 +351,74 @@
 
       </div><!-- /tab-details -->
 
+      <!-- Import tab panel -->
+      <div id="tab-import" class="tab-panel">
+
+        <!-- Drop zone -->
+        <div class="section">
+          <div class="section-header">Import GLB</div>
+          <div class="section-body">
+            <div id="glb-drop-zone" class="glb-drop-zone" tabindex="0" role="button" aria-label="Drop GLB file here or click to browse">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M16 4 L16 22 M9 15 L16 22 L23 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4 26 L28 26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <div class="drop-zone-text">Drop .glb file here</div>
+              <div class="drop-zone-hint">or click to browse</div>
+              <div id="glb-file-name" class="glb-file-name"></div>
+            </div>
+            <input type="file" id="glb-file-input" accept=".glb" style="display:none" />
+
+            <div class="field-row">
+              <div class="field">
+                <label for="import-height">Height (m)</label>
+                <select id="import-height" name="import_height">
+                  <option value="1.20">1.20 — Child</option>
+                  <option value="1.50">1.50 — Short</option>
+                  <option value="1.75" selected>1.75 — Average</option>
+                  <option value="2.00">2.00 — Tall</option>
+                  <option value="2.10">2.10 — Brute</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Animation selection -->
+        <div class="section">
+          <div class="section-header">Animations to Apply</div>
+          <div class="section-body">
+            <div class="anim-controls">
+              <button type="button" id="import-anim-select-all">Select All</button>
+              <button type="button" id="import-anim-clear">Clear</button>
+            </div>
+            <div class="anim-grid">
+              <label class="anim-check checked">
+                <input type="checkbox" name="import_animations" value="idle" checked />
+                <span>Idle</span>
+              </label>
+              <label class="anim-check checked">
+                <input type="checkbox" name="import_animations" value="walk" checked />
+                <span>Walk</span>
+              </label>
+              <label class="anim-check checked">
+                <input type="checkbox" name="import_animations" value="run" checked />
+                <span>Run</span>
+              </label>
+              <label class="anim-check checked">
+                <input type="checkbox" name="import_animations" value="jump" checked />
+                <span>Jump</span>
+              </label>
+              <label class="anim-check checked">
+                <input type="checkbox" name="import_animations" value="attack" checked />
+                <span>Attack</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /tab-import -->
+
       </div><!-- /form-scroll -->
 
       <!-- Action buttons -->
@@ -366,6 +435,13 @@
             <path d="M2 8 L6 12 L14 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           Generate Animations
+        </button>
+        <button class="btn btn-import" id="btn-import-rig" type="button" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2 L8 11 M4 7.5 L8 11.5 L12 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 13 L14 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          Rig &amp; Animate
         </button>
       </div>
 
@@ -583,8 +659,9 @@ function setLoading(visible, text) {
 }
 
 function setButtons(disabled) {
-  document.getElementById('btn-preview').disabled  = disabled;
-  document.getElementById('btn-generate').disabled = disabled;
+  document.getElementById('btn-preview').disabled    = disabled;
+  document.getElementById('btn-generate').disabled   = disabled;
+  document.getElementById('btn-import-rig').disabled = disabled;
 }
 
 // ── Collect form data ────────────────────────────────────────────────────────
@@ -804,6 +881,10 @@ beltCb.addEventListener('change', () => {
 
 // ── Sidebar tab switching ────────────────────────────────────────────────────
 
+const btnImportRig  = document.getElementById('btn-import-rig');
+const btnPreview    = document.getElementById('btn-preview');
+const btnGenerate   = document.getElementById('btn-generate');
+
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.tab;
@@ -811,8 +892,151 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + target).classList.add('active');
+
+    // Show/hide action buttons depending on active tab
+    const isImport = target === 'import';
+    btnImportRig.style.display = isImport ? ''     : 'none';
+    btnPreview.style.display   = isImport ? 'none' : '';
+    btnGenerate.style.display  = isImport ? 'none' : '';
   });
 });
+
+// ── Import tab: file picking & drag-and-drop ─────────────────────────────────
+
+const glbDropZone  = document.getElementById('glb-drop-zone');
+const glbFileInput = document.getElementById('glb-file-input');
+const glbFileName  = document.getElementById('glb-file-name');
+
+let selectedGLBFile = null;
+
+function setSelectedFile(file) {
+  selectedGLBFile = file;
+  glbFileName.textContent = file ? file.name : '';
+  glbDropZone.classList.toggle('has-file', !!file);
+}
+
+// Click on drop zone → open file picker
+glbDropZone.addEventListener('click', () => glbFileInput.click());
+glbDropZone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') glbFileInput.click();
+});
+
+glbFileInput.addEventListener('change', () => {
+  const file = glbFileInput.files?.[0];
+  if (file) setSelectedFile(file);
+});
+
+// Drag-and-drop
+glbDropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  glbDropZone.classList.add('drag-over');
+});
+glbDropZone.addEventListener('dragleave', () => {
+  glbDropZone.classList.remove('drag-over');
+});
+glbDropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  glbDropZone.classList.remove('drag-over');
+  const file = e.dataTransfer?.files?.[0];
+  if (file && file.name.toLowerCase().endsWith('.glb')) {
+    setSelectedFile(file);
+  } else {
+    setStatus('error', 'Please drop a .glb file');
+  }
+});
+
+// Animation checkboxes in the Import tab
+document.querySelectorAll('#tab-import .anim-check input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    cb.closest('.anim-check').classList.toggle('checked', cb.checked);
+  });
+});
+
+document.getElementById('import-anim-select-all').addEventListener('click', () => {
+  document.querySelectorAll('#tab-import .anim-check input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    cb.closest('.anim-check').classList.add('checked');
+  });
+});
+
+document.getElementById('import-anim-clear').addEventListener('click', () => {
+  document.querySelectorAll('#tab-import .anim-check input[type="checkbox"]').forEach(cb => {
+    cb.checked = false;
+    cb.closest('.anim-check').classList.remove('checked');
+  });
+});
+
+// ── Rig & Animate button ─────────────────────────────────────────────────────
+
+btnImportRig.addEventListener('click', async () => {
+  if (!selectedGLBFile) {
+    setStatus('error', 'Select a .glb file first');
+    return;
+  }
+
+  const animations = Array.from(
+    document.querySelectorAll('#tab-import input[name="import_animations"]:checked')
+  ).map(cb => cb.value);
+
+  if (!animations.length) {
+    setStatus('error', 'Select at least one animation');
+    return;
+  }
+
+  const height = parseFloat(document.getElementById('import-height').value) || 1.75;
+
+  setButtons(true);
+  setStatus('running', 'Uploading and rigging…');
+  setLoading(true, 'Rigging imported GLB…');
+  dlLink.classList.remove('visible');
+  logBox.textContent = '';
+
+  let jobId;
+  try {
+    const params = new URLSearchParams({ animations: animations.join(','), height });
+    const res = await fetch(`/import-rig?${params}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body:    await selectedGLBFile.arrayBuffer(),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? res.statusText);
+    jobId = json.job_id;
+  } catch (err) {
+    setStatus('error', 'Upload error: ' + err.message);
+    setLoading(false);
+    setButtons(false);
+    return;
+  }
+
+  pollJob(jobId, async (err, job) => {
+    setLoading(false);
+    setButtons(false);
+
+    if (err || job.status === 'error') {
+      setStatus('error', 'Rigging failed — check log');
+      showLog(job?.log);
+      return;
+    }
+
+    showLog(job.log);
+    setStatus('running', 'Loading rigged model…');
+    try {
+      await loadModel(`/model/${jobId}`, `${selectedGLBFile.name} (rigged)`);
+      setStatus('done', 'Rigged successfully!');
+    } catch (loadErr) {
+      setStatus('error', 'Failed to load GLB: ' + loadErr.message);
+    }
+
+    if (job.download_url) {
+      dlAnchor.href     = job.download_url;
+      dlAnchor.download = selectedGLBFile.name.replace(/\.glb$/i, '_rigged.glb');
+      dlLink.classList.add('visible');
+    }
+  });
+});
+
+
 </script>
 </body>
 </html>

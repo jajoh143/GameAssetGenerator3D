@@ -658,6 +658,73 @@ header .subtitle {
   background: var(--accent-blue-hover);
 }
 
+/* ── Import tab: GLB drop zone ───────────────────────────── */
+
+.btn-import {
+  background: #7c5cbf;
+  color: #fff;
+}
+
+.btn-import:hover:not(:disabled) {
+  background: #6a4dab;
+}
+
+.glb-drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 24px 16px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  outline: none;
+  text-align: center;
+}
+
+.glb-drop-zone:hover,
+.glb-drop-zone:focus {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(74, 144, 226, 0.05);
+}
+
+.glb-drop-zone.drag-over {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background: rgba(74, 144, 226, 0.10);
+}
+
+.glb-drop-zone.has-file {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  background: rgba(60, 179, 113, 0.06);
+}
+
+.drop-zone-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.drop-zone-hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.glb-file-name {
+  font-size: 11px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  word-break: break-all;
+  margin-top: 4px;
+}
+
+.glb-file-name:empty {
+  display: none;
+}
+
 /* ── Responsive ──────────────────────────────────────── */
 
 @media (max-width: 900px) {

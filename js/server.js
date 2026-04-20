@@ -9,7 +9,7 @@ import { mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveConfig } from './src/presets.js';
-import { buildHumanoid, exportGLB } from './src/builder.js';
+import { buildHumanoid, buildRiggedFromGLB, exportGLB } from './src/builder.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
@@ -81,6 +81,50 @@ function cfgFromBody(data, animations = 'all') {
 
   return cfg;
 }
+
+// ── GLB import-rig endpoint ───────────────────────────────────────────────────
+// Accepts a raw GLB binary body (Content-Type: application/octet-stream).
+// Optional query params:
+//   animations  comma-separated list, e.g. "idle,walk,run"  (default: all five)
+//   height      target height in metres                       (default: 1.75)
+app.post('/import-rig',
+  express.raw({ type: '*/*', limit: '100mb' }),
+  (req, res) => {
+    const glbBuffer = req.body;
+    if (!glbBuffer || !glbBuffer.length) {
+      return res.status(400).json({ error: 'No GLB data received.' });
+    }
+
+    const animParam = req.query.animations;
+    const animations = animParam
+      ? animParam.split(',').map(s => s.trim()).filter(Boolean)
+      : 'all';
+    const height = parseFloat(req.query.height) || 1.75;
+
+    const jobId      = randomUUID();
+    const outputPath = join(OUTPUT_DIR, `imported_${jobId.slice(0, 8)}.glb`);
+    jobs.set(jobId, { status: 'queued', log: [], output: outputPath });
+
+    // Run async, respond immediately with job ID
+    (async () => {
+      const log = [];
+      try {
+        jobs.set(jobId, { status: 'running', log, output: outputPath });
+        log.push(`[import] Rigging imported GLB (${glbBuffer.length} bytes, height=${height}m)`);
+        log.push(`[import] Animations: ${JSON.stringify(animations)}`);
+        const { scene, engine } = await buildRiggedFromGLB(glbBuffer, { height, animations });
+        await exportGLB(scene, engine, outputPath);
+        log.push(`[import] Done: ${outputPath}`);
+        jobs.set(jobId, { status: 'done', log, output: outputPath });
+      } catch (err) {
+        log.push(`ERROR: ${err.message}`, err.stack ?? '');
+        jobs.set(jobId, { status: 'error', log, output: null });
+      }
+    })();
+
+    res.json({ job_id: jobId });
+  }
+);
 
 app.post('/preview', (req, res) => {
   const jobId = randomUUID();
