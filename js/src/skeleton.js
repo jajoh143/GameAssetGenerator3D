@@ -3,7 +3,7 @@
  * Port of generators/humanoid/gltf_pipeline/skeleton.py
  */
 
-import { Skeleton, Bone, Matrix } from '@babylonjs/core';
+import { Skeleton, Bone, Matrix, TransformNode } from '@babylonjs/core';
 
 export const BONE_NAMES = [
   'Hips',                                              // 0  — root
@@ -61,12 +61,18 @@ export function buildSkeleton(H, scene) {
   const worldPos = boneWorldPositions(H);
   const skeleton = new Skeleton('Skeleton', 'Skeleton', scene);
 
-  // Create all bones sequentially so each parent is available when children reference it
+  // Create all bones sequentially so each parent is available when children reference it.
+  // Each bone gets a linked TransformNode so GLTF2Export can serialise the skeleton and
+  // animation tracks (the exporter requires bones to have an associated node in the scene
+  // graph; bones without one are silently skipped and no animations are written).
   const bones = [];
+  const tns   = [];
+
   for (let i = 0; i < BONE_NAMES.length; i++) {
-    const name = BONE_NAMES[i];
+    const name      = BONE_NAMES[i];
     const parentIdx = BONE_PARENTS[i];
     const parentBone = parentIdx === -1 ? null : bones[parentIdx];
+    const parentTN   = parentIdx === -1 ? null : tns[parentIdx];
     const [wx, wy, wz] = worldPos[i];
 
     let lx, ly, lz;
@@ -77,8 +83,16 @@ export function buildSkeleton(H, scene) {
       lx = wx - px; ly = wy - py; lz = wz - pz;
     }
 
+    // TransformNode hierarchy mirrors the bone hierarchy
+    const tn = new TransformNode(name, scene);
+    if (parentTN) tn.parent = parentTN;
+    tn.position.set(lx, ly, lz);
+    tns.push(tn);
+
     const localMatrix = Matrix.Translation(lx, ly, lz);
-    bones.push(new Bone(name, skeleton, parentBone, localMatrix));
+    const bone = new Bone(name, skeleton, parentBone, localMatrix);
+    bone.linkTransformNode(tn);
+    bones.push(bone);
   }
 
   return skeleton;

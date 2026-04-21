@@ -79,6 +79,9 @@ function buildAnimationGroups(clips, skeleton, scene) {
     for (const [boneName, { times, values }] of clip.rotByBone) {
       const bone = skeleton.bones.find(b => b.name === boneName);
       if (!bone) continue;
+      // Target the linked TransformNode so GLTF2Export can serialise this track.
+      // Bones without a node are silently skipped by the exporter.
+      const target = bone._linkedTransformNode ?? bone;
 
       const anim = new Animation(
         `${clip.name}_${boneName}_rot`,
@@ -101,13 +104,14 @@ function buildAnimationGroups(clips, skeleton, scene) {
         });
       }
       anim.setKeys(keys);
-      group.addTargetedAnimation(anim, bone);
+      group.addTargetedAnimation(anim, target);
     }
 
     // Translation tracks
     for (const [boneName, { times, values }] of clip.transByBone) {
       const bone = skeleton.bones.find(b => b.name === boneName);
       if (!bone) continue;
+      const target = bone._linkedTransformNode ?? bone;
 
       const anim = new Animation(
         `${clip.name}_${boneName}_pos`,
@@ -125,7 +129,7 @@ function buildAnimationGroups(clips, skeleton, scene) {
         });
       }
       anim.setKeys(keys);
-      group.addTargetedAnimation(anim, bone);
+      group.addTargetedAnimation(anim, target);
     }
 
     groups.push(group);
