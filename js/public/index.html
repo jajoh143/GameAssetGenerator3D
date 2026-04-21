@@ -624,10 +624,16 @@ function loadModel(url, label) {
     currentMeshes = [];
     updateAnimBar([]);
 
+    // Force the GLTF plugin — the server URL has no .glb extension so Babylon
+    // can't infer the format; without this hint animationGroups aren't returned.
     BABYLON.SceneLoader.ImportMesh('', '', url, scene,
       (meshes, _ps, _sk, animGroups) => {
-        currentMeshes     = meshes;
-        currentAnimGroups = animGroups ?? [];
+        currentMeshes = meshes;
+        // Prefer callback param; fall back to scene.animationGroups in case
+        // the CDN version omits it from the callback.
+        currentAnimGroups = (animGroups && animGroups.length)
+          ? animGroups
+          : scene.animationGroups.slice();
         fitCameraToMeshes(meshes);
 
         const badge = document.getElementById('viewer-badge');
@@ -639,7 +645,8 @@ function loadModel(url, label) {
         resolve(meshes);
       },
       null,
-      (_scene, msg, err) => reject(err || new Error(msg))
+      (_scene, msg, err) => reject(err || new Error(msg)),
+      '.glb'
     );
   });
 }
