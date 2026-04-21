@@ -658,6 +658,113 @@ header .subtitle {
   background: var(--accent-blue-hover);
 }
 
+/* ── Animation playback bar ──────────────────────────────── */
+
+#anim-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: none;
+  flex-direction: column;
+  gap: 0;
+  background: rgba(16, 16, 30, 0.90);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  z-index: 6;
+  padding: 8px 12px;
+}
+
+#anim-bar.visible {
+  display: flex;
+}
+
+#anim-clips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.anim-clip-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.anim-clip-btn:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.anim-clip-btn.active {
+  border-color: var(--accent-blue);
+  background: rgba(74, 144, 226, 0.15);
+  color: var(--accent-blue);
+}
+
+#anim-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#anim-controls-bar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  flex-shrink: 0;
+}
+
+#anim-controls-bar button:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+#anim-controls-bar button.active {
+  border-color: var(--accent-blue);
+  background: rgba(74, 144, 226, 0.15);
+  color: var(--accent-blue);
+}
+
+#anim-speed {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 4px 6px;
+  cursor: pointer;
+  height: 28px;
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 52px;
+  text-align: center;
+}
+
+#anim-speed:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
 /* ── Import tab: GLB drop zone ───────────────────────────── */
 
 .btn-import {

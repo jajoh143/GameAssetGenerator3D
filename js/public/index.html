@@ -490,9 +490,43 @@
 
       <!-- Info badge -->
       <div id="viewer-badge" id="viewer-badge"></div>
-    </div>
 
-  </div><!-- /main -->
+      <!-- Animation playback bar (hidden until a model with animations is loaded) -->
+      <div id="anim-bar">
+        <div id="anim-clips"></div>
+        <div id="anim-controls-bar">
+          <button id="anim-play-pause" title="Play / Pause">
+            <svg id="anim-icon-play" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 2 L11 7 L3 12 Z" fill="currentColor"/>
+            </svg>
+            <svg id="anim-icon-pause" width="14" height="14" viewBox="0 0 14 14" fill="none" style="display:none">
+              <rect x="2" y="2" width="4" height="10" rx="1" fill="currentColor"/>
+              <rect x="8" y="2" width="4" height="10" rx="1" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="anim-stop" title="Stop">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="anim-loop" title="Toggle loop">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 7 C2 4.2 4.2 2 7 2 C9 2 10.8 3.1 11.7 4.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+              <path d="M12 7 C12 9.8 9.8 12 7 12 C5 12 3.2 10.9 2.3 9.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+              <path d="M10 2.5 L12 4.5 L14 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <path d="M4 11.5 L2 9.5 L0 11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+          </button>
+          <select id="anim-speed" title="Playback speed">
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </div>
+      </div>
+    </div><!-- /viewer-panel -->
 </div><!-- /app -->
 
 <script>
@@ -543,8 +577,11 @@ ground.material      = gridMat;
 ground.isPickable    = false;
 
 // State
-let currentMeshes = [];
-let wireframeMode = false;
+let currentMeshes         = [];
+let currentAnimGroups     = [];
+let activeAnimGroup       = null;
+let animLoopEnabled       = true;
+let wireframeMode         = false;
 
 // Resize handler
 function resize() {
@@ -579,13 +616,18 @@ function fitCameraToMeshes(meshes) {
 
 function loadModel(url, label) {
   return new Promise((resolve, reject) => {
-    // Dispose previous model
+    // Dispose previous model and animations
+    for (const g of currentAnimGroups) g.dispose();
+    currentAnimGroups = [];
+    activeAnimGroup   = null;
     for (const m of currentMeshes) m.dispose();
     currentMeshes = [];
+    updateAnimBar([]);
 
     BABYLON.SceneLoader.ImportMesh('', '', url, scene,
-      (meshes) => {
-        currentMeshes = meshes;
+      (meshes, _ps, _sk, animGroups) => {
+        currentMeshes     = meshes;
+        currentAnimGroups = animGroups ?? [];
         fitCameraToMeshes(meshes);
 
         const badge = document.getElementById('viewer-badge');
@@ -593,6 +635,7 @@ function loadModel(url, label) {
         badge.classList.add('visible');
 
         document.getElementById('viewer-empty').classList.add('hidden');
+        updateAnimBar(currentAnimGroups);
         resolve(meshes);
       },
       null,
@@ -877,6 +920,98 @@ const beltCb         = document.getElementById('belt');
 const beltColorField = document.getElementById('belt-color-field');
 beltCb.addEventListener('change', () => {
   beltColorField.style.display = beltCb.checked ? '' : 'none';
+});
+
+// ── Animation playback controls ──────────────────────────────────────────────
+
+const animBar      = document.getElementById('anim-bar');
+const animClips    = document.getElementById('anim-clips');
+const btnPlayPause = document.getElementById('anim-play-pause');
+const iconPlay     = document.getElementById('anim-icon-play');
+const iconPause    = document.getElementById('anim-icon-pause');
+const btnStop      = document.getElementById('anim-stop');
+const btnLoop      = document.getElementById('anim-loop');
+const speedSel     = document.getElementById('anim-speed');
+
+function setPlayPauseIcon(playing) {
+  iconPlay.style.display  = playing ? 'none' : '';
+  iconPause.style.display = playing ? ''     : 'none';
+}
+
+function stopAll() {
+  for (const g of currentAnimGroups) g.stop();
+  activeAnimGroup = null;
+  setPlayPauseIcon(false);
+}
+
+function selectClip(group) {
+  stopAll();
+  activeAnimGroup = group;
+  group.loopAnimation = animLoopEnabled;
+  group.speedRatio    = parseFloat(speedSel.value);
+  group.play(animLoopEnabled);
+  setPlayPauseIcon(true);
+
+  // Highlight active clip button
+  animClips.querySelectorAll('.anim-clip-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.name === group.name);
+  });
+}
+
+function updateAnimBar(groups) {
+  animClips.innerHTML = '';
+  setPlayPauseIcon(false);
+
+  if (!groups || groups.length === 0) {
+    animBar.classList.remove('visible');
+    return;
+  }
+
+  animBar.classList.add('visible');
+
+  for (const group of groups) {
+    const btn = document.createElement('button');
+    btn.className    = 'anim-clip-btn';
+    btn.dataset.name = group.name;
+    btn.textContent  = group.name;
+    btn.addEventListener('click', () => selectClip(group));
+    animClips.appendChild(btn);
+  }
+
+  // Auto-play the first clip
+  selectClip(groups[0]);
+}
+
+btnPlayPause.addEventListener('click', () => {
+  if (!activeAnimGroup) {
+    if (currentAnimGroups.length) selectClip(currentAnimGroups[0]);
+    return;
+  }
+  if (activeAnimGroup.isPlaying) {
+    activeAnimGroup.pause();
+    setPlayPauseIcon(false);
+  } else {
+    activeAnimGroup.play(animLoopEnabled);
+    setPlayPauseIcon(true);
+  }
+});
+
+btnStop.addEventListener('click', () => {
+  stopAll();
+  animClips.querySelectorAll('.anim-clip-btn').forEach(b => b.classList.remove('active'));
+});
+
+btnLoop.addEventListener('click', () => {
+  animLoopEnabled = !animLoopEnabled;
+  btnLoop.classList.toggle('active', animLoopEnabled);
+  if (activeAnimGroup) activeAnimGroup.loopAnimation = animLoopEnabled;
+});
+// Start with loop on
+btnLoop.classList.add('active');
+
+speedSel.addEventListener('change', () => {
+  const speed = parseFloat(speedSel.value);
+  if (activeAnimGroup) activeAnimGroup.speedRatio = speed;
 });
 
 // ── Sidebar tab switching ────────────────────────────────────────────────────
