@@ -1,205 +1,169 @@
 # GameAssetGenerator3D
 
-A Blender-based procedural 3D game asset generator. Generate low-poly game-ready assets (meshes, rigs, animations) via Python scripts — no manual modeling required.
+Pipeline that turns a **text prompt or reference image** into a **rigged,
+animated, game-ready GLB**:
+
+```
+prompt ──► OpenAI Images ──► PNG ──► TRELLIS.2 ──► static GLB ──► Blender ──► rigged + animated GLB
+                                  ▲
+                                  │
+       --image my_concept.png ────┘
+```
+
+- **Image** — `gpt-image-1` (OpenAI Images) or a file you supply.
+- **Mesh** — Microsoft [TRELLIS.2-4B](https://github.com/microsoft/TRELLIS.2)
+  running locally on your GPU box (4B params, PBR materials, ≥24 GB VRAM).
+- **Rig + animation** — pure-Python Blender job that fits a humanoid
+  skeleton onto the mesh, applies heat-diffusion auto-weights, and bakes
+  idle / walk / run / jump / attack cycles into NLA tracks of the exported
+  GLB. Props skip the rig step.
 
 ## Requirements
 
-- [Blender](https://www.blender.org/) 3.6+ (must be on PATH, or set `BLENDER_PATH`)
-- Python 3.10+ (for the CLI wrapper)
-- Node.js 18+ (for the Character Builder web UI)
+- Linux box with NVIDIA GPU (≥24 GB VRAM), CUDA 12.4
+- Python 3.10+
+- Blender 3.6+ on `PATH` (or set `BLENDER_PATH`)
+- A TRELLIS.2 checkout + conda env (instructions below)
+- An OpenAI API key (only required if you use `--prompt`)
 
-## Character Builder (Web UI)
-
-The interactive character builder runs a local web server on port 5000.
+## Install
 
 ```bash
-cd js
-npm install        # first time only — installs three.js and express
-npm start          # starts server at http://localhost:5000
-```
+# 1. Orchestrator deps
+pip install -r requirements.txt
 
-Open `http://localhost:5000` in your browser to build and preview characters.
+# 2. TRELLIS.2 (one-time, in its own conda env)
+git clone -b main --recursive https://github.com/microsoft/TRELLIS.2.git /opt/TRELLIS.2
+cd /opt/TRELLIS.2
+. ./setup.sh --new-env --basic --flash-attn --nvdiffrast --nvdiffrec --cumesh --o-voxel --flexgemm
+
+# 3. Tell gag3d where everything lives
+cp .env.example .env
+# edit .env — fill in OPENAI_API_KEY, TRELLIS2_PATH, TRELLIS2_PYTHON, BLENDER_PATH
+set -a; source .env; set +a
+
+# 4. Verify
+python -m gag3d doctor
+```
 
 ## Quick Start
 
-Generate a rigged, animated low-poly humanoid:
+```bash
+# Prompt → rigged humanoid with all animations
+python -m gag3d generate humanoid \
+    -o assets/output/knight.glb \
+    --prompt "a cel-shaded medieval knight in plate armor"
+
+# Existing concept image → rigged humanoid with only idle and walk
+python -m gag3d generate humanoid \
+    -o assets/output/wizard.glb \
+    --image my_wizard_concept.png \
+    --animations idle,walk
+
+# Static prop, lower TRELLIS resolution for speed
+python -m gag3d generate prop \
+    -o assets/output/chest.glb \
+    --prompt "a wooden treasure chest with iron bands" \
+    --resolution 512
+```
+
+## Pipeline detail
+
+1. **Image stage.** Either reads `--image` straight through, or sends a
+   constrained T-pose / isolated-object prompt to `gpt-image-1` and saves
+   the PNG to the work dir.
+2. **Mesh stage.** Spawns a subprocess that runs
+   `gag3d/mesh_gen/trellis2_worker.py` inside the TRELLIS.2 conda env. The
+   worker loads `Trellis2ImageTo3DPipeline.from_pretrained(...)`, runs
+   inference at the requested voxel resolution (512 / 1024 / 1536), and
+   exports a textured GLB with PBR materials.
+3. **Blender stage.** Spawns `blender --background --python
+   gag3d/blender_jobs/rig_and_animate.py -- <job.json>`:
+   - imports the TRELLIS GLB,
+   - normalizes it to a target height (1.8 m for humanoids by default),
+   - for humanoids: fits the bone template in
+     `gag3d/rigging/skeleton.py` to the mesh's bounding box, builds an
+     armature with glTF/Mixamo bone names, and binds with
+     `parent_set(type="ARMATURE_AUTO")` (heat-diffusion weights),
+   - for each requested animation, calls a keyframe builder from
+     `gag3d/animation/` and pushes the action onto an NLA track,
+   - re-exports as GLB.
+
+## Rigging assumptions
+
+The skeleton fitter expects:
+- **Y-up, facing −Z** in the source GLB (TRELLIS.2's default).
+- **Roughly symmetric, T-pose stance.** The default OpenAI prompt template
+  asks for a strict T-pose; if you supply your own image, give the
+  generator a clean front-facing T-pose to match.
+
+Vitruvian-derived ratios place the skeleton inside the mesh's bounding
+box. This is intentionally simple — see "Roadmap" below for the upgrade
+path.
+
+## CLI reference
+
+```
+python -m gag3d generate <humanoid|prop> -o OUTPUT.glb
+    (--prompt TEXT | --image PATH)
+    [--style "..."]
+    [--animations idle,walk,run,jump,attack]
+    [--resolution 512|1024|1536]
+    [--height METERS]
+    [--keep-intermediates]
+```
+
+```
+python -m gag3d doctor      # show resolved env config
+```
+
+## Project layout
+
+```
+gag3d/
+├── __main__.py              # python -m gag3d
+├── cli.py                   # argparse front-end
+├── pipeline.py              # orchestrator
+├── config.py                # env-var driven Config
+├── image_gen/               # OpenAI Images + file-source adapters
+├── mesh_gen/
+│   ├── trellis2.py          # subprocess wrapper
+│   └── trellis2_worker.py   # runs inside TRELLIS.2 conda env
+├── prompts/                 # prompt templates (T-pose, isolated prop)
+├── rigging/
+│   └── skeleton.py          # bone template + bbox fitting (no bpy)
+├── animation/
+│   ├── idle.py walk.py run.py jump.py attack.py
+│   └── _common.py           # keyframe helpers (Blender-only)
+└── blender_jobs/
+    └── rig_and_animate.py   # the Blender-side script
+
+tests/                       # non-Blender unit tests (pytest)
+assets/
+├── output/                  # generated GLBs + intermediates
+├── ExampleCharacters/       # reference rigged GLBs (kept from older rev)
+└── TemplateMeshes/          # reference low-poly templates
+```
+
+## Tests
 
 ```bash
-# Using Blender directly
-blender --background --python scripts/generate_humanoid.py -- --output assets/humanoid.glb
-
-# Using the CLI wrapper
-python -m generator generate humanoid -o assets/humanoid.glb
-
-# List available asset types
-python -m generator list
-```
-
-## Supported Assets
-
-| Asset     | Script                      | Variations                              |
-|-----------|-----------------------------|-----------------------------------------|
-| Humanoid  | `generate_humanoid.py`      | Presets, builds, skin tones, hair       |
-| Wall      | `generate_wall.py`          | Brick, concrete, corrugated + themes    |
-| Floor     | `generate_floor.py`         | Tile, wood, stone + themes              |
-
-## Humanoid Generator
-
-The humanoid generator supports a layered configuration system for creating diverse characters:
-
-```
-preset → build modifier → hair → randomize → manual overrides
-```
-
-### Character Presets
-
-| Preset    | Height | Description                                      |
-|-----------|--------|--------------------------------------------------|
-| `average` | 1.75m  | Standard proportions                             |
-| `tall`    | 2.00m  | Long limbs, narrow hips                          |
-| `short`   | 1.50m  | Compact, slightly thicker                        |
-| `child`   | 1.20m  | Proportionally larger head, thin limbs           |
-| `brute`   | 2.10m  | Wide shoulders, thick limbs, short neck          |
-| `slender` | 1.85m  | Narrow frame, thin limbs, long neck              |
-
-### Body Builds
-
-Multiplier profiles applied on top of any preset:
-
-| Build     | Effect                                           |
-|-----------|--------------------------------------------------|
-| `lean`    | Narrower shoulders/hips, thinner limbs           |
-| `average` | No modification                                  |
-| `stocky`  | Wider shoulders/hips, thicker limbs, shorter     |
-| `heavy`   | Widest proportions, thickest limbs               |
-
-### Skin Tones
-
-**Natural:** `light`, `fair`, `medium`, `olive`, `tan`, `brown`, `dark`
-**Fantasy:** `zombie`, `orc`, `frost`, `ember`, `shadow`
-
-Custom RGBA values also supported (e.g., `0.5,0.4,0.3,1.0`).
-
-### Hair Styles
-
-| Style    | Description                                       |
-|----------|---------------------------------------------------|
-| `none`   | Bald (default)                                    |
-| `buzzed` | Thin skullcap hugging the head                    |
-| `short`  | Cap with volume on top and back coverage          |
-| `spiky`  | Seven low-poly cones radiating from the crown     |
-| `long`   | Side curtains and back flow past shoulders        |
-| `mohawk` | Tall central ridge with shaved side caps          |
-
-### Hair Colors
-
-**Natural:** `black`, `dark_brown`, `brown`, `auburn`, `red`, `blonde`, `platinum`, `white`, `grey`
-**Fantasy:** `blue`, `green`, `purple`, `pink`
-
-Custom RGBA values also supported.
-
-### Animations
-
-Available animations: `idle`, `walk`, `run`, `jump`, `attack` (or `all`).
-
-### Usage Examples
-
-```bash
-# Basic humanoid with default proportions
-python -m generator generate humanoid -o assets/humanoid.glb
-
-# Tall lean orc with spiky green hair
-python -m generator generate humanoid -o assets/orc.glb \
-    --preset tall --build lean --skin-tone orc \
-    --hair-style spiky --hair-color green
-
-# Stocky child zombie with mohawk
-python -m generator generate humanoid -o assets/zombie_kid.glb \
-    --preset child --build stocky --skin-tone zombie \
-    --hair-style mohawk --hair-color purple
-
-# Brute with custom proportions
-python -m generator generate humanoid -o assets/tank.glb \
-    --preset brute --shoulder-width 0.65 --limb-thickness 1.6
-
-# Generate 10 unique crowd NPCs with seeded randomization
-for i in $(seq 1 10); do
-    python -m generator generate humanoid -o "assets/npc_$i.glb" \
-        --preset average --hair-style short --randomize --seed $i
-done
-
-# Only idle and walk animations
-python -m generator generate humanoid -o assets/guard.glb \
-    --preset tall --animations idle,walk
-```
-
-### Direct Proportion Overrides
-
-Any preset value can be overridden individually: `--height`, `--shoulder-width`, `--hip-width`, `--head-size`, `--arm-length`, `--leg-length`, `--torso-length`, `--limb-thickness`, `--torso-depth`.
-
-## Wall & Floor Generators
-
-Environment tiles with style theming:
-
-```bash
-# Fantasy stone wall with heavy wear
-python -m generator generate wall -o assets/wall.glb \
-    --variation stone --theme fantasy --wear 0.8
-
-# Modern tile floor, pristine
-python -m generator generate floor -o assets/floor.glb \
-    --variation tile --theme modern --wear 0.1
-```
-
-**Themes:** `modern`, `fantasy`, `industrial`, `medieval`
-**Materials:** `brick`, `concrete`, `metal`, `wood`, `stone`, `tile`
-**Wear:** `0.0` (pristine) to `1.0` (heavily worn)
-
-## Project Structure
-
-```
-GameAssetGenerator3D/
-├── generator/              # CLI wrapper & shared utilities
-│   ├── __main__.py         # CLI entry point
-│   └── export.py           # Export helpers (glTF, FBX, etc.)
-├── generators/             # Asset generators (run inside Blender)
-│   ├── style.py            # Shared style/material system
-│   ├── humanoid/
-│   │   ├── __init__.py     # Main generate() entry point
-│   │   ├── mesh.py         # Low-poly body mesh construction
-│   │   ├── rig.py          # Armature & weight painting
-│   │   ├── animation.py    # Walk, run, idle, jump, attack
-│   │   ├── presets.py      # Character presets, builds, skin tones
-│   │   └── hair.py         # Hair styles & colors
-│   ├── wall/               # Wall tile generator
-│   └── floor/              # Floor tile generator
-├── scripts/                # Top-level Blender scripts
-│   ├── generate_humanoid.py
-│   ├── generate_wall.py
-│   └── generate_floor.py
-├── assets/                 # Generated output (gitignored)
-└── tests/                  # Validation tests
-```
-
-## Running Tests
-
-```bash
-# All non-Blender tests
+pip install -r requirements.txt
 python -m pytest tests/
-
-# Specific test file
-python -m unittest tests/test_presets.py
 ```
 
-## Extending
+The skeleton fitter, prompt templates, CLI, and config layer are covered
+without bpy. The Blender-side code is exercised end-to-end by running the
+pipeline against real input.
 
-Each generator lives in `generators/<asset_type>/` and follows the pattern:
+## Roadmap
 
-1. **mesh.py** — build geometry
-2. **rig.py** — add armature and skin weights (if applicable)
-3. **animation.py** — add animations (if applicable)
-
-New generators can be added by creating a new directory with these modules and registering them in `generator/__main__.py`.
+- [ ] Replace bbox-only skeleton fit with 2D pose estimation
+      (MediaPipe / RTMPose) on the source image, projected onto the mesh.
+- [ ] Quadruped + creature rig templates.
+- [ ] Optional Mixamo/AccuRIG hand-off for higher-fidelity binding.
+- [ ] Hosted-API mesh adapter (Replicate / fal) as a fallback for
+      machines without a local GPU.
 
 ## License
 

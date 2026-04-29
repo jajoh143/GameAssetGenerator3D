@@ -1,15 +1,13 @@
 # Generated assets
+assets/output/
 assets/*.glb
 assets/*.gltf
 assets/*.fbx
 assets/*.obj
-assets/*.blend
 assets/*.blend1
-# Render scratch files
-assets/_*.png
-assets/preview_v*.png
-assets/preview_iter*.png
-assets/prev_*.png
+
+# Secrets / local config
+.env
 
 # Python
 __pycache__/
@@ -17,6 +15,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.pytest_cache/
 
 # Blender
 *.blend1
@@ -30,11 +29,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Claude Code agent worktrees (temporary, created by parallel agents)
+# Claude Code agent worktrees
 .claude/
-frontend/.env
-
-# Node.js
-js/node_modules/
-package-lock.json
-js/package-lock.json

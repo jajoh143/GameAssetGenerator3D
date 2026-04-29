@@ -1,5 +1,5 @@
-pygltflib==1.16.5
-numpy
-flask
-python-dotenv
-pytest
+# Orchestrator-side dependencies. TRELLIS.2 deps live in its own conda env;
+# Blender deps come bundled with Blender's Python.
+openai>=1.40
+pillow>=10
+pytest>=8
