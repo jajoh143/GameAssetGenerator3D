@@ -1,0 +1,304 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161922;
+  --panel-2: #1d2230;
+  --border: #2a3142;
+  --text: #e8ecf3;
+  --muted: #8a93a6;
+  --accent: #6cf;
+  --accent-2: #4ad;
+  --error: #f66;
+  --success: #6e6;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+nav#tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+nav#tabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+nav#tabs button.active {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.health {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.health.warn { color: #fb6; }
+.health.ok { color: var(--success); }
+
+main {
+  flex: 1;
+  display: flex;
+}
+
+.tab {
+  display: none;
+  flex: 1;
+  padding: 24px;
+  overflow: auto;
+}
+
+.tab.active {
+  display: block;
+}
+
+#tab-preview.active {
+  display: flex;
+  padding: 0;
+}
+
+/* ─── Forms ────────────────────────────────────────────────────────── */
+
+form {
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+input[type="text"], input[type="number"], textarea, select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+textarea { resize: vertical; }
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.row .grow { flex: 1; }
+.row .label { color: var(--muted); font-size: 13px; align-self: center; }
+
+.anim-row {
+  background: var(--panel);
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.anim-row label { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+
+.source-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--panel);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.source-toggle button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.source-toggle button.active {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.source-pane { display: none; flex-direction: column; gap: 12px; }
+.source-pane.active { display: flex; }
+
+button.primary {
+  background: var(--accent);
+  color: #001;
+  border: 0;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary:hover:not(:disabled) { background: var(--accent-2); }
+
+button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─── Progress log ─────────────────────────────────────────────────── */
+
+.progress {
+  margin-top: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+.progress.hidden { display: none; }
+.progress h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+.progress h3 #job-status { color: var(--text); }
+.progress h3 #job-status.error { color: var(--error); }
+.progress h3 #job-status.done { color: var(--success); }
+
+#event-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  max-height: 300px;
+  overflow: auto;
+}
+#event-log li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+#event-log li.stage-error { color: var(--error); white-space: pre-wrap; }
+#event-log li.stage-done, #event-log li.stage-complete { color: var(--success); }
+#event-log li .stage { color: var(--accent); display: inline-block; width: 90px; }
+
+/* ─── Viewer ──────────────────────────────────────────────────────── */
+
+.viewer-shell {
+  display: flex;
+  flex: 1;
+  min-height: calc(100vh - 53px);
+}
+
+#viewer {
+  flex: 1;
+  background: #08090c;
+  position: relative;
+}
+
+.viewer-controls {
+  width: 280px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+}
+
+.viewer-controls h3 { margin: 0 0 8px; font-size: 14px; }
+.viewer-controls hr { border: 0; border-top: 1px solid var(--border); }
+
+.muted { color: var(--muted); font-size: 12px; }
+
+/* ─── Library grid ─────────────────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.grid .card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+.grid .card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.grid .card .thumb {
+  aspect-ratio: 1;
+  background: var(--panel-2) center/cover no-repeat;
+  border-bottom: 1px solid var(--border);
+}
+
+.grid .card .info {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.grid .card .info .title {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid .card .info .meta { color: var(--muted); margin-top: 2px; }

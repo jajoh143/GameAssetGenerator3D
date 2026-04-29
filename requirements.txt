@@ -2,4 +2,8 @@
 # Blender deps come bundled with Blender's Python.
 openai>=1.40
 pillow>=10
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+httpx>=0.27
 pytest>=8

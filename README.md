@@ -48,6 +48,27 @@ python -m gag3d doctor
 
 ## Quick Start
 
+### Web frontend (recommended)
+
+```bash
+python -m gag3d serve              # http://<gpu-box>:5000
+```
+
+Three tabs:
+- **Generate** — pick humanoid/prop, prompt or upload image, choose animations,
+  hit Generate. Live SSE progress log streams stage transitions
+  (`image → mesh → blender → done`).
+- **Preview** — three.js viewer with orbit camera, animation dropdown,
+  play/pause/speed slider, and a skeleton overlay toggle for inspecting the
+  fitted rig.
+- **Library** — every past generation in `GAG3D_WORK_DIR`, click a card to
+  open it in Preview.
+
+Defaults: bind on `0.0.0.0:5000`, no auth (single-user LAN tool).
+Override with `--host 127.0.0.1` for local-only.
+
+### CLI
+
 ```bash
 # Prompt → rigged humanoid with all animations
 python -m gag3d generate humanoid \
@@ -111,19 +132,32 @@ python -m gag3d generate <humanoid|prop> -o OUTPUT.glb
     [--resolution 512|1024|1536]
     [--height METERS]
     [--keep-intermediates]
+
+python -m gag3d serve [--host 0.0.0.0] [--port 5000] [--reload]
+python -m gag3d doctor
 ```
 
-```
-python -m gag3d doctor      # show resolved env config
-```
+## Web API
+
+The web frontend talks to a small JSON+SSE API you can also drive yourself:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET`  | `/api/health` | Config status (OpenAI/TRELLIS configured?) |
+| `POST` | `/api/generate` | Multipart form: `asset_type`, `prompt`, `image`, `animations`, `resolution`, `height`. Returns `{job_id}`. |
+| `GET`  | `/api/jobs` | All jobs (newest first) |
+| `GET`  | `/api/jobs/{id}` | Job state + event log |
+| `GET`  | `/api/jobs/{id}/events` | Server-Sent Events stream of progress |
+| `GET`  | `/api/library` | Past generations (anything in `GAG3D_WORK_DIR/<id>/final.glb`) |
+| `GET`  | `/api/files/{id}/{name}` | Serve files from a job dir (sandboxed) |
 
 ## Project layout
 
 ```
-gag3d/
+gag3d/                       # orchestrator package (no bpy, no CUDA deps)
 ├── __main__.py              # python -m gag3d
 ├── cli.py                   # argparse front-end
-├── pipeline.py              # orchestrator
+├── pipeline.py              # orchestrator (emits stage progress)
 ├── config.py                # env-var driven Config
 ├── image_gen/               # OpenAI Images + file-source adapters
 ├── mesh_gen/
@@ -138,9 +172,17 @@ gag3d/
 └── blender_jobs/
     └── rig_and_animate.py   # the Blender-side script
 
-tests/                       # non-Blender unit tests (pytest)
+web/                         # FastAPI frontend
+├── app.py                   # routes: generate, jobs, library, files
+├── jobs.py                  # in-memory JobManager + SSE fanout
+└── static/
+    ├── index.html           # SPA shell with three tabs
+    ├── app.js               # three.js viewer + EventSource progress
+    └── style.css
+
+tests/                       # non-Blender unit + API tests (pytest)
 assets/
-├── output/                  # generated GLBs + intermediates
+├── output/                  # GAG3D_WORK_DIR — job folders live here
 ├── ExampleCharacters/       # reference rigged GLBs (kept from older rev)
 └── TemplateMeshes/          # reference low-poly templates
 ```

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GameAssetGenerator3D</title>
+<link rel="stylesheet" href="/static/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <header>
+    <h1>GameAssetGenerator3D</h1>
+    <nav id="tabs">
+      <button data-tab="generate" class="active">Generate</button>
+      <button data-tab="preview">Preview</button>
+      <button data-tab="library">Library</button>
+    </nav>
+    <span id="health" class="health"></span>
+  </header>
+
+  <main>
+    <!-- ─── GENERATE TAB ─────────────────────────────────────────────── -->
+    <section id="tab-generate" class="tab active">
+      <form id="generate-form">
+        <div class="row">
+          <label>Asset type
+            <select name="asset_type" id="asset_type">
+              <option value="humanoid" selected>Humanoid</option>
+              <option value="prop">Prop</option>
+            </select>
+          </label>
+          <label>TRELLIS resolution
+            <select name="resolution">
+              <option>512</option>
+              <option selected>1024</option>
+              <option>1536</option>
+            </select>
+          </label>
+          <label>Height (m)
+            <input type="number" name="height" value="1.8" step="0.1" min="0.1">
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="grow">Source
+            <div class="source-toggle">
+              <button type="button" data-source="prompt" class="active">Prompt</button>
+              <button type="button" data-source="image">Upload image</button>
+            </div>
+          </label>
+        </div>
+
+        <div id="source-prompt" class="source-pane active">
+          <label>Prompt
+            <textarea name="prompt" rows="3" placeholder="a cel-shaded medieval knight in plate armor"></textarea>
+          </label>
+          <label>Style override (optional)
+            <input type="text" name="style" placeholder="low-poly stylized 3D, clean topology">
+          </label>
+        </div>
+
+        <div id="source-image" class="source-pane">
+          <label>Reference PNG (front-facing T-pose for humanoids)
+            <input type="file" name="image" accept="image/png,image/jpeg">
+          </label>
+        </div>
+
+        <div class="row anim-row" id="anim-row">
+          <span class="label">Animations</span>
+          <label><input type="checkbox" name="anim" value="idle" checked> idle</label>
+          <label><input type="checkbox" name="anim" value="walk" checked> walk</label>
+          <label><input type="checkbox" name="anim" value="run" checked> run</label>
+          <label><input type="checkbox" name="anim" value="jump" checked> jump</label>
+          <label><input type="checkbox" name="anim" value="attack" checked> attack</label>
+        </div>
+
+        <button type="submit" id="generate-btn" class="primary">Generate</button>
+      </form>
+
+      <div id="progress" class="progress hidden">
+        <h3>Job <span id="job-id"></span> — <span id="job-status">queued</span></h3>
+        <ul id="event-log"></ul>
+      </div>
+    </section>
+
+    <!-- ─── PREVIEW TAB ──────────────────────────────────────────────── -->
+    <section id="tab-preview" class="tab">
+      <div class="viewer-shell">
+        <div id="viewer"></div>
+        <aside class="viewer-controls">
+          <h3>Controls</h3>
+          <label>Animation
+            <select id="anim-select" disabled><option>—</option></select>
+          </label>
+          <div class="row">
+            <button id="anim-play" disabled>Play</button>
+            <button id="anim-pause" disabled>Pause</button>
+          </div>
+          <label>Speed <span id="speed-readout">1.0×</span>
+            <input type="range" id="anim-speed" min="0" max="3" step="0.05" value="1" disabled>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="show-skeleton"> Show skeleton
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="show-grid" checked> Show grid
+          </label>
+          <hr>
+          <div id="loaded-info" class="muted">No model loaded.</div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ─── LIBRARY TAB ──────────────────────────────────────────────── -->
+    <section id="tab-library" class="tab">
+      <div class="row">
+        <button id="library-refresh">Refresh</button>
+        <span id="library-count" class="muted"></span>
+      </div>
+      <div id="library-grid" class="grid"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

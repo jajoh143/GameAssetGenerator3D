@@ -38,6 +38,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="Diagnose environment configuration.")
 
+    s = sub.add_parser("serve", help="Run the FastAPI web frontend.")
+    s.add_argument("--host", default="0.0.0.0", help="Bind host (default 0.0.0.0).")
+    s.add_argument("--port", type=int, default=5000, help="Bind port (default 5000).")
+    s.add_argument("--reload", action="store_true", help="Enable uvicorn auto-reload.")
+
     return p
 
 
@@ -66,6 +71,19 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    uvicorn.run(
+        "web.app:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level="info",
+    )
+    return 0
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     config = Config.from_env()
     print(f"OPENAI_API_KEY:      {'set' if config.openai_api_key else 'MISSING'}")
@@ -85,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_generate(args)
     if args.command == "doctor":
         return cmd_doctor(args)
+    if args.command == "serve":
+        return cmd_serve(args)
     parser.print_help()
     return 1
 
